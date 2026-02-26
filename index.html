@@ -11,6 +11,7 @@ body{font-family:Arial;background:#f4f4f4;padding:20px}
 .producto img{width:80px;height:80px;object-fit:cover;border-radius:8px}
 .resumen{background:#eee;padding:10px;margin-top:15px;border-radius:8px}
 button{padding:10px 20px;font-size:16px;margin-top:20px}
+input{width:90px;margin-right:10px}
 </style>
 </head>
 
@@ -71,7 +72,7 @@ lista.innerHTML+=`
 <div>
 <b>${p.name}</b> ($${p.precio})<br>
 Cantidad: <input type="number" min="0" value="0" id="c${i}">
-o Dinero: <input type="number" min="0" value="0" id="d${i}">
+Escribe el pedido en dinero: <input type="number" min="0" value="0" id="d${i}">
 </div>
 </div>`;
 });
