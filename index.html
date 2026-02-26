@@ -3,67 +3,60 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pedidos Panadería</title>
+<title>Pedido Panadería</title>
 
 <style>
 body{
 font-family:Arial;
+background:#eee;
 margin:0;
 padding:10px;
-background:#f5f5f5;
 }
 
 .container{
-max-width:900px;
-margin:auto;
 background:white;
 padding:15px;
-border-radius:15px;
+border-radius:10px;
+max-width:800px;
+margin:auto;
 }
 
-.producto{
-display:flex;
-gap:10px;
-margin-bottom:15px;
-border-bottom:1px solid #ddd;
-padding-bottom:10px;
+h2{
+text-align:center;
 }
-
-.producto img{
-width:140px;
-height:140px;
-object-fit:cover;
-border-radius:12px;
-}
-
-.producto-info{flex:1}
 
 input{
 width:100%;
-padding:6px;
-margin-top:4px;
+padding:8px;
+margin-bottom:8px;
+font-size:16px;
+}
+
+.producto{
+border-bottom:1px solid #ddd;
+padding:8px 0;
 }
 
 button{
 width:100%;
-padding:14px;
+padding:15px;
 font-size:18px;
-background:#28a745;
-color:white;
 border:none;
 border-radius:10px;
-margin-top:15px;
+background:#2ea043;
+color:white;
+margin-top:10px;
+}
+
+.resultado{
+margin-top:20px;
+font-size:18px;
+white-space:pre-line;
 }
 
 @media(max-width:600px){
 .producto{
-flex-direction:column;
-align-items:center;
-text-align:center;
-}
-.producto img{
-width:200px;
-height:200px;
+font-size:14px;
 }
 }
 </style>
@@ -75,21 +68,15 @@ height:200px;
 
 <h2>Pedido Panadería</h2>
 
-<label>Nombre del Cliente:</label>
-<input id="cliente" placeholder="Ej: Juan Pérez">
+<input id="cliente" placeholder="Nombre del Cliente">
+<input id="barrio" placeholder="Barrio">
 
-<label>Conjunto residencial o Barrio:</label>
-<input id="barrio" placeholder="Ej: Conjunto Los Almendros">
-
-<h3>Panes</h3>
-
-<div id="productos"></div>
+<div id="lista"></div>
 
 <button onclick="calcular()">CALCULAR PEDIDO</button>
-<button onclick="alert('Pedido enviado ✔️')">ENVIAR PEDIDO - ASEGÚRESE QUE ESTÁ BIEN</button>
 
-<h3 id="resultado"></h3>
-<h3 id="bendaje"></h3>
+<div class="resultado" id="resultado"></div>
+<div class="resultado" id="bendaje"></div>
 
 </div>
 
@@ -97,49 +84,47 @@ height:200px;
 
 const productos=[
 
-{name:"PAN DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/200"},
-{name:"PAN DE 1.000",precio:1000,bendaje:true,img:"https://via.placeholder.com/200"},
-{name:"PAN DE 2.000",precio:2000,bendaje:true,img:"https://via.placeholder.com/200"},
-{name:"PAN DE 3.500",precio:3500,bendaje:true,img:"https://via.placeholder.com/200"},
-{name:"PAN AGRIDULCE DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/200"},
-{name:"PAN AGRIDULCE DE 1.000",precio:1000,bendaje:true,img:"https://via.placeholder.com/200"},
-{name:"PAN ROLLO",precio:500,bendaje:true,img:"https://via.placeholder.com/200"},
-{name:"PAN QUESILLO",precio:1200,bendaje:false,img:"https://via.placeholder.com/200"},
-{name:"LIBERALES",precio:500,bendaje:false,img:"https://via.placeholder.com/200"},
-{name:"CAÑAS",precio:500,bendaje:false,img:"https://via.placeholder.com/200"},
-{name:"PAN COCO",precio:500,bendaje:false,img:"https://via.placeholder.com/200"},
-{name:"MOGICON DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/200"},
-{name:"MOGICON DE 1.200",precio:1200,bendaje:false,img:"https://via.placeholder.com/200"},
-{name:"ROSCON DE 2.500",precio:2500,bendaje:false,img:"https://via.placeholder.com/200"},
-{name:"HAWAIANOS",precio:2000,bendaje:false,img:"https://via.placeholder.com/200"},
-{name:"CROASANES",precio:2000,bendaje:false,img:"https://via.placeholder.com/200"}
+{name:"PAN DE 500",precio:500,bendaje:true},
+{name:"PAN DE 1.000",precio:1000,bendaje:true},
+{name:"PAN DE 2.000",precio:2000,bendaje:true},
+{name:"PAN DE 3.500",precio:3500,bendaje:false},
+
+{name:"PAN AGRIDULCE DE 500",precio:500,bendaje:true},
+{name:"PAN AGRIDULCE DE 1.000",precio:1000,bendaje:true},
+
+{name:"PAN ROLLO",precio:500,bendaje:true},
+
+{name:"PAN QUESILLO",precio:1200,bendaje:false},
+{name:"LIBERALES",precio:500,bendaje:false},
+{name:"CAÑAS",precio:500,bendaje:false},
+{name:"PAN COCO",precio:500,bendaje:false},
+
+{name:"MOGICON DE 500",precio:500,bendaje:true},
+{name:"MOGICON DE 1.200",precio:1200,bendaje:false},
+
+{name:"ROSCON DE 2.500",precio:2500,bendaje:false},
+{name:"HAWAIANOS",precio:2000,bendaje:false},
+{name:"CROASANES",precio:2000,bendaje:false}
 
 ];
 
-const div=document.getElementById("productos");
+const lista=document.getElementById("lista");
 
 productos.forEach((p,i)=>{
-
-div.innerHTML+=`
+lista.innerHTML+=`
 <div class="producto">
-
-<img src="${p.img}">
-
-<div class="producto-info">
-
-<b>${p.name}</b> ($${p.precio})<br>
-
+<b>${p.name} ($${p.precio.toLocaleString("es-CO")})</b><br>
 Cantidad:
-<input id="cant${i}" type="number" placeholder="0">
-
-O escribe el pedido en dinero:
-<input id="din${i}" type="number" placeholder="Ejemplo 5.000">
-
-</div>
+<input id="cant${i}" type="number" min="0">
+O dinero:
+<input id="din${i}" type="number" min="0" placeholder="Ej: 5.000">
 </div>
 `;
-
 });
+
+function formato(n){
+return n.toLocaleString("es-CO");
+}
 
 function calcular(){
 
@@ -150,8 +135,8 @@ let textoB="";
 
 productos.forEach((p,i)=>{
 
-let cant=document.getElementById('cant'+i).value;
-let din=document.getElementById('din'+i).value;
+let cant=document.getElementById("cant"+i).value;
+let din=document.getElementById("din"+i).value;
 
 let subtotal=0;
 let panes=0;
@@ -167,31 +152,39 @@ panes=cant;
 
 if(subtotal>0){
 
-texto+=p.name+" x"+panes+" = $"+subtotal+"<br>";
+texto+=p.name+" x"+panes+" = $"+formato(subtotal)+"\n";
 total+=subtotal;
 
-if(p.bendaje){
+if(p.bendaje===true){
 
 let b=subtotal*0.20;
-let panesB=Math.floor(b/p.precio);
 
+// 🔵 Redondear al múltiplo MÁS CERCANO del precio del pan
+let panesB=Math.round(b/p.precio);
+let bendajeRedondeado=panesB*p.precio;
+
+if(bendajeRedondeado>0){
+bendajeTotal+=bendajeRedondeado;
+textoB+=p.name+" → "+panesB+" panes = $"+formato(bendajeRedondeado)+"\n";
+}
+
+if(b>0){
 bendajeTotal+=b;
-textoB+=p.name+" → "+panesB+" panes = $"+b+"<br>";
-
+textoB+=p.name+" → "+panesB+" panes = $"+formato(b)+"\n";
+}
 }
 }
 });
 
-document.getElementById("resultado").innerHTML=
-"<b>CLIENTE:</b> "+document.getElementById("cliente").value+
-"<br><b>BARRIO:</b> "+document.getElementById("barrio").value+
-"<br><br><b>TOTAL PEDIDO:</b><br>"+texto+
-"<br><b>$"+total+"</b>";
+document.getElementById("resultado").innerText=
+"CLIENTE: "+document.getElementById("cliente").value+
+"\nBARRIO: "+document.getElementById("barrio").value+
+"\n\nTOTAL PEDIDO\n"+texto+
+"\n$"+formato(total);
 
-document.getElementById("bendaje").innerHTML=
-"<br><b>TOTAL BENDAJE 20%:</b><br>"+textoB+
-"<br><b>$"+bendajeTotal+"</b>";
-
+document.getElementById("bendaje").innerText=
+"\nTOTAL BENDAJE 20%\n"+textoB+
+"\n$"+formato(bendajeTotal);
 }
 
 </script>
