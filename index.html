@@ -8,55 +8,65 @@
 <style>
 body{
 font-family:Arial;
-background:#eee;
 margin:0;
 padding:10px;
+background:#f5f5f5;
 }
 
 .container{
+max-width:900px;
+margin:auto;
 background:white;
 padding:15px;
-border-radius:10px;
-max-width:800px;
-margin:auto;
+border-radius:15px;
 }
 
-h2{
-text-align:center;
+.producto{
+display:flex;
+gap:10px;
+margin-bottom:15px;
+border-bottom:1px solid #ddd;
+padding-bottom:10px;
+}
+
+.producto img{
+width:130px;
+height:130px;
+object-fit:cover;
+border-radius:10px;
+}
+
+.producto-info{
+flex:1;
 }
 
 input{
 width:100%;
-padding:8px;
-margin-bottom:8px;
-font-size:16px;
-}
-
-.producto{
-border-bottom:1px solid #ddd;
-padding:8px 0;
+padding:6px;
+margin-top:4px;
 }
 
 button{
 width:100%;
-padding:15px;
+padding:14px;
 font-size:18px;
+background:#28a745;
+color:white;
 border:none;
 border-radius:10px;
-background:#2ea043;
-color:white;
-margin-top:10px;
-}
-
-.resultado{
-margin-top:20px;
-font-size:18px;
-white-space:pre-line;
+margin-top:15px;
+cursor:pointer;
 }
 
 @media(max-width:600px){
 .producto{
-font-size:14px;
+flex-direction:column;
+align-items:center;
+text-align:center;
+}
+.producto img{
+width:200px;
+height:200px;
 }
 }
 </style>
@@ -68,81 +78,96 @@ font-size:14px;
 
 <h2>Pedido Panadería</h2>
 
-<input id="cliente" placeholder="Nombre del Cliente">
-<input id="barrio" placeholder="Barrio">
+<label>Nombre del Cliente:</label>
+<input id="cliente" placeholder="Ej: Juan Pérez">
 
-<div id="lista"></div>
+<label>Conjunto residencial o Barrio:</label>
+<input id="barrio" placeholder="Ej: Conjunto Los Almendros">
+
+<hr>
+
+<div id="productos"></div>
 
 <button onclick="calcular()">CALCULAR PEDIDO</button>
+<button onclick="enviar()">ENVIAR PEDIDO - ASEGÚRESE QUE ESTÁ BIEN</button>
 
-<div class="resultado" id="resultado"></div>
-<div class="resultado" id="bendaje"></div>
+<pre id="resultado"></pre>
+<pre id="bendaje"></pre>
 
 </div>
 
 <script>
 
+// 👉 TODOS TUS PRODUCTOS
 const productos=[
 
-{name:"PAN DE 500",precio:500,bendaje:true},
-{name:"PAN DE 1.000",precio:1000,bendaje:true},
-{name:"PAN DE 2.000",precio:2000,bendaje:true},
-{name:"PAN DE 3.500",precio:3500,bendaje:false},
+{name:"PAN DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
+{name:"PAN DE 1.000",precio:1000,bendaje:true,img:"https://via.placeholder.com/150"},
+{name:"PAN DE 2.000",precio:2000,bendaje:true,img:"https://via.placeholder.com/150"},
+{name:"PAN DE 3.500",precio:3500,bendaje:true,img:"https://via.placeholder.com/150"},
 
-{name:"PAN AGRIDULCE DE 500",precio:500,bendaje:true},
-{name:"PAN AGRIDULCE DE 1.000",precio:1000,bendaje:true},
+{name:"PAN AGRIDULCE DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
+{name:"PAN AGRIDULCE DE 1.000",precio:1000,bendaje:true,img:"https://via.placeholder.com/150"},
 
-{name:"PAN ROLLO",precio:500,bendaje:true},
+{name:"PAN ROLLO",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
 
-{name:"PAN QUESILLO",precio:1200,bendaje:false},
-{name:"LIBERALES",precio:500,bendaje:false},
-{name:"CAÑAS",precio:500,bendaje:false},
-{name:"PAN COCO",precio:500,bendaje:false},
+{name:"PAN QUESILLO",precio:1200,bendaje:false,img:"https://via.placeholder.com/150"},
+{name:"LIBERALES",precio:500,bendaje:false,img:"https://via.placeholder.com/150"},
+{name:"CAÑAS",precio:500,bendaje:false,img:"https://via.placeholder.com/150"},
+{name:"PAN COCO",precio:500,bendaje:false,img:"https://via.placeholder.com/150"},
 
-{name:"MOGICON DE 500",precio:500,bendaje:true},
-{name:"MOGICON DE 1.200",precio:1200,bendaje:false},
+{name:"MOGICON DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
+{name:"MOGICON DE 1.200",precio:1200,bendaje:false,img:"https://via.placeholder.com/150"},
 
-{name:"ROSCON DE 2.500",precio:2500,bendaje:false},
-{name:"HAWAIANOS",precio:2000,bendaje:false},
-{name:"CROASANES",precio:2000,bendaje:false}
+{name:"ROSCON DE 2.500",precio:2500,bendaje:false,img:"https://via.placeholder.com/150"},
+{name:"HAWAIANOS",precio:2000,bendaje:false,img:"https://via.placeholder.com/150"},
+{name:"CROASANES",precio:2000,bendaje:false,img:"https://via.placeholder.com/150"}
 
 ];
 
-const lista=document.getElementById("lista");
+// 👉 MOSTRAR PRODUCTOS
+const div=document.getElementById("productos");
 
 productos.forEach((p,i)=>{
-lista.innerHTML+=`
-<div class="producto">
-<b>${p.name} ($${p.precio.toLocaleString("es-CO")})</b><br>
+div.innerHTML+=`
+<div class='producto'>
+<img src='${p.img}'>
+<div class='producto-info'>
+<b>${p.name}</b> ($${formato(p.precio)})<br>
 Cantidad:
-<input id="cant${i}" type="number" min="0">
-O dinero:
-<input id="din${i}" type="number" min="0" placeholder="Ej: 5.000">
+<input id='cant${i}' type='number' placeholder='0'>
+
+O Escribe el pedido en dinero:
+<input id='din${i}' type='number' placeholder='Ej: 5.000'>
 </div>
-`;
+</div>`;
 });
 
-function formato(n){
-return n.toLocaleString("es-CO");
+// 👉 FORMATO CON PUNTO DE MIL
+function formato(num){
+return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g,".");
 }
 
+// 👉 CALCULAR
 function calcular(){
 
 let total=0;
-let texto="";
+let texto="CLIENTE: "+document.getElementById("cliente").value+"\n";
+texto+="BARRIO: "+document.getElementById("barrio").value+"\n\n";
+
 let bendajeTotal=0;
 let textoB="";
 
 productos.forEach((p,i)=>{
 
-let cant=document.getElementById("cant"+i).value;
-let din=document.getElementById("din"+i).value;
+let cant=Number(document.getElementById('cant'+i).value);
+let din=Number(document.getElementById('din'+i).value);
 
 let subtotal=0;
 let panes=0;
 
 if(din>0){
-subtotal=Number(din);
+subtotal=din;
 panes=Math.floor(din/p.precio);
 }
 else if(cant>0){
@@ -155,11 +180,12 @@ if(subtotal>0){
 texto+=p.name+" x"+panes+" = $"+formato(subtotal)+"\n";
 total+=subtotal;
 
-if(p.bendaje===true){
+// 👉 SOLO SI TIENE BENDAJE
+if(p.bendaje){
 
 let b=subtotal*0.20;
 
-// 🔵 Redondear al múltiplo MÁS CERCANO del precio del pan
+// 👉 REDONDEAR AL PRECIO DEL PAN
 let panesB=Math.round(b/p.precio);
 let bendajeRedondeado=panesB*p.precio;
 
@@ -168,26 +194,27 @@ bendajeTotal+=bendajeRedondeado;
 textoB+=p.name+" → "+panesB+" panes = $"+formato(bendajeRedondeado)+"\n";
 }
 
-if(b>0){
-bendajeTotal+=b;
-textoB+=p.name+" → "+panesB+" panes = $"+formato(b)+"\n";
 }
+
 }
-}
+
 });
 
-document.getElementById("resultado").innerText=
-"CLIENTE: "+document.getElementById("cliente").value+
-"\nBARRIO: "+document.getElementById("barrio").value+
-"\n\nTOTAL PEDIDO\n"+texto+
-"\n$"+formato(total);
+texto+="\nTOTAL PEDIDO = $"+formato(total);
+textoB+="\nTOTAL BENDAJE 20% = $"+formato(bendajeTotal);
 
-document.getElementById("bendaje").innerText=
-"\nTOTAL BENDAJE 20%\n"+textoB+
-"\n$"+formato(bendajeTotal);
+document.getElementById("resultado").innerText=texto;
+document.getElementById("bendaje").innerText=textoB;
+}
+
+// 👉 ENVIAR PEDIDO (ejemplo WhatsApp)
+function enviar(){
+let mensaje=document.getElementById("resultado").innerText+
+"\n\n"+document.getElementById("bendaje").innerText;
+
+alert("Pedido listo para enviar:\n\n"+mensaje);
 }
 
 </script>
-
 </body>
 </html>
