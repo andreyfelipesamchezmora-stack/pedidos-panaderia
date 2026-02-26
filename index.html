@@ -1,121 +1,94 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pedidos Panadería</title>
-
 <style>
-body{font-family:Arial;background:#f4f4f4;padding:20px}
-.contenedor{background:white;padding:20px;border-radius:10px;max-width:900px;margin:auto}
-.producto{display:flex;gap:15px;border-bottom:1px solid #ddd;padding:10px 0}
-.producto img{width:80px;height:80px;object-fit:cover;border-radius:8px}
-.resumen{background:#eee;padding:10px;margin-top:15px;border-radius:8px}
-button{padding:10px 20px;font-size:16px;margin-top:20px}
-input{width:100px;margin-right:10px}
+body{font-family:Arial;margin:0;padding:10px;background:#f5f5f5}
+.container{max-width:900px;margin:auto;background:white;padding:15px;border-radius:15px}
+.producto{display:flex;gap:10px;margin-bottom:15px;border-bottom:1px solid #ddd;padding-bottom:10px}
+.producto img{width:120px;height:120px;object-fit:cover;border-radius:10px}
+.producto-info{flex:1}
+input{width:100%;padding:5px;margin-top:3px}
+button{width:100%;padding:12px;font-size:18px;background:#28a745;color:white;border:none;border-radius:10px;margin-top:15px}
+@media(max-width:600px){
+.producto{flex-direction:column;align-items:center;text-align:center}
+.producto img{width:180px;height:180px}
+}
 </style>
 </head>
-
 <body>
-<div class="contenedor">
-
-<h1>PEDIDOS PANADERÍA</h1>
-
-Nombre cliente:<br>
-<input id="cliente"><br><br>
-
-Conjunto residencial o Barrio:<br>
-<input id="barrio"><br><br>
-
-<h2>Panes</h2>
-<div id="lista"></div>
-
+<div class="container">
+<h2>Pedido Panadería</h2>
+<div id="productos"></div>
 <button onclick="calcular()">CALCULAR PEDIDO</button>
-
-<div class="resumen">
-<h3>Total Pedido: $<span id="total">0</span></h3>
-<div id="detalle"></div>
-
-<h3>Bendaje 20%</h3>
-<div id="detalleBendaje"></div>
-</div>
-
+<h3 id="resultado"></h3>
+<h3 id="bendaje"></h3>
 </div>
 
 <script>
-
 const productos=[
-{name:"PAN DE 500",precio:500,img:"https://i.imgur.com/pan1.jpg",Bendaje:true},
-{name:"PAN DE 1.000",precio:1000,img:"https://i.imgur.com/pan2.jpg",Bendaje:true},
-{name:"PAN DE 2.000",precio:2000,img:"https://i.imgur.com/pan3.jpg",Bendaje:true},
-{name:"PAN DE 3.500",precio:3500,img:"https://i.imgur.com/pan4.jpg",Bendaje:true},
-{name:"PAN AGRIDULCE DE 500",precio:500,img:"https://i.imgur.com/pan5.jpg",Bendaje:true},
-{name:"PAN AGRIDULCE DE 1.000",precio:1000,img:"https://i.imgur.com/pan6.jpg",Bendaje:true},
-{name:"PAN ROLLO",precio:500,img:"https://i.imgur.com/pan7.jpg",Bendaje:true},
-{name:"MOGICON DE 500",precio:500,img:"https://i.imgur.com/pan8.jpg",Bendaje:true},
-
-{name:"PAN QUESILLO",precio:1200,img:"https://i.imgur.com/pan9.jpg",Bendaje:false},
-{name:"LIBERALES",precio:2000,img:"https://i.imgur.com/pan10.jpg",Bendaje:false},
-{name:"CAÑAS",precio:500,img:"https://i.imgur.com/pan11.jpg",Bendaje:false},
-{name:"PAN COCO",precio:500,img:"https://i.imgur.com/pan12.jpg",Bendaje:false},
-{name:"MOGICON DE 1.200",precio:1200,img:"https://i.imgur.com/pan13.jpg",Bendaje:false},
-{name:"ROSCON DE 2.500",precio:2500,img:"https://i.imgur.com/pan14.jpg",Bendaje:false},
-{name:"HAWAIANOS",precio:2000,img:"https://i.imgur.com/pan15.jpg",Bendaje:false},
-{name:"CROASANES",precio:2000,img:"https://i.imgur.com/pan16.jpg",Bendaje:false}
+{name:"PAN DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
+{name:"PAN DE 1.000",precio:1000,bendaje:true,img:"https://via.placeholder.com/150"},
+{name:"PAN DE 2.000",precio:2000,bendaje:true,img:"https://via.placeholder.com/150"},
+{name:"PAN DE 3.500",precio:3500,bendaje:true,img:"https://via.placeholder.com/150"},
+{name:"PAN AGRIDULCE DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
+{name:"PAN AGRIDULCE DE 1.000",precio:1000,bendaje:true,img:"https://via.placeholder.com/150"},
+{name:"PAN ROLLO",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
+{name:"PAN QUESILLO",precio:1200,bendaje:false,img:"https://via.placeholder.com/150"},
+{name:"LIBERALES",precio:500,bendaje:false,img:"https://via.placeholder.com/150"},
+{name:"CAÑAS",precio:500,bendaje:false,img:"https://via.placeholder.com/150"},
+{name:"PAN COCO",precio:500,bendaje:false,img:"https://via.placeholder.com/150"},
+{name:"MOGICON DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
+{name:"MOGICON DE 1.200",precio:1200,bendaje:false,img:"https://via.placeholder.com/150"},
+{name:"ROSCON DE 2.500",precio:2500,bendaje:false,img:"https://via.placeholder.com/150"},
+{name:"HAWAIANOS",precio:2000,bendaje:false,img:"https://via.placeholder.com/150"},
+{name:"CROASANES",precio:2000,bendaje:false,img:"https://via.placeholder.com/150"}
 ];
 
-const lista=document.getElementById("lista");
-
+const div=document.getElementById("productos");
 productos.forEach((p,i)=>{
-lista.innerHTML+=`
-<div class="producto">
-<img src="${p.img}">
-<div>
+const html=`<div class='producto'>
+<img src='${p.img}'>
+<div class='producto-info'>
 <b>${p.name}</b> ($${p.precio})<br>
-Cantidad: <input type="number" min="0" value="0" id="c${i}">
-<b> O </b>
-Escribe el pedido en dinero:
-<input type="number" min="0" placeholder="Ejemplo 5.000" id="d${i}">
-</div>
-</div>`;
+Cantidad:<input id='cant${i}' type='number' placeholder='0'>
+O escribe el pedido en dinero:<input id='din${i}' type='number' placeholder='Ej: 5.000'>
+</div></div>`;
+div.innerHTML+=html;
 });
 
 function calcular(){
-
 let total=0;
-let detalle="";
-let detalleB="";
+let texto="";
+let bendajeTotal=0;
+let textoB="";
 
 productos.forEach((p,i)=>{
+let cant=document.getElementById('cant'+i).value;
+let din=document.getElementById('din'+i).value;
+let subtotal=0;
+let panes=0;
 
-let cant=parseInt(document.getElementById("c"+i).value)||0;
-let dinero=parseInt(document.getElementById("d"+i).value)||0;
+if(din>0){subtotal=Number(din); panes=Math.floor(din/p.precio);} 
+else if(cant>0){subtotal=cant*p.precio; panes=cant;}
 
-if(dinero>0){
-cant=Math.floor(dinero/p.precio);
-}
-
-if(cant>0){
-
-let subtotal=cant*p.precio;
+if(subtotal>0){
+texto+=p.name+" x"+panes+" = $"+subtotal+"<br>";
 total+=subtotal;
 
-detalle+=`<br>${p.name} → ${cant} panes = $${subtotal}`;
-
-if(p.Bendaje){
+if(p.bendaje){
 let b=subtotal*0.20;
-detalleB+=`<br>${p.name} → ${cant} panes → Bendaje $${Math.round(b)}`;
+bendajeTotal+=b;
+textoB+=p.name+" x"+panes+" = $"+b+"<br>";
 }
-
 }
-
 });
 
-document.getElementById("total").innerText=total;
-document.getElementById("detalle").innerHTML=detalle;
-document.getElementById("detalleBendaje").innerHTML=detalleB;
-
+document.getElementById("resultado").innerHTML="TOTAL PEDIDO:<br>"+texto+"<b>$"+total+"</b>";
+document.getElementById("bendaje").innerHTML="TOTAL BENDAJE 20%:<br>"+textoB+"<b>$"+bendajeTotal+"</b>";
 }
-
 </script>
 </body>
 </html>
