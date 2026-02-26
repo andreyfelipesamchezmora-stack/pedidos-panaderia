@@ -119,6 +119,54 @@ document.getElementById("bendaje").innerHTML=
 // 2) Google Sheets
 // 3) Un panel administrador privado
 }
+function calcular(){
+let cliente=document.getElementById("cliente").value;
+let barrio=document.getElementById("barrio").value;
+
+let total=0;
+let texto="";
+let bendajeTotal=0;
+let textoB="";
+
+productos.forEach((p,i)=>{
+let cant=Number(document.getElementById('cant'+i).value);
+let din=Number(document.getElementById('din'+i).value);
+let subtotal=0;
+let panes=0;
+
+if(din>0){subtotal=din; panes=Math.floor(din/p.precio);} 
+else if(cant>0){subtotal=cant*p.precio; panes=cant;}
+
+if(subtotal>0){
+texto+=p.name+" x"+panes+" = $"+subtotal+"<br>";
+total+=subtotal;
+
+if(p.bendaje){
+let b=subtotal*0.20;
+let panesB=Math.floor(b/p.precio);
+bendajeTotal+=b;
+textoB+=p.name+" → Bendaje: "+panesB+" panes = $"+b+"<br>";
+}
+}
+});
+
+document.getElementById("resultado").innerHTML=
+"CLIENTE: "+cliente+"<br>BARRIO: "+barrio+
+"<br><br>DETALLE PEDIDO:<br>"+texto+
+"<br><b>TOTAL FINAL PEDIDO: $"+total+"</b>";
+
+
+document.getElementById("bendaje").innerHTML=
+"<br>DETALLE BENDAJE 20%:<br>"+textoB+
+"<br><b>TOTAL BENDAJE: $"+bendajeTotal+"</b>";
+}
+
+function enviar(){
+alert("Revisa el pedido antes de enviarlo.
+Si todo está correcto, puedes copiar el resumen y enviarlo por WhatsApp.");
+}
 </script>
+
+<button onclick="enviar()">ENVIAR PEDIDO - ASEGÚRESE QUE ESTÁ BIEN</button>
 </body>
 </html>
