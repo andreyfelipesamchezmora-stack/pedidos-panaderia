@@ -5,45 +5,16 @@
 <title>Pedidos Panadería</title>
 
 <style>
-body{
-    font-family: Arial;
-    background:#f4f4f4;
-    padding:20px;
-}
-
-.contenedor{
-    background:white;
-    padding:20px;
-    border-radius:10px;
-    max-width:900px;
-    margin:auto;
-}
-
-.producto{
-    display:flex;
-    align-items:center;
-    gap:15px;
-    border-bottom:1px solid #ddd;
-    padding:10px 0;
-}
-
-.producto img{
-    width:90px;
-    height:90px;
-    object-fit:cover;
-    border-radius:8px;
-}
-
-button{
-    padding:10px 20px;
-    font-size:16px;
-    margin-top:20px;
-}
+body{font-family:Arial;background:#f4f4f4;padding:20px}
+.contenedor{background:white;padding:20px;border-radius:10px;max-width:900px;margin:auto}
+.producto{display:flex;gap:15px;border-bottom:1px solid #ddd;padding:10px 0}
+.producto img{width:80px;height:80px;object-fit:cover;border-radius:8px}
+.resumen{background:#eee;padding:10px;margin-top:15px;border-radius:8px}
+button{padding:10px 20px;font-size:16px;margin-top:20px}
 </style>
 </head>
 
 <body>
-
 <div class="contenedor">
 
 <h1>PEDIDOS PANADERÍA</h1>
@@ -55,20 +26,23 @@ Conjunto residencial o Barrio:<br>
 <input id="barrio"><br><br>
 
 <h2>Panes</h2>
-
 <div id="lista"></div>
 
 <button onclick="calcular()">CALCULAR PEDIDO</button>
 
-<h2>Total Pedido: $<span id="total">0</span></h2>
-<h2>Bandeja 20%: $<span id="bandeja">0</span></h2>
+<div class="resumen">
+<h3>Total Pedido: $<span id="total">0</span></h3>
+<div id="detalle"></div>
+
+<h3>Bandeja 20%</h3>
+<div id="detalleBandeja"></div>
+</div>
 
 </div>
 
 <script>
 
-const productos = [
-
+const productos=[
 {name:"PAN DE 500",precio:500,img:"https://i.imgur.com/pan1.jpg",bandeja:true},
 {name:"PAN DE 1.000",precio:1000,img:"https://i.imgur.com/pan2.jpg",bandeja:true},
 {name:"PAN DE 2.000",precio:2000,img:"https://i.imgur.com/pan3.jpg",bandeja:true},
@@ -86,7 +60,6 @@ const productos = [
 {name:"ROSCON DE 2.500",precio:2500,img:"https://i.imgur.com/pan14.jpg",bandeja:false},
 {name:"HAWAIANOS",precio:3000,img:"https://i.imgur.com/pan15.jpg",bandeja:false},
 {name:"CROASANES",precio:2500,img:"https://i.imgur.com/pan16.jpg",bandeja:false}
-
 ];
 
 const lista=document.getElementById("lista");
@@ -98,6 +71,7 @@ lista.innerHTML+=`
 <div>
 <b>${p.name}</b> ($${p.precio})<br>
 Cantidad: <input type="number" min="0" value="0" id="c${i}">
+o Dinero: <input type="number" min="0" value="0" id="d${i}">
 </div>
 </div>`;
 });
@@ -105,27 +79,40 @@ Cantidad: <input type="number" min="0" value="0" id="c${i}">
 function calcular(){
 
 let total=0;
-let bandeja=0;
+let detalle="";
+let detalleB="";
 
 productos.forEach((p,i)=>{
 
-let cant=document.getElementById("c"+i).value || 0;
-let subtotal=cant*p.precio;
+let cant=parseInt(document.getElementById("c"+i).value)||0;
+let dinero=parseInt(document.getElementById("d"+i).value)||0;
 
+if(dinero>0){
+cant=Math.floor(dinero/p.precio);
+}
+
+if(cant>0){
+
+let subtotal=cant*p.precio;
 total+=subtotal;
 
+detalle+=`<br>${p.name} → ${cant} panes = $${subtotal}`;
+
 if(p.bandeja){
-bandeja+=subtotal*0.20;
+let b=subtotal*0.20;
+detalleB+=`<br>${p.name} → ${cant} panes → Bandeja $${Math.round(b)}`;
+}
+
 }
 
 });
 
 document.getElementById("total").innerText=total;
-document.getElementById("bandeja").innerText=Math.round(bandeja);
+document.getElementById("detalle").innerHTML=detalle;
+document.getElementById("detalleBandeja").innerHTML=detalleB;
 
 }
 
 </script>
-
 </body>
 </html>
