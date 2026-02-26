@@ -35,8 +35,8 @@ Conjunto residencial o Barrio:<br>
 <h3>Total Pedido: $<span id="total">0</span></h3>
 <div id="detalle"></div>
 
-<h3>Bandeja 20%</h3>
-<div id="detalleBandeja"></div>
+<h3>Bendaje 20%</h3>
+<div id="detalleBendaje"></div>
 </div>
 
 </div>
@@ -44,23 +44,23 @@ Conjunto residencial o Barrio:<br>
 <script>
 
 const productos=[
-{name:"PAN DE 500",precio:500,img:"https://i.imgur.com/pan1.jpg",bandeja:true},
-{name:"PAN DE 1.000",precio:1000,img:"https://i.imgur.com/pan2.jpg",bandeja:true},
-{name:"PAN DE 2.000",precio:2000,img:"https://i.imgur.com/pan3.jpg",bandeja:true},
-{name:"PAN DE 3.500",precio:3500,img:"https://i.imgur.com/pan4.jpg",bandeja:true},
-{name:"PAN AGRIDULCE DE 500",precio:500,img:"https://i.imgur.com/pan5.jpg",bandeja:true},
-{name:"PAN AGRIDULCE DE 1.000",precio:1000,img:"https://i.imgur.com/pan6.jpg",bandeja:true},
-{name:"PAN ROLLO",precio:2000,img:"https://i.imgur.com/pan7.jpg",bandeja:true},
-{name:"MOGICON DE 500",precio:500,img:"https://i.imgur.com/pan8.jpg",bandeja:true},
+{name:"PAN DE 500",precio:500,img:"https://i.imgur.com/pan1.jpg",Bendaje:true},
+{name:"PAN DE 1.000",precio:1000,img:"https://i.imgur.com/pan2.jpg",Bendaje:true},
+{name:"PAN DE 2.000",precio:2000,img:"https://i.imgur.com/pan3.jpg",Bendaje:true},
+{name:"PAN DE 3.500",precio:3500,img:"https://i.imgur.com/pan4.jpg",Bendaje:true},
+{name:"PAN AGRIDULCE DE 500",precio:500,img:"https://i.imgur.com/pan5.jpg",Bendaje:true},
+{name:"PAN AGRIDULCE DE 1.000",precio:1000,img:"https://i.imgur.com/pan6.jpg",Bendaje:true},
+{name:"PAN ROLLO",precio:2000,img:"https://i.imgur.com/pan7.jpg",Bendaje:true},
+{name:"MOGICON DE 500",precio:500,img:"https://i.imgur.com/pan8.jpg",Bendaje:true},
 
-{name:"PAN QUESILLO",precio:2500,img:"https://i.imgur.com/pan9.jpg",bandeja:false},
-{name:"LIBERALES",precio:2000,img:"https://i.imgur.com/pan10.jpg",bandeja:false},
-{name:"CAÑAS",precio:2000,img:"https://i.imgur.com/pan11.jpg",bandeja:false},
-{name:"PAN COCO",precio:1500,img:"https://i.imgur.com/pan12.jpg",bandeja:false},
-{name:"MOGICON DE 1.200",precio:1200,img:"https://i.imgur.com/pan13.jpg",bandeja:false},
-{name:"ROSCON DE 2.500",precio:2500,img:"https://i.imgur.com/pan14.jpg",bandeja:false},
-{name:"HAWAIANOS",precio:3000,img:"https://i.imgur.com/pan15.jpg",bandeja:false},
-{name:"CROASANES",precio:2500,img:"https://i.imgur.com/pan16.jpg",bandeja:false}
+{name:"PAN QUESILLO",precio:2500,img:"https://i.imgur.com/pan9.jpg",Bendaje:false},
+{name:"LIBERALES",precio:2000,img:"https://i.imgur.com/pan10.jpg",Bendaje:false},
+{name:"CAÑAS",precio:2000,img:"https://i.imgur.com/pan11.jpg",Bendaje:false},
+{name:"PAN COCO",precio:1500,img:"https://i.imgur.com/pan12.jpg",Bendaje:false},
+{name:"MOGICON DE 1.200",precio:1200,img:"https://i.imgur.com/pan13.jpg",Bendaje:false},
+{name:"ROSCON DE 2.500",precio:2500,img:"https://i.imgur.com/pan14.jpg",Bendaje:false},
+{name:"HAWAIANOS",precio:3000,img:"https://i.imgur.com/pan15.jpg",Bendaje:false},
+{name:"CROASANES",precio:2500,img:"https://i.imgur.com/pan16.jpg",Bendaje:false}
 ];
 
 const lista=document.getElementById("lista");
@@ -74,7 +74,7 @@ lista.innerHTML+=`
 Cantidad: <input type="number" min="0" value="0" id="c${i}">
 <b> O </b>
 Escribe el pedido en dinero:
-<input type="number" min="0" placeholder="Ejemplo" id="d${i}">
+<input type="number" min="0" placeholder="Ejemplo 5.000" id="d${i}">
 </div>
 </div>`;
 });
@@ -101,9 +101,9 @@ total+=subtotal;
 
 detalle+=`<br>${p.name} → ${cant} panes = $${subtotal}`;
 
-if(p.bandeja){
+if(p.Bendaje){
 let b=subtotal*0.20;
-detalleB+=`<br>${p.name} → ${cant} panes → Bandeja $${Math.round(b)}`;
+detalleB+=`<br>${p.name} → ${cant} panes → Bendaje $${Math.round(b)}`;
 }
 
 }
@@ -112,7 +112,7 @@ detalleB+=`<br>${p.name} → ${cant} panes → Bandeja $${Math.round(b)}`;
 
 document.getElementById("total").innerText=total;
 document.getElementById("detalle").innerHTML=detalle;
-document.getElementById("detalleBandeja").innerHTML=detalleB;
+document.getElementById("detalleBendaje").innerHTML=detalleB;
 
 }
 
