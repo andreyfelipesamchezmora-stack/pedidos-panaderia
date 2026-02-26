@@ -4,37 +4,89 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pedidos Panadería</title>
+
 <style>
-body{font-family:Arial;margin:0;padding:10px;background:#f5f5f5}
-.container{max-width:900px;margin:auto;background:white;padding:15px;border-radius:15px}
-.producto{display:flex;gap:10px;margin-bottom:15px;border-bottom:1px solid #ddd;padding-bottom:10px}
-.producto img{width:120px;height:120px;object-fit:cover;border-radius:10px}
+body{
+font-family:Arial;
+margin:0;
+padding:10px;
+background:#f5f5f5;
+}
+
+.container{
+max-width:900px;
+margin:auto;
+background:white;
+padding:15px;
+border-radius:15px;
+}
+
+.producto{
+display:flex;
+gap:10px;
+margin-bottom:15px;
+border-bottom:1px solid #ddd;
+padding-bottom:10px;
+}
+
+.producto img{
+width:140px;
+height:140px;
+object-fit:cover;
+border-radius:12px;
+}
+
 .producto-info{flex:1}
-input{width:100%;padding:6px;margin-top:4px;margin-bottom:6px}
-button{width:100%;padding:12px;font-size:18px;background:#28a745;color:white;border:none;border-radius:10px;margin-top:15px}
-.cliente-box{margin-bottom:20px;padding-bottom:10px;border-bottom:2px solid #eee}
+
+input{
+width:100%;
+padding:6px;
+margin-top:4px;
+}
+
+button{
+width:100%;
+padding:14px;
+font-size:18px;
+background:#28a745;
+color:white;
+border:none;
+border-radius:10px;
+margin-top:15px;
+}
+
 @media(max-width:600px){
-.producto{flex-direction:column;align-items:center;text-align:center}
-.producto img{width:200px;height:200px}
+.producto{
+flex-direction:column;
+align-items:center;
+text-align:center;
+}
+.producto img{
+width:200px;
+height:200px;
+}
 }
 </style>
 </head>
+
 <body>
+
 <div class="container">
 
 <h2>Pedido Panadería</h2>
 
-<div class="cliente-box">
-<b>Nombre del Cliente:</b>
-<input type="text" id="cliente" placeholder="Ej: Juan Pérez">
+<label>Nombre del Cliente:</label>
+<input id="cliente" placeholder="Ej: Juan Pérez">
 
-<b>Conjunto residencial o Barrio:</b>
-<input type="text" id="barrio" placeholder="Ej: Conjunto Los Almendros">
-</div>
+<label>Conjunto residencial o Barrio:</label>
+<input id="barrio" placeholder="Ej: Conjunto Los Almendros">
+
+<h3>Panes</h3>
 
 <div id="productos"></div>
 
 <button onclick="calcular()">CALCULAR PEDIDO</button>
+<button onclick="alert('Pedido enviado ✔️')">ENVIAR PEDIDO - ASEGÚRESE QUE ESTÁ BIEN</button>
 
 <h3 id="resultado"></h3>
 <h3 id="bendaje"></h3>
@@ -42,42 +94,54 @@ button{width:100%;padding:12px;font-size:18px;background:#28a745;color:white;bor
 </div>
 
 <script>
+
 const productos=[
-{name:"PAN DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
-{name:"PAN DE 1.000",precio:1000,bendaje:true,img:"https://via.placeholder.com/150"},
-{name:"PAN DE 2.000",precio:2000,bendaje:true,img:"https://via.placeholder.com/150"},
-{name:"PAN DE 3.500",precio:3500,bendaje:true,img:"https://via.placeholder.com/150"},
-{name:"PAN AGRIDULCE DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
-{name:"PAN AGRIDULCE DE 1.000",precio:1000,bendaje:true,img:"https://via.placeholder.com/150"},
-{name:"PAN ROLLO",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
-{name:"PAN QUESILLO",precio:1200,bendaje:false,img:"https://via.placeholder.com/150"},
-{name:"LIBERALES",precio:500,bendaje:false,img:"https://via.placeholder.com/150"},
-{name:"CAÑAS",precio:500,bendaje:false,img:"https://via.placeholder.com/150"},
-{name:"PAN COCO",precio:500,bendaje:false,img:"https://via.placeholder.com/150"},
-{name:"MOGICON DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
-{name:"MOGICON DE 1.200",precio:1200,bendaje:false,img:"https://via.placeholder.com/150"},
-{name:"ROSCON DE 2.500",precio:2500,bendaje:false,img:"https://via.placeholder.com/150"},
-{name:"HAWAIANOS",precio:2000,bendaje:false,img:"https://via.placeholder.com/150"},
-{name:"CROASANES",precio:2000,bendaje:false,img:"https://via.placeholder.com/150"}
+
+{name:"PAN DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/200"},
+{name:"PAN DE 1.000",precio:1000,bendaje:true,img:"https://via.placeholder.com/200"},
+{name:"PAN DE 2.000",precio:2000,bendaje:true,img:"https://via.placeholder.com/200"},
+{name:"PAN DE 3.500",precio:3500,bendaje:true,img:"https://via.placeholder.com/200"},
+{name:"PAN AGRIDULCE DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/200"},
+{name:"PAN AGRIDULCE DE 1.000",precio:1000,bendaje:true,img:"https://via.placeholder.com/200"},
+{name:"PAN ROLLO",precio:500,bendaje:true,img:"https://via.placeholder.com/200"},
+{name:"PAN QUESILLO",precio:1200,bendaje:false,img:"https://via.placeholder.com/200"},
+{name:"LIBERALES",precio:500,bendaje:false,img:"https://via.placeholder.com/200"},
+{name:"CAÑAS",precio:500,bendaje:false,img:"https://via.placeholder.com/200"},
+{name:"PAN COCO",precio:500,bendaje:false,img:"https://via.placeholder.com/200"},
+{name:"MOGICON DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/200"},
+{name:"MOGICON DE 1.200",precio:1200,bendaje:false,img:"https://via.placeholder.com/200"},
+{name:"ROSCON DE 2.500",precio:2500,bendaje:false,img:"https://via.placeholder.com/200"},
+{name:"HAWAIANOS",precio:2000,bendaje:false,img:"https://via.placeholder.com/200"},
+{name:"CROASANES",precio:2000,bendaje:false,img:"https://via.placeholder.com/200"}
+
 ];
 
 const div=document.getElementById("productos");
+
 productos.forEach((p,i)=>{
-const html=`<div class='producto'>
-<img src='${p.img}'>
-<div class='producto-info'>
+
+div.innerHTML+=`
+<div class="producto">
+
+<img src="${p.img}">
+
+<div class="producto-info">
+
 <b>${p.name}</b> ($${p.precio})<br>
+
 Cantidad:
-<input id='cant${i}' type='number' placeholder='0'>
+<input id="cant${i}" type="number" placeholder="0">
+
 O escribe el pedido en dinero:
-<input id='din${i}' type='number' placeholder='Ej: 5.000'>
-</div></div>`;
-div.innerHTML+=html;
+<input id="din${i}" type="number" placeholder="Ejemplo 5.000">
+
+</div>
+</div>
+`;
+
 });
 
 function calcular(){
-let cliente=document.getElementById("cliente").value;
-let barrio=document.getElementById("barrio").value;
 
 let total=0;
 let texto="";
@@ -85,88 +149,52 @@ let bendajeTotal=0;
 let textoB="";
 
 productos.forEach((p,i)=>{
+
 let cant=document.getElementById('cant'+i).value;
 let din=document.getElementById('din'+i).value;
+
 let subtotal=0;
 let panes=0;
 
-if(din>0){subtotal=Number(din); panes=Math.floor(din/p.precio);} 
-else if(cant>0){subtotal=cant*p.precio; panes=cant;}
+if(din>0){
+subtotal=Number(din);
+panes=Math.floor(din/p.precio);
+}
+else if(cant>0){
+subtotal=cant*p.precio;
+panes=cant;
+}
 
 if(subtotal>0){
+
 texto+=p.name+" x"+panes+" = $"+subtotal+"<br>";
 total+=subtotal;
 
 if(p.bendaje){
-let b=subtotal*0.20;
-bendajeTotal+=b;
-textoB+=p.name+" x"+panes+" = $"+b+"<br>";
-}
-}
-});
 
-document.getElementById("resultado").innerHTML=
-"CLIENTE: "+cliente+"<br>BARRIO: "+barrio+
-"<br><br>TOTAL PEDIDO:<br>"+texto+"<b>$"+total+"</b>";
-
-
-document.getElementById("bendaje").innerHTML=
-"TOTAL BENDAJE 20%:<br>"+textoB+"<b>$"+bendajeTotal+"</b>";
-
-// 👉 AQUÍ ES DONDE LUEGO SE ENVÍA AL PANEL
-// En el siguiente paso podemos conectar esta información a:
-// 1) Firebase (base de datos en tiempo real)
-// 2) Google Sheets
-// 3) Un panel administrador privado
-}
-function calcular(){
-let cliente=document.getElementById("cliente").value;
-let barrio=document.getElementById("barrio").value;
-
-let total=0;
-let texto="";
-let bendajeTotal=0;
-let textoB="";
-
-productos.forEach((p,i)=>{
-let cant=Number(document.getElementById('cant'+i).value);
-let din=Number(document.getElementById('din'+i).value);
-let subtotal=0;
-let panes=0;
-
-if(din>0){subtotal=din; panes=Math.floor(din/p.precio);} 
-else if(cant>0){subtotal=cant*p.precio; panes=cant;}
-
-if(subtotal>0){
-texto+=p.name+" x"+panes+" = $"+subtotal+"<br>";
-total+=subtotal;
-
-if(p.bendaje){
 let b=subtotal*0.20;
 let panesB=Math.floor(b/p.precio);
+
 bendajeTotal+=b;
-textoB+=p.name+" → Bendaje: "+panesB+" panes = $"+b+"<br>";
+textoB+=p.name+" → "+panesB+" panes = $"+b+"<br>";
+
 }
 }
 });
 
 document.getElementById("resultado").innerHTML=
-"CLIENTE: "+cliente+"<br>BARRIO: "+barrio+
-"<br><br>DETALLE PEDIDO:<br>"+texto+
-"<br><b>TOTAL FINAL PEDIDO: $"+total+"</b>";
-
+"<b>CLIENTE:</b> "+document.getElementById("cliente").value+
+"<br><b>BARRIO:</b> "+document.getElementById("barrio").value+
+"<br><br><b>TOTAL PEDIDO:</b><br>"+texto+
+"<br><b>$"+total+"</b>";
 
 document.getElementById("bendaje").innerHTML=
-"<br>DETALLE BENDAJE 20%:<br>"+textoB+
-"<br><b>TOTAL BENDAJE: $"+bendajeTotal+"</b>";
+"<br><b>TOTAL BENDAJE 20%:</b><br>"+textoB+
+"<br><b>$"+bendajeTotal+"</b>";
+
 }
 
-function enviar(){
-alert("Revisa el pedido antes de enviarlo.
-Si todo está correcto, puedes copiar el resumen y enviarlo por WhatsApp.");
-}
 </script>
 
-<button onclick="enviar()">ENVIAR PEDIDO - ASEGÚRESE QUE ESTÁ BIEN</button>
 </body>
 </html>
