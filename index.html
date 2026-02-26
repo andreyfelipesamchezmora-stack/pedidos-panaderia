@@ -15,7 +15,7 @@ body{
     background:white;
     padding:20px;
     border-radius:10px;
-    max-width:700px;
+    max-width:800px;
 }
 
 .titulo{
@@ -25,13 +25,14 @@ body{
 }
 
 .logo{
-    width:80px;
+    width:90px;
 }
 
-input, select{
-    padding:5px;
-    margin:5px 0;
-    width:250px;
+.producto{
+    border:1px solid #ddd;
+    padding:10px;
+    margin:10px 0;
+    border-radius:8px;
 }
 </style>
 </head>
@@ -43,11 +44,12 @@ input, select{
 <div class="titulo">
 <h1>PEDIDOS PANADERÍA</h1>
 
-<!-- LOGO -->
-<img src="logo.png" class="logo">
+<!-- LOGO DESDE INTERNET -->
+<img id="logo" class="logo">
 </div>
 
-<br>
+Link Logo Internet:<br>
+<input type="text" oninput="document.getElementById('logo').src=this.value"><br><br>
 
 Nombre cliente:<br>
 <input type="text"><br><br>
@@ -55,40 +57,84 @@ Nombre cliente:<br>
 Conjunto residencial o Barrio:<br>
 <input type="text"><br><br>
 
-Cantidad:<br>
-<input type="number"><br><br>
-
-<!-- OPCION UNIDAD O DINERO -->
 Tipo de pedido:<br>
-<select id="tipoPedido">
-<option value="dinero">Pedido en Dinero</option>
-<option value="unidad">Pedido en Unidades</option>
-</select><br>
+<select>
+<option>Pedido en Dinero</option>
+<option>Pedido en Unidades</option>
+</select><br><br>
 
-Valor pedido:<br>
-<input type="number" id="pedido" oninput="calcularBandeja()"><br>
+Valor pedido:
+<input type="number" id="pedido" oninput="calcularBandejaGeneral()"><br>
 
-Bandeja 20% (NO SUMADO):<br>
-<input type="text" id="bandeja" readonly><br><br>
+Bandeja 20% SOLO SI APLICA:
+<input type="text" id="bandejaGeneral" readonly><br><br>
 
-<h3>Panes por separado</h3>
+<h2>Panes</h2>
 
-Pan de 500: <input type="number"><br>
-Pan de 1.000: <input type="number"><br>
-Pan de 2.000: <input type="number"><br>
-Pan de 3.500: <input type="number"><br>
-Pan Agridulce 500: <input type="number"><br>
-Pan Agridulce 1.000: <input type="number"><br>
-Pan Rollo: <input type="number"><br>
-Mogicón 500: <input type="number"><br>
+<!-- PRODUCTOS -->
+<div class="producto">
+Pan de 500 <br>
+Cantidad: <input type="number" class="cantidad"><br>
+Link Imagen: <input type="text" class="imgLink"><br>
+Aplica 20%? <input type="checkbox" class="aplica">
+</div>
+
+<div class="producto">
+Pan de 1.000 <br>
+Cantidad: <input type="number" class="cantidad"><br>
+Link Imagen: <input type="text" class="imgLink"><br>
+Aplica 20%? <input type="checkbox" class="aplica">
+</div>
+
+<div class="producto">
+Pan de 2.000 <br>
+Cantidad: <input type="number" class="cantidad"><br>
+Link Imagen: <input type="text" class="imgLink"><br>
+Aplica 20%? <input type="checkbox" class="aplica">
+</div>
+
+<div class="producto">
+Pan de 3.500 <br>
+Cantidad: <input type="number" class="cantidad"><br>
+Link Imagen: <input type="text" class="imgLink"><br>
+Aplica 20%? <input type="checkbox" class="aplica">
+</div>
+
+<div class="producto">
+Pan Agridulce 500 <br>
+Cantidad: <input type="number"><br>
+Link Imagen: <input type="text"><br>
+Aplica 20%? <input type="checkbox">
+</div>
+
+<div class="producto">
+Pan Agridulce 1.000 <br>
+Cantidad: <input type="number"><br>
+Link Imagen: <input type="text"><br>
+Aplica 20%? <input type="checkbox">
+</div>
+
+<div class="producto">
+Pan Rollo <br>
+Cantidad: <input type="number"><br>
+Link Imagen: <input type="text"><br>
+Aplica 20%? <input type="checkbox">
+</div>
+
+<div class="producto">
+Mogicón 500 <br>
+Cantidad: <input type="number"><br>
+Link Imagen: <input type="text"><br>
+Aplica 20%? <input type="checkbox">
+</div>
 
 </div>
 
 <script>
-function calcularBandeja(){
+function calcularBandejaGeneral(){
     let pedido = document.getElementById("pedido").value;
     let bandeja = pedido * 0.20;
-    document.getElementById("bandeja").value = bandeja;
+    document.getElementById("bandejaGeneral").value = bandeja;
 }
 </script>
 
