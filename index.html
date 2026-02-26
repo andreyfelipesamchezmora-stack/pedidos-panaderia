@@ -1,102 +1,95 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-  <title>Pedidos Panadería</title>
-  <style>
-    body { font-family: Arial; padding:20px }
-    .producto { border:1px solid #ccc; padding:10px; margin:10px 0 }
-    img { width:120px; display:block; margin-bottom:5px }
-  </style>
+<meta charset="UTF-8">
+<title>Pedidos Panadería</title>
+
+<style>
+body{
+    font-family: Arial;
+    background:#f2f2f2;
+    padding:20px;
+}
+
+.contenedor{
+    background:white;
+    padding:20px;
+    border-radius:10px;
+    max-width:700px;
+}
+
+.titulo{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+}
+
+.logo{
+    width:80px;
+}
+
+input, select{
+    padding:5px;
+    margin:5px 0;
+    width:250px;
+}
+</style>
 </head>
 
 <body>
 
+<div class="contenedor">
+
+<div class="titulo">
 <h1>PEDIDOS PANADERÍA</h1>
 
-<label>Nombre cliente:</label>
-<input id="cliente"><br><br>
+<!-- LOGO -->
+<img src="logo.png" class="logo">
+</div>
 
-<div id="productos"></div>
+<br>
 
-<button onclick="calcular()">Calcular Pedido</button>
+Nombre cliente:<br>
+<input type="text"><br><br>
 
-<h2 id="resultado"></h2>
+Conjunto residencial o Barrio:<br>
+<input type="text"><br><br>
+
+Cantidad:<br>
+<input type="number"><br><br>
+
+<!-- OPCION UNIDAD O DINERO -->
+Tipo de pedido:<br>
+<select id="tipoPedido">
+<option value="dinero">Pedido en Dinero</option>
+<option value="unidad">Pedido en Unidades</option>
+</select><br>
+
+Valor pedido:<br>
+<input type="number" id="pedido" oninput="calcularBandeja()"><br>
+
+Bandeja 20% (NO SUMADO):<br>
+<input type="text" id="bandeja" readonly><br><br>
+
+<h3>Panes por separado</h3>
+
+Pan de 500: <input type="number"><br>
+Pan de 1.000: <input type="number"><br>
+Pan de 2.000: <input type="number"><br>
+Pan de 3.500: <input type="number"><br>
+Pan Agridulce 500: <input type="number"><br>
+Pan Agridulce 1.000: <input type="number"><br>
+Pan Rollo: <input type="number"><br>
+Mogicón 500: <input type="number"><br>
+
+</div>
 
 <script>
-
-// 👉 LISTA DE PRODUCTOS (puedes cambiar precios)
-let productos = [
- {nombre:"PAN DE 500", precio:500, img:""},
- {nombre:"PAN DE 1.000", precio:1000, img:""},
- {nombre:"PAN DE 2.000", precio:2000, img:""},
- {nombre:"PAN DE 3.500", precio:3500, img:""},
- {nombre:"PAN AGRIDULCE DE 500", precio:500, img:""},
- {nombre:"PAN AGRIDULCE DE 1.000", precio:1000, img:""},
- {nombre:"PAN ROLLO", precio:1500, img:""},
- {nombre:"PAN QUESILLO", precio:1500, img:""},
- {nombre:"LIBERALES", precio:1200, img:""},
- {nombre:"CAÑAS", precio:1200, img:""},
- {nombre:"PAN COCO", precio:1500, img:""},
- {nombre:"MOGICON DE 500", precio:500, img:""},
- {nombre:"MOGICON DE 1.200", precio:1200, img:""},
- {nombre:"ROSCON DE 2.500", precio:2500, img:""},
- {nombre:"HAWAIANOS", precio:2000, img:""},
- {nombre:"CROASANES", precio:2000, img:""}
-];
-
-// 👉 MOSTRAR PRODUCTOS
-let contenedor = document.getElementById("productos");
-
-productos.forEach((p,i)=>{
-
-  contenedor.innerHTML += `
-  <div class="producto">
-
-    <img src="${p.img}" onerror="this.style.display='none'">
-
-    <b>${p.nombre}</b> ($${p.precio})
-
-    <br>LINK IMAGEN:
-    <input id="img${i}" placeholder="Pega link imagen">
-
-    <br>Cantidad:
-    <input type="number" id="cant${i}">
-
-    <br>Escribe el pedido en dinero:
-    <input id="val${i}" placeholder="Ej: 5000">
-
-  </div>`;
-});
-
-// 👉 CALCULAR PEDIDO
-function calcular(){
-
-  let totalGeneral = 0;
-  let texto = "PEDIDO:\n";
-
-  productos.forEach((p,i)=>{
-
-    let cantidad = document.getElementById("cant"+i).value;
-    let valor = document.getElementById("val"+i).value;
-    let imgLink = document.getElementById("img"+i).value;
-
-    if(imgLink) p.img = imgLink;
-
-    if(valor){
-      cantidad = Math.floor(valor / p.precio);
-    }
-
-    if(cantidad > 0){
-      let total = cantidad * p.precio;
-      totalGeneral += total;
-      texto += `${p.nombre} x${cantidad} = $${total}\n`;
-    }
-  });
-
-  texto += `\nTOTAL = $${totalGeneral}`;
-  document.getElementById("resultado").innerText = texto;
+function calcularBandeja(){
+    let pedido = document.getElementById("pedido").value;
+    let bandeja = pedido * 0.20;
+    document.getElementById("bandeja").value = bandeja;
 }
-
 </script>
 
 </body>
