@@ -10,21 +10,35 @@ body{font-family:Arial;margin:0;padding:10px;background:#f5f5f5}
 .producto{display:flex;gap:10px;margin-bottom:15px;border-bottom:1px solid #ddd;padding-bottom:10px}
 .producto img{width:120px;height:120px;object-fit:cover;border-radius:10px}
 .producto-info{flex:1}
-input{width:100%;padding:5px;margin-top:3px}
+input{width:100%;padding:6px;margin-top:4px;margin-bottom:6px}
 button{width:100%;padding:12px;font-size:18px;background:#28a745;color:white;border:none;border-radius:10px;margin-top:15px}
+.cliente-box{margin-bottom:20px;padding-bottom:10px;border-bottom:2px solid #eee}
 @media(max-width:600px){
 .producto{flex-direction:column;align-items:center;text-align:center}
-.producto img{width:180px;height:180px}
+.producto img{width:200px;height:200px}
 }
 </style>
 </head>
 <body>
 <div class="container">
+
 <h2>Pedido Panadería</h2>
+
+<div class="cliente-box">
+<b>Nombre del Cliente:</b>
+<input type="text" id="cliente" placeholder="Ej: Juan Pérez">
+
+<b>Conjunto residencial o Barrio:</b>
+<input type="text" id="barrio" placeholder="Ej: Conjunto Los Almendros">
+</div>
+
 <div id="productos"></div>
+
 <button onclick="calcular()">CALCULAR PEDIDO</button>
+
 <h3 id="resultado"></h3>
 <h3 id="bendaje"></h3>
+
 </div>
 
 <script>
@@ -53,13 +67,18 @@ const html=`<div class='producto'>
 <img src='${p.img}'>
 <div class='producto-info'>
 <b>${p.name}</b> ($${p.precio})<br>
-Cantidad:<input id='cant${i}' type='number' placeholder='0'>
-O escribe el pedido en dinero:<input id='din${i}' type='number' placeholder='Ej: 5.000'>
+Cantidad:
+<input id='cant${i}' type='number' placeholder='0'>
+O escribe el pedido en dinero:
+<input id='din${i}' type='number' placeholder='Ej: 5.000'>
 </div></div>`;
 div.innerHTML+=html;
 });
 
 function calcular(){
+let cliente=document.getElementById("cliente").value;
+let barrio=document.getElementById("barrio").value;
+
 let total=0;
 let texto="";
 let bendajeTotal=0;
@@ -86,8 +105,19 @@ textoB+=p.name+" x"+panes+" = $"+b+"<br>";
 }
 });
 
-document.getElementById("resultado").innerHTML="TOTAL PEDIDO:<br>"+texto+"<b>$"+total+"</b>";
-document.getElementById("bendaje").innerHTML="TOTAL BENDAJE 20%:<br>"+textoB+"<b>$"+bendajeTotal+"</b>";
+document.getElementById("resultado").innerHTML=
+"CLIENTE: "+cliente+"<br>BARRIO: "+barrio+
+"<br><br>TOTAL PEDIDO:<br>"+texto+"<b>$"+total+"</b>";
+
+
+document.getElementById("bendaje").innerHTML=
+"TOTAL BENDAJE 20%:<br>"+textoB+"<b>$"+bendajeTotal+"</b>";
+
+// 👉 AQUÍ ES DONDE LUEGO SE ENVÍA AL PANEL
+// En el siguiente paso podemos conectar esta información a:
+// 1) Firebase (base de datos en tiempo real)
+// 2) Google Sheets
+// 3) Un panel administrador privado
 }
 </script>
 </body>
