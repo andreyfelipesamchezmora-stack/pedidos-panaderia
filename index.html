@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Pedidos Panadería</title>
+  <style>
+    body { font-family: Arial; padding:20px }
+    .producto { border:1px solid #ccc; padding:10px; margin:10px 0 }
+    input { margin:5px }
+    button { padding:8px }
+  </style>
+</head>
+
+<body>
+
+<h1>PEDIDOS PANADERÍA</h1>
+
+<label>Nombre cliente:</label>
+<input id="cliente"><br><br>
+
+<div id="productos"></div>
+
+<button onclick="generar()">Generar Tirilla</button>
+
+<h2>Vista previa</h2>
+<pre id="tirilla"></pre>
+
+<script>
+
+// 👉 Lista de productos
+let productos = [
+  {nombre:"Pan francés", precio:500},
+  {nombre:"Croissant", precio:2000},
+  {nombre:"Pan queso", precio:1500}
+];
+
+// 👉 Mostrar productos en la página
+let contenedor = document.getElementById("productos");
+
+productos.forEach((p,i)=>{
+  contenedor.innerHTML += `
+  <div class="producto">
+    <b>${p.nombre}</b> ($${p.precio})
+
+    <br>
+    Cantidad:
+    <input type="number" id="cant${i}">
+
+    <br>
+    (Escribe el pedido en dinero)
+    <input placeholder="Ej: 5000" id="val${i}">
+  </div>`;
+});
+
+// 👉 Calcular pedido
+function generar(){
+
+  let cliente = document.getElementById("cliente").value;
+  let texto = `PANADERIA\nCliente: ${cliente}\n\n`;
+  let totalGeneral = 0;
+
+  productos.forEach((p,i)=>{
+
+    let cantidad = document.getElementById("cant"+i).value;
+    let valor = document.getElementById("val"+i).value;
+
+    if(valor){
+      cantidad = Math.floor(valor / p.precio);
+    }
+
+    if(cantidad > 0){
+      let total = cantidad * p.precio;
+      totalGeneral += total;
+      texto += `${p.nombre} x${cantidad} = $${total}\n`;
+    }
+
+  });
+
+  texto += `\nTOTAL = $${totalGeneral}`;
+  document.getElementById("tirilla").innerText = texto;
+}
+
+</script>
+
+</body>
+</html>
