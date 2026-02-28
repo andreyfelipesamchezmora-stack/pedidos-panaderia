@@ -96,7 +96,16 @@ height:200px;
 
 </div>
 
+<!-- SUPABASE -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+
 <script>
+
+// 🔴🔴🔴 PEGA AQUÍ TUS DATOS 🔴🔴🔴
+const supabase = window.supabase.createClient(
+  "https://vswostjubcxjotpqnzhk.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzd29zdGp1YmN4am90cHFuemhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyOTAyNDksImV4cCI6MjA4Nzg2NjI0OX0.VIWMJWyubtKj7QCoOybia_Fv2S4sjxFelQz9x1tZKBo"
+);
 
 // 👉 TODOS TUS PRODUCTOS
 const productos=[
@@ -125,7 +134,6 @@ const productos=[
 
 ];
 
-// 👉 MOSTRAR PRODUCTOS
 const div=document.getElementById("productos");
 
 productos.forEach((p,i)=>{
@@ -143,12 +151,10 @@ O Escribe el pedido en dinero:
 </div>`;
 });
 
-// 👉 FORMATO CON PUNTO DE MIL
 function formato(num){
 return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g,".");
 }
 
-// 👉 CALCULAR
 function calcular(){
 
 let total=0;
@@ -180,12 +186,9 @@ if(subtotal>0){
 texto+=p.name+" x"+panes+" = $"+formato(subtotal)+"\n";
 total+=subtotal;
 
-// 👉 SOLO SI TIENE BENDAJE
 if(p.bendaje){
 
 let b=subtotal*0.20;
-
-// 👉 REDONDEAR AL PRECIO DEL PAN
 let panesB=Math.round(b/p.precio);
 let bendajeRedondeado=panesB*p.precio;
 
@@ -207,12 +210,40 @@ document.getElementById("resultado").innerText=texto;
 document.getElementById("bendaje").innerText=textoB;
 }
 
-// 👉 ENVIAR PEDIDO (ejemplo WhatsApp)
-function enviar(){
-let mensaje=document.getElementById("resultado").innerText+
-"\n\n"+document.getElementById("bendaje").innerText;
+// ✅ ENVIAR Y GUARDAR EN SUPABASE
+async function enviar(){
 
-alert("Pedido listo para enviar:\n\n"+mensaje);
+let cliente=document.getElementById("cliente").value;
+let barrio=document.getElementById("barrio").value;
+let pedido=document.getElementById("resultado").innerText;
+let totalTexto=pedido.match(/TOTAL PEDIDO = \$([\d\.]+)/);
+
+let total=0;
+if(totalTexto){
+total=parseInt(totalTexto[1].replace(/\./g,""));
+}
+
+const { data, error } = await supabase
+.from("pedidos")
+.insert([
+{
+cliente:cliente,
+barrio:barrio,
+pedido:pedido,
+total:total,
+deuda:0,
+editado:false
+}
+]);
+
+if(error){
+alert("ERROR al guardar pedido ❌");
+console.log(error);
+}
+else{
+alert("Pedido guardado correctamente ✅");
+}
+
 }
 
 </script>
