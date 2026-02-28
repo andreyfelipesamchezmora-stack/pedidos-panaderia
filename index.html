@@ -136,7 +136,8 @@ if(p.b){
 let bendaje=Math.round((subtotal*0.20)/p.precio)*p.precio;
 if(bendaje>0){
 bendajeTotal+=bendaje;
-textoB+=`${p.name} → $${formato(bendaje)}\n`;
+let panesB = Math.round(bendaje / p.precio);
+textoB+=`${p.name} → ${panesB} panes = $${formato(bendaje)}\n`;
 }
 }
 }
@@ -157,7 +158,12 @@ async function guardar(){
 let pedido=document.getElementById("resultado").innerText+
 "\n"+document.getElementById("bendaje").innerText;
 
-await db.from("pedidos").insert([{pedido}]);
+await db.from("pedidos").insert([{
+pedido,
+cliente: document.getElementById("cliente").value,
+barrio: document.getElementById("barrio").value,
+fecha: new Date().toISOString()
+}]);
 
 alert("Pedido guardado ✔");
 }
