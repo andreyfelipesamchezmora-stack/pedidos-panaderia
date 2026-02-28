@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -156,11 +155,19 @@ window.deudaPedido = bendajeTotal;
 
 
 // 👉 GUARDAR
+async function guardar(){
+
+let pedido=document.getElementById("resultado").innerText+
+"\n"+document.getElementById("bendaje").innerText;
+
 await db.from("pedidos").insert([{
-  pedido: document.getElementById("resultado").innerText,
-  cliente: document.getElementById("cliente").value,
-  barrio: document.getElementById("barrio").value,
-  total: window.totalPedido ?? 0,
-  deuda: window.deudaPedido ?? 0,
-  editado: false
+pedido,
+cliente: document.getElementById("cliente").value,
+barrio: document.getElementById("barrio").value,
+fecha: new Date().toISOString()
 }]);
+
+alert("Pedido guardado ✔");
+}
+
+</script>
