@@ -148,6 +148,8 @@ textoB+=`\nTOTAL BENDAJE = $${formato(bendajeTotal)}`;
 
 document.getElementById("resultado").innerText=texto;
 document.getElementById("bendaje").innerText=textoB;
+
+window.totalPedido = total;
 }
 
 
@@ -308,29 +310,32 @@ document.getElementById("bendaje").innerText=textoB;
 // 👉 GUARDAR
 async function guardar(){
 
-let textoPedido = document.getElementById("resultado").innerText;
-let textoBendaje = document.getElementById("bendaje").innerText;
+try{
 
-// Extraer total del pedido
-let match = textoPedido.match(/TOTAL PEDIDO = \$(.*)/);
-let totalFinal = match ? match[1] : "0";
-
-// Construir ticket final
-let pedidoFinal =
-textoPedido +
+// texto completo de la factura
+let pedido =
+document.getElementById("resultado").innerText +
 "\n" +
-textoBendaje +
-"\n\n============================\n" +
-"TOTAL A COBRAR = $" + totalFinal +
-"\n============================";
+document.getElementById("bendaje").innerText +
+"\nTOTAL A COBRAR: $" + formato(window.totalPedido || 0);
 
-// Guardar en Supabase
-await db.from("pedidos").insert([{
-pedido: pedidoFinal,
-cliente: document.getElementById("cliente").value,
-barrio: document.getElementById("barrio").value,
+// guardar en supabase
+const { error } = await db.from("pedidos").insert([{
+pedido: pedido,
+cliente: document.getElementById("cliente").value || "",
+barrio: document.getElementById("barrio").value || "",
 fecha: new Date().toISOString()
 }]);
 
+if(error){
+alert("Error al guardar: " + error.message);
+return;
+}
+
 alert("Pedido guardado ✔");
+
+}catch(e){
+alert("Error inesperado: " + e.message);
+}
+
 }
