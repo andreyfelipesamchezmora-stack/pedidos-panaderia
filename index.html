@@ -211,11 +211,25 @@ async function enviar(){
 
 let cliente=document.getElementById("cliente").value;
 let barrio=document.getElementById("barrio").value;
-let pedido=document.getElementById("resultado").innerText;
 
-if(!cliente){alert("Falta nombre"); return;}
+let pedido=document.getElementById("resultado").innerText;
+let bendaje=document.getElementById("bendaje").innerText;
+
+// 👉 sacar TOTAL del texto
+let totalTexto = pedido.match(/TOTAL PEDIDO = \$([\d\.]+)/);
+let total = totalTexto ? Number(totalTexto[1].replace(/\./g,"")) : 0;
+
+await db.from("pedidos").insert([{
+cliente:cliente,
+barrio:barrio,
+pedido:pedido+"\n"+bendaje,
+total:total,
+deuda:0,
+editado:false
+}]);
 
 alert("Pedido guardado ✔");
+}
 
 // 👉 GUARDAR EN SUPABASE
 await db.from("pedidos").insert([
