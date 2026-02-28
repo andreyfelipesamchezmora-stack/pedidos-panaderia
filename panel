@@ -136,8 +136,8 @@ top:0;
 <script>
 
 // 🔴 PEGA TU SUPABASE
-const SUPABASE_URL="TU_URL";
-const SUPABASE_ANON="TU_ANON";
+const SUPABASE_URL="https://vswostjubcxjotpqnzhk.supabase.co";
+const SUPABASE_ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzd29zdGp1YmN4am90cHFuemhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyOTAyNDksImV4cCI6MjA4Nzg2NjI0OX0.VIWMJWyubtKj7QCoOybia_Fv2S4sjxFelQz9x1tZKBo";
 
 const { createClient } = supabase;
 const db=createClient(SUPABASE_URL,SUPABASE_ANON);
