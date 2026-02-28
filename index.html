@@ -154,21 +154,21 @@ document.getElementById("bendaje").innerText=textoB;
 
 // 👉 GUARDAR
 async function guardar(){
+let cliente = document.getElementById("cliente").value;
+let barrio  = document.getElementById("barrio").value;
+let pedido  = document.getElementById("resultado").innerText;
 
-let pedido=document.getElementById("resultado").innerText+
-"\n"+document.getElementById("bendaje").innerText;
+let total = window.totalPedido || 0;
+let deuda = window.deudaPedido || 0;
 
 await db.from("pedidos").insert([{
 pedido,
-cliente: document.getElementById("cliente").value,
-barrio: document.getElementById("barrio").value,
+cliente,
+barrio,
+total,
+deuda,
 fecha: new Date().toISOString()
 }]);
 
-alert("Pedido guardado ✔");
+alert("Pedido guardado en Supabase ✔");
 }
-
-</script>
-</body>
-</html>
-```
