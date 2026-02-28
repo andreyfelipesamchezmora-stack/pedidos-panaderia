@@ -36,9 +36,7 @@ object-fit:cover;
 border-radius:10px;
 }
 
-.producto-info{
-flex:1;
-}
+.producto-info{flex:1;}
 
 input{
 width:100%;
@@ -79,17 +77,17 @@ height:200px;
 <h2>Pedido Panadería</h2>
 
 <label>Nombre del Cliente:</label>
-<input id="cliente" placeholder="Ej: Juan Pérez">
+<input id="cliente">
 
-<label>Conjunto residencial o Barrio:</label>
-<input id="barrio" placeholder="Ej: Conjunto Los Almendros">
+<label>Barrio o Conjunto:</label>
+<input id="barrio">
 
 <hr>
 
 <div id="productos"></div>
 
 <button onclick="calcular()">CALCULAR PEDIDO</button>
-<button onclick="enviar()">ENVIAR PEDIDO - ASEGÚRESE QUE ESTÁ BIEN</button>
+<button onclick="enviar()">ENVIAR PEDIDO ✔</button>
 
 <pre id="resultado"></pre>
 <pre id="bendaje"></pre>
@@ -97,27 +95,26 @@ height:200px;
 </div>
 
 <!-- SUPABASE -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
-
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 
-// 🔴🔴🔴 PEGA AQUÍ TUS DATOS 🔴🔴🔴
-const supabase = window.supabase.createClient(
-  "https://vswostjubcxjotpqnzhk.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzd29zdGp1YmN4am90cHFuemhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyOTAyNDksImV4cCI6MjA4Nzg2NjI0OX0.VIWMJWyubtKj7QCoOybia_Fv2S4sjxFelQz9x1tZKBo"
-);
+//// 👉 PEGA AQUÍ TUS DATOS DE SUPABASE
+const SUPABASE_URL = "https://vswostjubcxjotpqnzhk.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzd29zdGp1YmN4am90cHFuemhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyOTAyNDksImV4cCI6MjA4Nzg2NjI0OX0.VIWMJWyubtKj7QCoOybia_Fv2S4sjxFelQz9x1tZKBo";
 
-// 👉 TODOS TUS PRODUCTOS
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+//// 👉 PRODUCTOS
 const productos=[
 
-{name:"PAN DE 500",precio:500,bendaje:true,img:"https://i.ibb.co/jPgS42sL/Whats-App-Image-2026-02-26-at-7-06-46-PM.jpg"},
+{name:"PAN DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
 {name:"PAN DE 1.000",precio:1000,bendaje:true,img:"https://via.placeholder.com/150"},
 {name:"PAN DE 2.000",precio:2000,bendaje:true,img:"https://via.placeholder.com/150"},
 {name:"PAN DE 3.500",precio:3500,bendaje:true,img:"https://via.placeholder.com/150"},
 
 {name:"PAN AGRIDULCE DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
 {name:"PAN AGRIDULCE DE 1.000",precio:1000,bendaje:true,img:"https://via.placeholder.com/150"},
-
 {name:"PAN ROLLO",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
 
 {name:"PAN QUESILLO",precio:1200,bendaje:false,img:"https://via.placeholder.com/150"},
@@ -127,13 +124,13 @@ const productos=[
 
 {name:"MOGICON DE 500",precio:500,bendaje:true,img:"https://via.placeholder.com/150"},
 {name:"MOGICON DE 1.200",precio:1200,bendaje:false,img:"https://via.placeholder.com/150"},
-
 {name:"ROSCON DE 2.500",precio:2500,bendaje:false,img:"https://via.placeholder.com/150"},
 {name:"HAWAIANOS",precio:1500,bendaje:false,img:"https://via.placeholder.com/150"},
 {name:"CROASANES",precio:1500,bendaje:false,img:"https://via.placeholder.com/150"}
 
 ];
 
+//// 👉 MOSTRAR PRODUCTOS
 const div=document.getElementById("productos");
 
 productos.forEach((p,i)=>{
@@ -142,19 +139,22 @@ div.innerHTML+=`
 <img src='${p.img}'>
 <div class='producto-info'>
 <b>${p.name}</b> ($${formato(p.precio)})<br>
+
 Cantidad:
 <input id='cant${i}' type='number' placeholder='0'>
 
-O Escribe el pedido en dinero:
-<input id='din${i}' type='number' placeholder='Ej: 5.000'>
+Dinero:
+<input id='din${i}' type='number' placeholder='Ej: 5000'>
 </div>
 </div>`;
 });
 
+//// 👉 FORMATO MIL
 function formato(num){
-return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g,".");
+return num.toLocaleString("es-CO");
 }
 
+//// 👉 CALCULAR
 function calcular(){
 
 let total=0;
@@ -162,7 +162,7 @@ let texto="CLIENTE: "+document.getElementById("cliente").value+"\n";
 texto+="BARRIO: "+document.getElementById("barrio").value+"\n\n";
 
 let bendajeTotal=0;
-let textoB="";
+let textoB="BENDAJE:\n";
 
 productos.forEach((p,i)=>{
 
@@ -187,65 +187,46 @@ texto+=p.name+" x"+panes+" = $"+formato(subtotal)+"\n";
 total+=subtotal;
 
 if(p.bendaje){
-
 let b=subtotal*0.20;
 let panesB=Math.round(b/p.precio);
-let bendajeRedondeado=panesB*p.precio;
+let redondeado=panesB*p.precio;
 
-if(bendajeRedondeado>0){
-bendajeTotal+=bendajeRedondeado;
-textoB+=p.name+" → "+panesB+" panes = $"+formato(bendajeRedondeado)+"\n";
+if(redondeado>0){
+bendajeTotal+=redondeado;
+textoB+=p.name+" → "+panesB+" panes = $"+formato(redondeado)+"\n";
 }
-
 }
-
 }
-
 });
 
 texto+="\nTOTAL PEDIDO = $"+formato(total);
-textoB+="\nTOTAL BENDAJE 20% = $"+formato(bendajeTotal);
+textoB+="\nTOTAL BENDAJE = $"+formato(bendajeTotal);
 
 document.getElementById("resultado").innerText=texto;
 document.getElementById("bendaje").innerText=textoB;
 }
 
-// ✅ ENVIAR Y GUARDAR EN SUPABASE
+//// 👉 ENVIAR
 async function enviar(){
 
 let cliente=document.getElementById("cliente").value;
 let barrio=document.getElementById("barrio").value;
 let pedido=document.getElementById("resultado").innerText;
-let totalTexto=pedido.match(/TOTAL PEDIDO = \$([\d\.]+)/);
 
-let total=0;
-if(totalTexto){
-total=parseInt(totalTexto[1].replace(/\./g,""));
-}
+if(!cliente){alert("Falta nombre"); return;}
 
-const { data, error } = await supabase
-.from("pedidos")
-.insert([
+alert("Pedido guardado ✔");
+
+// 👉 GUARDAR EN SUPABASE
+await db.from("pedidos").insert([
 {
 cliente:cliente,
 barrio:barrio,
-pedido:pedido,
-total:total,
-deuda:0,
-editado:false
+pedido:pedido
 }
 ]);
 
-if(error){
-alert("ERROR al guardar pedido ❌");
-console.log(error);
 }
-else{
-alert("Pedido guardado correctamente ✅");
-}
-
-}
-
 </script>
 </body>
 </html>
