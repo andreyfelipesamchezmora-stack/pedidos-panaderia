@@ -123,9 +123,15 @@ if(subtotal>0){
 texto+=`${p.name} x${panes} = $${subtotal.toLocaleString()}\n`;
 total+=subtotal;
 
-if(p.b){
-let bendaje=Math.round((subtotal*0.20)/p.precio)*p.precio;
-bendajeTotal+=bendaje;
+if(p.b){ 
+   let panesBendaje = Math.round(panes * 0.20);
+   let bendaje = panesBendaje * p.precio;
+
+   bendajeTotal += bendaje;
+
+   if(panesBendaje > 0){
+      textoB += `${p.name} → ${panesBendaje} panes\n`;
+   }
 }
 
 }
