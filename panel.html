@@ -225,7 +225,7 @@ grid.innerHTML += `
 <h4>${p.cliente}</h4>
 <p>$${p.total}</p>
 </div>
-<div onclick="eliminarPedido(${p.id})" 
+<div onclick="event.stopPropagation(); eliminarPedido(${p.id})" 
 style="position:absolute;top:8px;right:10px;color:red;font-weight:bold;cursor:pointer;font-size:18px;">
 ✖
 </div>
