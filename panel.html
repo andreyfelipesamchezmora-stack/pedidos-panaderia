@@ -285,8 +285,23 @@ autoResize();
 }
 
 async function eliminarPedido(id){
+
 if(!confirm("¿Eliminar este pedido?")) return;
-await db.from("pedidos").delete().eq("id", id);
+
+const { error } = await db
+.from("pedidos")
+.delete()
+.eq("id", id);
+
+if(error){
+console.log("Error al eliminar:", error);
+alert("No se pudo eliminar. Mira la consola.");
+return;
+}
+
+alert("Pedido eliminado ✔");
+
+// Recarga pedidos actuales
 cargarFechas();
 document.getElementById("grid").innerHTML="";
 }
