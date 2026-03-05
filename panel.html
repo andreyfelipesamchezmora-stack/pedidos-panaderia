@@ -95,6 +95,14 @@ font-family:monospace;
 font-size:12px;
 }
 
+ .gran-total{
+font-size:22px;
+font-weight:bold;
+color:red;
+text-align:center;
+margin-top:10px;
+}
+  
 .logo{
 text-align:center;
 margin-bottom:5px;
@@ -246,9 +254,17 @@ if(!data) return;
 
 data.forEach(p=>{
 grid.innerHTML += `
-<div class="card" onclick="abrir(${p.id}, \`${p.pedido}\`, \`${p.cliente}\`)">
+<div class="card" style="position:relative;">
+<div onclick="abrir(${p.id}, \`${p.pedido}\`, \`${p.cliente}\`)">
 <h4>${p.cliente}</h4>
 <p>$${p.total}</p>
+</div>
+
+<div onclick="eliminarPedido(${p.id})" 
+style="position:absolute;top:8px;right:10px;color:red;font-weight:bold;cursor:pointer;font-size:18px;">
+✖
+</div>
+
 </div>
 `;
 });
@@ -256,10 +272,52 @@ grid.innerHTML += `
 
 // ====== ABRIR TICKET ======
 function abrir(id, texto, cliente){
+
 pedidoId = id;
 document.getElementById("modal").style.display = "flex";
-document.getElementById("facturaTexto").value = texto;
 document.getElementById("clienteNombre").innerHTML = "<strong>Cliente:</strong> " + cliente;
+
+// ==== GENERAR BENDaje AUTOMÁTICO ====
+
+let lineas = texto.split("\n");
+let nuevoTexto = "";
+let total = 0;
+
+lineas.forEach(l=>{
+
+if(l.includes("x")){
+
+let partes = l.split("x");
+let nombre = partes[0].trim();
+let cantidad = parseInt(partes[1]);
+
+let precio = 500; // si quieres puedes automatizar esto luego
+
+let subtotal = cantidad * precio;
+let bendaje = Math.floor(cantidad * 0.20);
+
+total += subtotal;
+
+nuevoTexto += `
+${nombre} x${cantidad} = $${subtotal.toLocaleString()}
+Bendaje 20%: ${bendaje} panes
+
+`;
+}
+
+});
+
+nuevoTexto += `
+TOTAL PEDIDO = $${total.toLocaleString()}
+TOTAL BENDaje = $${(total*0.20).toLocaleString()}
+
+\n========================
+TOTAL A COBRAR: $${total.toLocaleString()}
+========================
+`;
+
+document.getElementById("facturaTexto").value = nuevoTexto;
+
 }
 
 // ====== GUARDAR ======
@@ -285,6 +343,21 @@ document.getElementById("modal").style.display="none";
 }
 
 cargarFechas();
+
+  async function eliminarPedido(id){
+
+if(!confirm("¿Eliminar este pedido?")) return;
+
+await db
+.from("pedidos")
+.delete()
+.eq("id", id);
+
+alert("Pedido eliminado ✔");
+
+cargarFechas();
+document.getElementById("grid").innerHTML="";
+}
 
 </script>
 
