@@ -133,7 +133,7 @@ textarea{ border:none; }
 <div class="ticket">
 
 <div contenteditable="true" style="text-align:center;">
-<strong>Panadería Andrey</strong><br>
+<strong>Panadería VIANNYS</strong><br>
 NIT: 1.076.501.617<br>
 Tel: 3134062278<br>
 Barrio: San Jorge
@@ -238,7 +238,7 @@ let cantidad = parseInt(l.split("x")[1]) || 0;
 let subtotal = parseInt(l.split("$")[1].replace(/\./g,"")) || 0;
 
 total += subtotal;
-
+nuevoTexto += `--------------------------\n`;
 nuevoTexto += `${nombre} x${cantidad} = $${subtotal.toLocaleString()}\n`;
 
 if(conBendaje.some(p => nombre.toUpperCase().includes(p))){
@@ -251,7 +251,6 @@ nuevoTexto += "\n";
 });
 
 nuevoTexto += `--------------------------\n`;
-nuevoTexto += `TOTAL PEDIDO: $${total.toLocaleString()}\n\n`;
 nuevoTexto += `===========================\n`;
 nuevoTexto += `TOTAL A COBRAR: $${total.toLocaleString()}\n`;
 nuevoTexto += `===========================\n`;
