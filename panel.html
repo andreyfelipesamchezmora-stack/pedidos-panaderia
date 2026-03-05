@@ -76,11 +76,11 @@ justify-content:center;
 background:white;
 width:80mm;
 max-width:80mm;
-padding:10px;
+padding:5px; /* menos margen interno */
 font-family:monospace;
-font-size:12px;
+font-size:15px; /* letra más grande */
+line-height:1.4;
 }
-
 textarea{
 width:100%;
 font-size:12px;
@@ -97,18 +97,43 @@ cursor:pointer;
 }
 
 .gran-total{
-font-size:40px;
+font-size:22px;
 font-weight:bold;
-color:red;
+color:black;
 text-align:center;
+margin-top:10px;
 }
 
 @media print {
-body *{ visibility:hidden; }
-.ticket, .ticket *{ visibility:visible; }
-.ticket{ position:absolute; left:0; top:0; width:80mm; }
-button{ display:none; }
-textarea{ border:none; }
+
+body{
+margin:0;
+}
+
+body *{
+visibility:hidden;
+}
+
+.ticket, .ticket *{
+visibility:visible;
+}
+
+.ticket{
+position:absolute;
+left:0;
+top:0;
+width:80mm;
+margin:0;
+padding:5px;
+}
+
+button{
+display:none;
+}
+
+textarea{
+border:none;
+}
 }
 </style>
 </head>
