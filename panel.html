@@ -243,16 +243,30 @@ cont.innerHTML += `<div class="fecha-btn" onclick="cargarPedidos('${f}')">${f}</
 // ====== CARGAR PEDIDOS ======
 async function cargarPedidos(fecha){
 
-const { data } = await db
+const inicio = new Date(fecha);
+inicio.setHours(0,0,0,0);
+
+const fin = new Date(fecha);
+fin.setHours(23,59,59,999);
+
+const { data, error } = await db
 .from("pedidos")
 .select("*")
-.gte("fecha", fecha+"T00:00:00")
-.lte("fecha", fecha+"T23:59:59");
+.gte("fecha", inicio.toISOString())
+.lte("fecha", fin.toISOString());
+
+if(error){
+console.log(error);
+return;
+}
 
 let grid = document.getElementById("grid");
 grid.innerHTML = "";
 
-if(!data) return;
+if(!data || data.length === 0){
+grid.innerHTML = "<p>No hay pedidos este día</p>";
+return;
+}
 
 data.forEach(p=>{
 grid.innerHTML += `
@@ -270,8 +284,8 @@ style="position:absolute;top:8px;right:10px;color:red;font-weight:bold;cursor:po
 </div>
 `;
 });
-}
 
+}
 // ====== ABRIR TICKET ======
 function abrir(id, texto, cliente){
 
