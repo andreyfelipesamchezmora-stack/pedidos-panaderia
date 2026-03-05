@@ -8,31 +8,23 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
-
-/* ====== GENERAL ====== */
 body{
 margin:0;
 font-family:Arial, sans-serif;
 background:#f4f4f4;
 }
 
-/* ====== LAYOUT ====== */
 .container{
 display:flex;
 height:100vh;
 }
 
-/* ====== SIDEBAR ====== */
 .sidebar{
 width:220px;
 background:#222;
 color:white;
 padding:15px;
 overflow-y:auto;
-}
-
-.sidebar h3{
-margin-top:0;
 }
 
 .fecha-btn{
@@ -47,7 +39,6 @@ cursor:pointer;
 background:#444;
 }
 
-/* ====== MAIN ====== */
 .main{
 flex:1;
 padding:20px;
@@ -66,13 +57,9 @@ padding:15px;
 border-radius:10px;
 cursor:pointer;
 box-shadow:0 3px 8px rgba(0,0,0,0.1);
+position:relative;
 }
 
-.card h4{
-margin:0;
-}
-
-/* ====== MODAL ====== */
 .modal{
 position:fixed;
 top:0;
@@ -85,7 +72,6 @@ align-items:center;
 justify-content:center;
 }
 
-/* ====== TICKET 80MM ====== */
 .ticket{
 background:white;
 width:80mm;
@@ -95,32 +81,8 @@ font-family:monospace;
 font-size:12px;
 }
 
- .gran-total{
-font-size:22px;
-font-weight:bold;
-color:red;
-text-align:center;
-margin-top:10px;
-}
-  
-.logo{
-text-align:center;
-margin-bottom:5px;
-}
-
-.logo img{
-width:120px;
-max-width:100%;
-}
-
-.encabezado{
-text-align:center;
-margin-bottom:8px;
-}
-
 textarea{
 width:100%;
-min-height:150px;
 font-size:12px;
 border:1px solid #ccc;
 resize:none;
@@ -134,35 +96,20 @@ padding:8px;
 cursor:pointer;
 }
 
-/* ====== SOLO IMPRIME TICKET ====== */
+.gran-total{
+font-size:20px;
+font-weight:bold;
+color:red;
+text-align:center;
+}
+
 @media print {
-
-body *{
-visibility:hidden;
+body *{ visibility:hidden; }
+.ticket, .ticket *{ visibility:visible; }
+.ticket{ position:absolute; left:0; top:0; width:80mm; }
+button{ display:none; }
+textarea{ border:none; }
 }
-
-.ticket, .ticket *{
-visibility:visible;
-}
-
-.ticket{
-position:absolute;
-left:0;
-top:0;
-width:80mm;
-}
-
-textarea{
-border:none;
-resize:none;
-}
-
-button{
-display:none;
-}
-
-}
-
 </style>
 </head>
 
@@ -182,15 +129,10 @@ display:none;
 
 </div>
 
-<!-- MODAL -->
 <div class="modal" id="modal">
 <div class="ticket">
 
-<div class="logo">
-<img src="logo.png">
-</div>
-
-<div class="encabezado" contenteditable="true">
+<div contenteditable="true" style="text-align:center;">
 <strong>Panadería Andrey</strong><br>
 NIT: 123456789<br>
 Tel: 3000000000<br>
@@ -212,7 +154,6 @@ Barrio: San Telmo
 
 <script>
 
-// ====== CONFIGURA TU SUPABASE ======
 const SUPABASE_URL = "https://vswostjubcxjotpqnzhk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzd29zdGp1YmN4am90cHFuemhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyOTAyNDksImV4cCI6MjA4Nzg2NjI0OX0.VIWMJWyubtKj7QCoOybia_Fv2S4sjxFelQz9x1tZKBo";
 
@@ -221,16 +162,12 @@ const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let pedidoId = null;
 
-// ====== CARGAR FECHAS ======
 async function cargarFechas(){
-const { data } = await db
-.from("pedidos")
-.select("fecha")
-.order("fecha",{ascending:false});
+const { data } = await db.from("pedidos").select("fecha");
 
 if(!data) return;
 
-let fechas = [...new Set(data.map(p => p.fecha.split("T")[0]))];
+let fechas = [...new Set(data.map(p => p.fecha.split("T")[0]))].sort().reverse();
 
 let cont = document.getElementById("fechas");
 cont.innerHTML = "";
@@ -240,63 +177,43 @@ cont.innerHTML += `<div class="fecha-btn" onclick="cargarPedidos('${f}')">${f}</
 });
 }
 
-// ====== CARGAR PEDIDOS ======
 async function cargarPedidos(fecha){
 
-const inicio = new Date(fecha);
-inicio.setHours(0,0,0,0);
-
-const fin = new Date(fecha);
-fin.setHours(23,59,59,999);
-
-const { data, error } = await db
-.from("pedidos")
-.select("*")
-.gte("fecha", inicio.toISOString())
-.lte("fecha", fin.toISOString());
-
-if(error){
-console.log(error);
-return;
-}
+const { data } = await db.from("pedidos").select("*");
 
 let grid = document.getElementById("grid");
 grid.innerHTML = "";
 
-if(!data || data.length === 0){
+if(!data) return;
+
+let filtrados = data.filter(p => p.fecha.split("T")[0] === fecha);
+
+if(filtrados.length === 0){
 grid.innerHTML = "<p>No hay pedidos este día</p>";
 return;
 }
 
-data.forEach(p=>{
+filtrados.forEach(p=>{
 grid.innerHTML += `
-<div class="card" style="position:relative;">
+<div class="card">
 <div onclick="abrir(${p.id}, \`${p.pedido}\`, \`${p.cliente}\`)">
 <h4>${p.cliente}</h4>
 <p>$${p.total}</p>
 </div>
-
 <div onclick="eliminarPedido(${p.id})" 
 style="position:absolute;top:8px;right:10px;color:red;font-weight:bold;cursor:pointer;font-size:18px;">
 ✖
 </div>
-
 </div>
 `;
 });
-
 }
-// ====== ABRIR TICKET ======
+
 function abrir(id, texto, cliente){
 
 pedidoId = id;
 document.getElementById("modal").style.display = "flex";
 document.getElementById("clienteNombre").innerHTML = "<strong>Cliente:</strong> " + cliente;
-
-if(!texto){
-document.getElementById("facturaTexto").value = "";
-return;
-}
 
 let lineas = texto.split("\n");
 let nuevoTexto = "";
@@ -316,8 +233,6 @@ lineas.forEach(l=>{
 
 if(l.includes("x") && l.includes("$")){
 
-try{
-
 let nombre = l.split("x")[0].trim();
 let cantidad = parseInt(l.split("x")[1]) || 0;
 let subtotal = parseInt(l.split("$")[1].replace(/\./g,"")) || 0;
@@ -332,13 +247,7 @@ nuevoTexto += `Bendaje 20%: ${bendaje} panes\n`;
 }
 
 nuevoTexto += "\n";
-
-}catch(e){
-console.log("Error procesando línea:", l);
 }
-
-}
-
 });
 
 nuevoTexto += `--------------------------\n`;
@@ -348,97 +257,33 @@ nuevoTexto += `TOTAL A COBRAR: $${total.toLocaleString()}\n`;
 nuevoTexto += `===========================\n`;
 
 document.getElementById("facturaTexto").value = nuevoTexto;
-
 autoResize();
 }
 
-// ==== GENERAR BENDaje AUTOMÁTICO ====
-
-let lineas = texto.split("\n");
-let nuevoTexto = "";
-let total = 0;
-
-lineas.forEach(l=>{
-
-if(l.includes("x")){
-
-let partes = l.split("x");
-let nombre = partes[0].trim();
-let cantidad = parseInt(partes[1]);
-
-let precio = 500; // si quieres puedes automatizar esto luego
-
-let subtotal = cantidad * precio;
-let bendaje = Math.floor(cantidad * 0.20);
-
-total += subtotal;
-
-nuevoTexto += `
-${nombre} x${cantidad} = $${subtotal.toLocaleString()}
-Bendaje 20%: ${bendaje} panes
-
-`;
-}
-
-});
-
-nuevoTexto += `
-TOTAL PEDIDO = $${total.toLocaleString()}
-TOTAL BENDaje = $${(total*0.20).toLocaleString()}
-
-\n========================
-TOTAL A COBRAR: $${total.toLocaleString()}
-========================
-`;
-
-document.getElementById("facturaTexto").value = nuevoTexto;
-
-}
-
-// ====== GUARDAR ======
-async function guardar(){
-let nuevo = document.getElementById("facturaTexto").value;
-
-await db
-.from("pedidos")
-.update({pedido:nuevo})
-.eq("id", pedidoId);
-
-alert("Factura actualizada ✔");
-}
-
-// ====== IMPRIMIR ======
-function imprimir(){
-window.print();
-}
-
-// ====== CERRAR ======
-function cerrar(){
-document.getElementById("modal").style.display="none";
-}
-
-cargarFechas();
-
-  async function eliminarPedido(id){
-
+async function eliminarPedido(id){
 if(!confirm("¿Eliminar este pedido?")) return;
-
-await db
-.from("pedidos")
-.delete()
-.eq("id", id);
-
-alert("Pedido eliminado ✔");
-
+await db.from("pedidos").delete().eq("id", id);
 cargarFechas();
 document.getElementById("grid").innerHTML="";
 }
 
- function autoResize(){
+async function guardar(){
+let nuevo = document.getElementById("facturaTexto").value;
+await db.from("pedidos").update({pedido:nuevo}).eq("id", pedidoId);
+alert("Factura actualizada ✔");
+}
+
+function imprimir(){ window.print(); }
+
+function cerrar(){ document.getElementById("modal").style.display="none"; }
+
+function autoResize(){
 let area = document.getElementById("facturaTexto");
 area.style.height = "auto";
 area.style.height = area.scrollHeight + "px";
 }
+
+cargarFechas();
 
 </script>
 
