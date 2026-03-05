@@ -279,11 +279,15 @@ pedidoId = id;
 document.getElementById("modal").style.display = "flex";
 document.getElementById("clienteNombre").innerHTML = "<strong>Cliente:</strong> " + cliente;
 
+if(!texto){
+document.getElementById("facturaTexto").value = "";
+return;
+}
+
 let lineas = texto.split("\n");
 let nuevoTexto = "";
 let total = 0;
 
-// PRODUCTOS QUE SÍ LLEVAN BENDAJE
 const conBendaje = [
 "PAN DE 500",
 "PAN DE 1.000",
@@ -298,23 +302,27 @@ lineas.forEach(l=>{
 
 if(l.includes("x") && l.includes("$")){
 
+try{
+
 let nombre = l.split("x")[0].trim();
-let cantidad = parseInt(l.split("x")[1]);
-let subtotal = parseInt(l.split("$")[1].replace(/\./g,""));
+let cantidad = parseInt(l.split("x")[1]) || 0;
+let subtotal = parseInt(l.split("$")[1].replace(/\./g,"")) || 0;
 
 total += subtotal;
 
 nuevoTexto += `${nombre} x${cantidad} = $${subtotal.toLocaleString()}\n`;
 
-// Verifica si este producto está en la lista con bendaje
 if(conBendaje.some(p => nombre.toUpperCase().includes(p))){
-
 let bendaje = Math.floor(cantidad * 0.20);
 nuevoTexto += `Bendaje 20%: ${bendaje} panes\n`;
-
 }
 
-nuevoTexto += `\n`;
+nuevoTexto += "\n";
+
+}catch(e){
+console.log("Error procesando línea:", l);
+}
+
 }
 
 });
