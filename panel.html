@@ -120,9 +120,11 @@ margin-bottom:8px;
 
 textarea{
 width:100%;
-height:180px;
+min-height:150px;
 font-size:12px;
 border:1px solid #ccc;
+resize:none;
+overflow:hidden;
 }
 
 button{
@@ -277,6 +279,57 @@ pedidoId = id;
 document.getElementById("modal").style.display = "flex";
 document.getElementById("clienteNombre").innerHTML = "<strong>Cliente:</strong> " + cliente;
 
+let lineas = texto.split("\n");
+let nuevoTexto = "";
+let total = 0;
+
+// PRODUCTOS QUE SÍ LLEVAN BENDAJE
+const conBendaje = [
+"PAN DE 500",
+"PAN DE 1.000",
+"PAN DE 2.000",
+"PAN AGRIDULCE 500",
+"PAN AGRIDULCE 1.000",
+"PAN ROLLO",
+"MOGICON DE 500"
+];
+
+lineas.forEach(l=>{
+
+if(l.includes("x") && l.includes("$")){
+
+let nombre = l.split("x")[0].trim();
+let cantidad = parseInt(l.split("x")[1]);
+let subtotal = parseInt(l.split("$")[1].replace(/\./g,""));
+
+total += subtotal;
+
+nuevoTexto += `${nombre} x${cantidad} = $${subtotal.toLocaleString()}\n`;
+
+// Verifica si este producto está en la lista con bendaje
+if(conBendaje.some(p => nombre.toUpperCase().includes(p))){
+
+let bendaje = Math.floor(cantidad * 0.20);
+nuevoTexto += `Bendaje 20%: ${bendaje} panes\n`;
+
+}
+
+nuevoTexto += `\n`;
+}
+
+});
+
+nuevoTexto += `--------------------------\n`;
+nuevoTexto += `TOTAL PEDIDO: $${total.toLocaleString()}\n\n`;
+nuevoTexto += `===========================\n`;
+nuevoTexto += `TOTAL A COBRAR: $${total.toLocaleString()}\n`;
+nuevoTexto += `===========================\n`;
+
+document.getElementById("facturaTexto").value = nuevoTexto;
+
+autoResize();
+}
+
 // ==== GENERAR BENDaje AUTOMÁTICO ====
 
 let lineas = texto.split("\n");
@@ -357,6 +410,12 @@ alert("Pedido eliminado ✔");
 
 cargarFechas();
 document.getElementById("grid").innerHTML="";
+}
+
+ function autoResize(){
+let area = document.getElementById("facturaTexto");
+area.style.height = "auto";
+area.style.height = area.scrollHeight + "px";
 }
 
 </script>
