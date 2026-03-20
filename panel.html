@@ -3,62 +3,68 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Panel Admin</title>
+<title>Panel PRO Panadería</title>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
-body{
-margin:0;
-font-family:Arial, sans-serif;
-background:#f4f4f4;
-}
-
-.container{
-display:flex;
-height:100vh;
-}
+body{margin:0;font-family:Arial;background:#f4f4f4;}
+.container{display:flex;height:100vh;}
 
 .sidebar{
-width:220px;
-background:#222;
+width:250px;
+background:#111;
 color:white;
-padding:15px;
-overflow-y:auto;
+padding:10px;
+overflow:auto;
 }
 
-.fecha-btn{
-background:#333;
+.main{flex:1;padding:15px;overflow:auto;}
+
+.topbar{
+display:flex;
+gap:10px;
+margin-bottom:10px;
+}
+
+input{
 padding:8px;
-margin-bottom:8px;
-border-radius:6px;
+flex:1;
+}
+
+button{
+padding:8px;
 cursor:pointer;
 }
 
-.fecha-btn:hover{
-background:#444;
-}
-
-.main{
-flex:1;
-padding:20px;
-overflow-y:auto;
+.total-general{
+font-size:22px;
+font-weight:bold;
+background:#fff;
+padding:10px;
+border-radius:8px;
+margin-bottom:10px;
 }
 
 .grid{
 display:grid;
-grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
-gap:15px;
+grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+gap:10px;
 }
 
 .card{
 background:white;
-padding:15px;
+padding:10px;
 border-radius:10px;
-cursor:pointer;
-box-shadow:0 3px 8px rgba(0,0,0,0.1);
 position:relative;
+cursor:pointer;
 }
+
+.card.moto{border-left:6px solid green;}
+.card.auto{border-left:6px solid blue;}
+.card.recoge{border-left:6px solid orange;}
+.card.lejano{border-left:6px solid purple;}
+.card.editado{background:#fff3a6;}
 
 .modal{
 position:fixed;
@@ -75,64 +81,35 @@ justify-content:center;
 .ticket{
 background:white;
 width:80mm;
-max-width:80mm;
-padding:5px; /* menos margen interno */
+padding:5px;
 font-family:monospace;
-font-size:15px; /* letra más grande */
-line-height:1.4;
+font-size:16px;
 }
+
 textarea{
 width:100%;
-font-size:12px;
-border:1px solid #ccc;
+border:none;
 resize:none;
-overflow:hidden;
+font-size:14px;
 }
 
-button{
-width:100%;
-margin-top:6px;
-padding:8px;
+.x{
+position:absolute;
+top:5px;
+right:8px;
+color:red;
 cursor:pointer;
-}
-
-.gran-total{
-font-size:22px;
 font-weight:bold;
-color:black;
-text-align:center;
-margin-top:10px;
 }
 
-@media print {
-
-body{
-margin:0;
-}
-
-body *{
-visibility:hidden;
-}
-
-.ticket, .ticket *{
-visibility:visible;
-}
-
+@media print{
+body *{visibility:hidden;}
+.ticket, .ticket *{visibility:visible;}
 .ticket{
 position:absolute;
 left:0;
 top:0;
 width:80mm;
-margin:0;
-padding:5px;
-}
-
-button{
-display:none;
-}
-
-textarea{
-border:none;
 }
 }
 </style>
@@ -143,21 +120,33 @@ border:none;
 <div class="container">
 
 <div class="sidebar">
-<h3>Fechas</h3>
-<div id="fechas"></div>
+<h3>Fecha</h3>
+<input type="date" id="fecha">
+<br><br>
+<button onclick="nuevoCliente()">➕ Agregar Cliente</button>
 </div>
 
 <div class="main">
-<h2>Pedidos del día</h2>
+
+<div class="topbar">
+<input type="text" placeholder="Buscar cliente..." oninput="filtrar(this.value)">
+</div>
+
+<div class="total-general" id="totalGeneral">
+TOTAL: $0
+</div>
+
 <div class="grid" id="grid"></div>
-</div>
 
 </div>
 
+</div>
+
+<!-- MODAL -->
 <div class="modal" id="modal">
 <div class="ticket">
 
-<div contenteditable="true" style="text-align:center;">
+<div style="text-align:center;">
 <strong>Panadería VIANNYS</strong><br>
 NIT: 1.076.501.617<br>
 Tel: 3134062278<br>
@@ -168,10 +157,10 @@ Barrio: San Jorge
 
 <div id="clienteNombre"></div>
 
-<textarea id="facturaTexto"></textarea>
+<textarea id="factura"></textarea>
 
+<button onclick="tomarPedido()">🧾 Tomar pedido</button>
 <button onclick="imprimir()">🖨 Imprimir</button>
-<button onclick="guardar()">💾 Guardar cambios</button>
 <button onclick="cerrar()">Cerrar</button>
 
 </div>
@@ -179,150 +168,164 @@ Barrio: San Jorge
 
 <script>
 
-const SUPABASE_URL = "https://vswostjubcxjotpqnzhk.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzd29zdGp1YmN4am90cHFuemhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyOTAyNDksImV4cCI6MjA4Nzg2NjI0OX0.VIWMJWyubtKj7QCoOybia_Fv2S4sjxFelQz9x1tZKBo";
+const SUPABASE_URL="https://vswostjubcxjotpqnzhk.supabase.co";
+const SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzd29zdGp1YmN4am90cHFuemhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyOTAyNDksImV4cCI6MjA4Nzg2NjI0OX0.VIWMJWyubtKj7QCoOybia_Fv2S4sjxFelQz9x1tZKBo";
 
-const { createClient } = supabase;
-const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+const db = supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
-let pedidoId = null;
+let clientes = [
+{nombre:"AMPARO MOLINO ROA",tipo:"moto"},
+{nombre:"ANAYIBE",tipo:"moto"},
+{nombre:"NATALIA - PATIOS TRANSITO",tipo:"moto"},
+{nombre:"ANA SUEGRA",tipo:"moto"},
+{nombre:"NUBIA CASETA LOS OLIVOS",tipo:"moto"},
+{nombre:"MONICA",tipo:"moto"},
+{nombre:"DANIEL BISCOCHERIA - MARIA PAULA",tipo:"moto"},
+{nombre:"MERCAFER",tipo:"moto"},
+{nombre:"OLGA TIENDA CONJUNTO SAN TELMO",tipo:"moto"},
+{nombre:"PATRICIA - TIENDA MI SUR",tipo:"moto"},
+{nombre:"CONJUNTO CIPRES - MAGNOLIA",tipo:"moto"},
+{nombre:"ABUELA MARGARITAS",tipo:"moto"},
+{nombre:"NELLY SUR ABASTOS",tipo:"moto"},
+{nombre:"RUDVID",tipo:"moto"},
+{nombre:"TIENDA CLAUDIA - LIMONAR",tipo:"moto"},
+{nombre:"ELIDA",tipo:"moto"},
+{nombre:"TIENDA JUANCA",tipo:"moto"},
+{nombre:"JAVIER",tipo:"moto"},
+{nombre:"CECILIA VECINA",tipo:"moto"},
+{nombre:"GLORIA SUEGRA",tipo:"moto"},
+{nombre:"FLOR LEIDY - PUERTAS DEL SOL",tipo:"moto"},
+{nombre:"OLGA JOVEN",tipo:"moto"},
+{nombre:"PUNTO DE ENCUENTRO",tipo:"moto"},
+{nombre:"MARIA - TIENDA LOS REYES",tipo:"moto"},
+{nombre:"TIENDA CLAUDIA - FRONTERAS DEL MILENIO",tipo:"moto"},
+{nombre:"TIENDA RAFAEL - ANDREA",tipo:"moto"},
+{nombre:"LORENA - COLA CONDOR",tipo:"moto"},
+{nombre:"JAMES",tipo:"moto"},
+{nombre:"MARIA - PASTUSA",tipo:"moto"},
 
-async function cargarFechas(){
-const { data } = await db.from("pedidos").select("fecha");
+{nombre:"MARKET DEL RIO - TIBERIO",tipo:"auto"},
+{nombre:"TIENDA LUFER FRENTE A GOYA",tipo:"auto"},
+{nombre:"CONJUNTO TIZIANO - MIREYA",tipo:"auto"},
 
-if(!data) return;
+{nombre:"YAKELINE CASETA SURABASTOS",tipo:"recoge"},
+{nombre:"JUDITH",tipo:"recoge"},
+{nombre:"SABAS",tipo:"recoge"},
+{nombre:"JAIR",tipo:"recoge"},
+{nombre:"ALBENYS",tipo:"recoge"},
+{nombre:"ALEXANDRA - QUERIDA",tipo:"recoge"},
+{nombre:"PARQUEADERO ALEJANDRIA GORDITA",tipo:"recoge"},
+{nombre:"ALONDRA LA SEXTA",tipo:"recoge"},
+{nombre:"MARÍA FRONTERAS DEL MILENIO",tipo:"recoge"},
 
-let fechas = [...new Set(data.map(p => p.fecha.split("T")[0]))].sort().reverse();
-
-let cont = document.getElementById("fechas");
-cont.innerHTML = "";
-
-fechas.forEach(f=>{
-cont.innerHTML += `<div class="fecha-btn" onclick="cargarPedidos('${f}')">${f}</div>`;
-});
-}
-
-async function cargarPedidos(fecha){
-
-const { data } = await db.from("pedidos").select("*");
-
-let grid = document.getElementById("grid");
-grid.innerHTML = "";
-
-if(!data) return;
-
-let filtrados = data.filter(p => p.fecha.split("T")[0] === fecha);
-
-if(filtrados.length === 0){
-grid.innerHTML = "<p>No hay pedidos este día</p>";
-return;
-}
-
-filtrados.forEach(p=>{
-grid.innerHTML += `
-<div class="card">
-<div onclick="abrir(${p.id}, \`${p.pedido}\`, \`${p.cliente}\`)">
-<h4>${p.cliente}</h4>
-<p>$${p.total}</p>
-</div>
-<div onclick="event.stopPropagation(); eliminarPedido(${p.id})" 
-style="position:absolute;top:8px;right:10px;color:red;font-weight:bold;cursor:pointer;font-size:18px;">
-✖
-</div>
-</div>
-`;
-});
-}
-
-function abrir(id, texto, cliente){
-
-pedidoId = id;
-document.getElementById("modal").style.display = "flex";
-document.getElementById("clienteNombre").innerHTML = "<strong>Cliente:</strong> " + cliente;
-
-let lineas = texto.split("\n");
-let nuevoTexto = "";
-let total = 0;
-
-const conBendaje = [
-"PAN DE 500",
-"PAN DE 1.000",
-"PAN DE 2.000",
-"PAN AGRIDULCE 500",
-"PAN AGRIDULCE 1.000",
-"PAN ROLLO",
-"MOGICON DE 500"
+{nombre:"LEIDY VERGEL",tipo:"lejano"},
+{nombre:"YENNIFER VERGEL",tipo:"lejano"},
+{nombre:"YURANY DISTRIBUIDORA HUEVOS",tipo:"lejano"},
+{nombre:"TIENDA DISNEY - VILLA REGINA",tipo:"lejano"},
+{nombre:"CECILIA",tipo:"lejano"},
+{nombre:"CAMBULOS",tipo:"lejano"},
+{nombre:"CORUÑA",tipo:"lejano"},
+{nombre:"RUTH",tipo:"lejano"}
 ];
 
-lineas.forEach(l=>{
+let actualId=null;
 
-if(l.includes("x") && l.includes("$")){
+document.getElementById("fecha").value = new Date().toISOString().split("T")[0];
 
-let nombre = l.split("x")[0].trim();
-let cantidad = parseInt(l.split("x")[1]) || 0;
-let subtotal = parseInt(l.split("$")[1].replace(/\./g,"")) || 0;
+async function cargar(){
 
-total += subtotal;
-nuevoTexto += `--------------------------\n`;
-nuevoTexto += `${nombre} x${cantidad} = $${subtotal.toLocaleString()}\n`;
+let fecha = document.getElementById("fecha").value;
 
-if(conBendaje.some(p => nombre.toUpperCase().includes(p))){
-let bendaje = Math.floor(cantidad * 0.20);
-nuevoTexto += `Bendaje 20%: ${bendaje} panes\n`;
-}
+const {data} = await db.from("pedidos").select("*");
 
-nuevoTexto += "\n";
-}
+let grid = document.getElementById("grid");
+grid.innerHTML="";
+let total=0;
+
+clientes.forEach(c=>{
+
+let p = data.find(x=>x.cliente===c.nombre && x.fecha.startsWith(fecha));
+
+let t = p ? p.total : 0;
+if(t) total += t;
+
+grid.innerHTML+=`
+<div class="card ${c.tipo} ${p?.editado?"editado":""}" onclick="abrir('${c.nombre}','${c.tipo}',${p?.id||0})">
+<div class="x" onclick="event.stopPropagation();eliminar(${p?.id||0})">✖</div>
+<h4>${c.nombre}</h4>
+<p>$${t}</p>
+</div>
+`;
+
 });
 
-nuevoTexto += `--------------------------\n`;
-nuevoTexto += `===========================\n`;
-nuevoTexto += `TOTAL A COBRAR: $${total.toLocaleString()}\n`;
-nuevoTexto += `===========================\n`;
+document.getElementById("totalGeneral").innerText = "TOTAL: $" + total.toLocaleString();
 
-document.getElementById("facturaTexto").value = nuevoTexto;
-autoResize();
 }
 
-async function eliminarPedido(id){
-
-if(!confirm("¿Eliminar este pedido?")) return;
-
-const { error } = await db
-.from("pedidos")
-.delete()
-.eq("id", id);
-
-if(error){
-console.log("Error al eliminar:", error);
-alert("No se pudo eliminar. Mira la consola.");
-return;
+function filtrar(txt){
+document.querySelectorAll(".card").forEach(c=>{
+c.style.display = c.innerText.toLowerCase().includes(txt.toLowerCase())?"block":"none";
+});
 }
 
-alert("Pedido eliminado ✔");
-
-// Recarga pedidos actuales
-cargarFechas();
-document.getElementById("grid").innerHTML="";
+function abrir(nombre,tipo,id){
+actualId=id;
+document.getElementById("modal").style.display="flex";
+document.getElementById("clienteNombre").innerHTML="<b>"+nombre+"</b>";
+document.getElementById("factura").value="";
 }
 
-async function guardar(){
-let nuevo = document.getElementById("facturaTexto").value;
-await db.from("pedidos").update({pedido:nuevo}).eq("id", pedidoId);
-alert("Factura actualizada ✔");
+async function guardarAuto(texto){
+let fecha = document.getElementById("fecha").value;
+
+let total = [...texto.matchAll(/\$(\d+)/g)].reduce((a,b)=>a+parseInt(b[1]),0);
+
+if(actualId){
+await db.from("pedidos").update({pedido:texto,total,editado:true}).eq("id",actualId);
+}else{
+await db.from("pedidos").insert({
+cliente:document.getElementById("clienteNombre").innerText,
+pedido:texto,
+total,
+fecha,
+editado:false
+});
 }
 
-function imprimir(){ window.print(); }
-
-function cerrar(){ document.getElementById("modal").style.display="none"; }
-
-function autoResize(){
-let area = document.getElementById("facturaTexto");
-area.style.height = "auto";
-area.style.height = area.scrollHeight + "px";
+cargar();
 }
 
-cargarFechas();
+document.getElementById("factura").addEventListener("input",(e)=>{
+guardarAuto(e.target.value);
+});
+
+function cerrar(){document.getElementById("modal").style.display="none";}
+function imprimir(){window.print();}
+
+function eliminar(id){
+if(!id) return;
+if(confirm("Eliminar?")){
+db.from("pedidos").delete().eq("id",id);
+cargar();
+}
+}
+
+function nuevoCliente(){
+let nombre = prompt("Nombre cliente");
+let tipo = prompt("Tipo: moto / auto / recoge / lejano");
+
+if(nombre && tipo){
+clientes.push({nombre,tipo});
+cargar();
+}
+}
+
+function tomarPedido(){
+alert("Aquí irá tu HTML luego");
+}
+
+cargar();
 
 </script>
 
