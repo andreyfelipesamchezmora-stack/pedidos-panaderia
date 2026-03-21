@@ -294,7 +294,7 @@ div.innerHTML+=`
 <div class="producto" id="prod${i}">
 <img src="https://via.placeholder.com/120">
 <div>
-<b>${p.name}</b><br>
+<b class="nombre">${p.name}</b><br>
 Cantidad:<input id="cant${i}" type="number" oninput="marcar(${i});calcular()">
 Dinero:<input id="din${i}" type="number" oninput="marcar(${i});calcular()">
 </div>
@@ -307,9 +307,15 @@ let fecha = document.getElementById("fecha").value;
 
 let fechaSeleccionada = document.getElementById("fecha").value;
 
-let {data}=await db.from("pedidos")
+let {data, error}=await db.from("pedidos")
 .select("*")
 .eq("fecha", fechaSeleccionada);
+
+if(error){
+    console.error(error);
+    alert("Error cargando datos");
+    return;
+}
 
 let total=0;
 let grid=document.getElementById("grid");
@@ -370,23 +376,6 @@ clienteActivo = nombre;
 document.querySelectorAll(".cantidad").forEach(i => i.value = "");
 document.querySelectorAll(".precio").forEach(i => i.value = "");
 
-// cargar datos si existen
-if (pedidos[nombre]) {
-    let pedido = pedidos[nombre];
-
-    pedido.productos.forEach(prod => {
-        document.querySelectorAll(".producto").forEach(p => {
-            let nombreProd = p.querySelector(".nombre")?.innerText;
-
-            if (nombreProd === prod.nombre) {
-                p.querySelector(".cantidad").value = prod.cantidad;
-                p.querySelector(".precio").value = prod.precio;
-            }
-        });
-    });
-
-    document.getElementById("comentarios").value = pedido.comentario || "";
-}
 }
 
 }
@@ -455,48 +444,93 @@ modo = m;
 calcular();
 renderPreview();
 }
-let pedidos = JSON.parse(localStorage.getItem("pedidos")) || {};
-let clienteActivo = null;
-function guardar() {
 
-    if (!clienteActivo) {
+async function guardar() {
+
+    if (!actualCliente) {
         alert("No hay cliente activo");
         return;
     }
 
-    let productos = [];
+    let fecha = document.getElementById("fecha").value;
+
+    if (!fecha) {
+        alert("Selecciona fecha");
+        return;
+    }
+
     let total = 0;
+    let texto = "";
 
-    document.querySelectorAll(".producto").forEach(p => {
+    productos.forEach((p, i) => {
 
-        let nombre = p.querySelector("h3")?.innerText || "";
-        let cantidad = parseInt(p.querySelector("input[type='number']")?.value) || 0;
-        let precio = parseInt(p.querySelectorAll("input[type='number']")[1]?.value) || 0;
+        let cant = Number(document.getElementById("cant"+i)?.value) || 0;
+        let din = Number(document.getElementById("din"+i)?.value) || 0;
 
-        if (cantidad > 0) {
-            let subtotal = cantidad * precio;
+        let precio = p.precio;
+
+        if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
+        if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
+
+        let panes = din>0 ? Math.floor(din/precio) : cant;
+        let subtotal = panes * precio;
+
+        if(subtotal > 0){
+
             total += subtotal;
 
-            productos.push({
-                nombre,
-                cantidad,
-                precio,
-                subtotal
-            });
+            texto += `
+${p.name} x${panes} = $${subtotal}
+`;
         }
+
     });
 
-    pedidos[clienteActivo] = {
-        productos,
-        total,
-        comentario: document.querySelector("textarea")?.value || ""
-    };
+    let comentario = document.getElementById("comentarios").value || "";
 
-    localStorage.setItem("pedidos", JSON.stringify(pedidos));
+    // 🔥 SI YA EXISTE → UPDATE
+    if (actualId) {
 
-    console.log("GUARDADO:", pedidos); // 👈 para verificar
+        let { error } = await db.from("pedidos")
+        .update({
+            total: total,
+            pedido: texto,
+            comentario: comentario,
+            editado: true
+        })
+        .eq("id", actualId);
 
-    alert("✅ Pedido guardado");
+        if (error) {
+            console.error(error);
+            alert("Error al actualizar");
+            return;
+        }
+
+    } else {
+
+        // 🔥 SI NO EXISTE → INSERT
+        let { error } = await db.from("pedidos")
+        .insert([{
+            cliente: actualCliente,
+            fecha: fecha,
+            total: total,
+            pedido: texto,
+            comentario: comentario,
+            editado: false
+        }]);
+
+        if (error) {
+            console.error(error);
+            alert("Error al guardar");
+            return;
+        }
+
+    }
+
+    alert("✅ Guardado en Supabase");
+
+    cerrarModal();
+    cargar(); // 🔥 recarga el panel
 }
 async function eliminar(id,nombre){
 
@@ -509,7 +543,6 @@ await db.from("pedidos").delete().eq("id",id);
 
 // borrar cliente del array
 clientes = clientes.filter(c=>c.nombre!==nombre);
-localStorage.setItem("clientes", JSON.stringify(clientes));
 
 cargar();
 }
