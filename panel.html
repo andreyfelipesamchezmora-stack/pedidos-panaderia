@@ -498,6 +498,7 @@ ${p.name} x${panes} = $${subtotal}
             total: total,
             pedido: texto,
             comentario: comentario,
+            productos: listaProductos
             editado: true
         })
         .eq("id", actualId);
@@ -518,6 +519,7 @@ ${p.name} x${panes} = $${subtotal}
             total: total,
             pedido: texto,
             comentario: comentario,
+            productos: listaProductos
             editado: false
         }]);
 
@@ -533,6 +535,22 @@ ${p.name} x${panes} = $${subtotal}
 
     cerrarModal();
     cargar(); // 🔥 recarga el panel
+let listaProductos = [];
+
+productos.forEach((p, i) => {
+
+    let cant = Number(document.getElementById("cant"+i)?.value) || 0;
+    let din = Number(document.getElementById("din"+i)?.value) || 0;
+
+    if(cant > 0 || din > 0){
+        listaProductos.push({
+            nombre: p.name,
+            cantidad: cant,
+            dinero: din
+        });
+    }
+
+});
 }
 async function eliminar(id,nombre){
 
