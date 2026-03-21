@@ -637,7 +637,25 @@ document.getElementById("totalCobrar").innerText="";
 
 window.totalPedido=0;
 }
+const div = document.getElementById("productos");
 
+if(div){  // 🔥 evita que falle si no carga a tiempo
+
+productos.forEach((p,i)=>{
+div.innerHTML+=`
+<div class='producto' id='prod${i}'>
+<img src='${p.img || "https://via.placeholder.com/120"}'>
+<div style='flex:1'>
+<b>${p.name}</b><br>
+Cantidad:
+<input id='cant${i}' type='number' min="0">
+Dinero:
+<input id='din${i}' type='number' min="0">
+</div>
+</div>`;
+});
+
+}
 </script>
 
 </body>
