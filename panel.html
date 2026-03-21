@@ -170,7 +170,38 @@ TOTAL: $0
 <div id="resultadoBox"></div>
 <div id="bendajeBox"></div>  
 <textarea id="comentarios" placeholder="Comentarios del pedido..." style="width:100%;margin-top:10px;"></textarea>
+<div style="
+background:#f1f1f1;
+padding:10px;
+border-radius:10px;
+margin-top:10px;
+">
 
+<label style="display:block;margin-bottom:8px;">
+<input type="checkbox" id="leDebo" onchange="calcular()"> 
+<strong>Le debo al cliente</strong>
+</label>
+
+<label style="display:block;">
+<input type="checkbox" id="meDebeCheck" onchange="calcular()"> 
+<strong>Me debe el cliente</strong>
+</label>
+
+<input 
+type="number" 
+id="meDebeValor" 
+placeholder="Valor que debe el cliente..." 
+style="
+width:100%;
+margin-top:5px;
+padding:8px;
+border-radius:8px;
+border:1px solid #ccc;
+"
+oninput="calcular()"
+>
+
+</div>    
 <button onclick="imprimirTicket()" style="
 width:70%;
 padding:12px;
@@ -179,7 +210,17 @@ font-size:16px;
 ">
 🖨️ Imprimir Ticket
 </button>
-
+<div id="totalFinal" style="
+margin-top:10px;
+padding:15px;
+background:#111;
+color:white;
+font-size:22px;
+font-weight:bold;
+text-align:center;
+border-radius:10px;
+">
+COBRAR: $0
 </div>
 </div>
 
@@ -509,6 +550,29 @@ document.getElementById("bendajeBox").innerText = bendaje;
 
 // 🔥 GUARDAR GLOBAL
 window.totalPedido = total;
+// 🔥 MANEJO DE DEUDAS
+let leDebo = document.getElementById("leDebo")?.checked;
+let meDebeCheck = document.getElementById("meDebeCheck")?.checked;
+let meDebeValor = Number(document.getElementById("meDebeValor")?.value) || 0;
+
+let totalFinal = total;
+
+// 👉 si le debes al cliente → resta
+if(leDebo){
+    totalFinal = 0; // o puedes manejarlo como negativo si quieres
+}
+
+// 👉 si el cliente te debe → suma
+if(meDebeCheck && meDebeValor > 0){
+    totalFinal += meDebeValor;
+}
+
+// 🔥 mostrar total final
+document.getElementById("totalFinal").innerText =
+"COBRAR: $" + totalFinal.toLocaleString('es-CO');
+
+// guardar global
+window.totalFinal = totalFinal;
 window.textoPedido = texto;
 
 }
@@ -698,6 +762,11 @@ ${comentario}
 
 <div style="font-size:22px;font-weight:bold;text-align:center;">
 TOTAL: $${(window.totalPedido || 0).toLocaleString('es-CO')}
+
+<br><br>
+<b style="font-size:18px;">
+COBRAR: $${(window.totalFinal || window.totalPedido || 0).toLocaleString('es-CO')}
+</b>
 </div>
 
 </div>
