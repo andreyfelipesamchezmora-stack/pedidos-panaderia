@@ -560,19 +560,26 @@ let meDebeValor = Number(document.getElementById("meDebeValor")?.value) || 0;
 
 let totalFinal = total;
 
-// 👉 si le debes al cliente → resta
+// 🔴 LE DEBO → NO COBRAR PERO NO BORRAR TOTAL
 if(leDebo){
-    totalFinal = 0; // o puedes manejarlo como negativo si quieres
+    totalFinal = -total; // queda como saldo a favor del cliente
 }
 
-// 👉 si el cliente te debe → suma
+// 🟢 ME DEBE → SUMA
 if(meDebeCheck && meDebeValor > 0){
     totalFinal += meDebeValor;
 }
 
 // 🔥 mostrar total final
-document.getElementById("totalFinal").innerText =
-"COBRAR: $" + totalFinal.toLocaleString('es-CO');
+let textoFinal = "";
+
+if(leDebo){
+    textoFinal = "SALDO A FAVOR: $" + Math.abs(totalFinal).toLocaleString('es-CO');
+} else {
+    textoFinal = "COBRAR: $" + totalFinal.toLocaleString('es-CO');
+}
+
+document.getElementById("totalFinal").innerText = textoFinal;
 
 // guardar global
 window.totalFinal = totalFinal;
