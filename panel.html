@@ -452,12 +452,14 @@ async function guardar() {
         return;
     }
 
-    let fecha = document.getElementById("fecha").value;
+let fechaInput = document.getElementById("fecha");
+let fecha = fechaInput.value;
 
-    if (!fecha) {
-        alert("Selecciona fecha");
-        return;
-    }
+// 🔥 si está vacío, lo asigna automáticamente
+if (!fecha) {
+    fecha = new Date().toISOString().split("T")[0];
+    fechaInput.value = fecha;
+}
 
     let total = 0;
     let texto = "";
@@ -567,7 +569,11 @@ c.style.display=c.innerText.toLowerCase().includes(txt.toLowerCase())?"block":"n
 
 function resetear(){
 
-document.querySelectorAll("input").forEach(i=>i.value="");
+document.querySelectorAll("input").forEach(i=>{
+    if(i.id !== "fecha"){
+        i.value="";
+    }
+});
 
 document.getElementById("resultadoBox").innerText="";
 document.getElementById("bendajeBox").innerText="";
