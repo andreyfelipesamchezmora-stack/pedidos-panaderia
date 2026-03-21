@@ -2,17 +2,27 @@
 
 <h2>Pedido</h2>
 
-<div style="display:flex;gap:5px;margin-bottom:10px;">
+<div class="layout">
+
+<!-- 🔹 PANEL IZQUIERDO (PRODUCTOS) -->
+<div style="flex:1;">
+<div id="productos"></div>
+</div>
+
+<!-- 🔹 PANEL DERECHO (BOTONES) -->
+<div class="panel-botones">
 <button onclick="modo='promo'">PROMO</button>
 <button onclick="modo='original'">ORIGINAL</button>
 <button onclick="modo='alexa'">ALEXA</button>
 <button onclick="modo='tiberio'">TIBERIO</button>
-</div>
 
 <hr>
-<div id="productos"></div>
 
 <button onclick="calcular()">CALCULAR</button>
+<button onclick="guardarPedidoDirecto()">💾 GUARDAR</button>
+</div>
+
+</div>
 
 <pre id="resultado"></pre>
 <div id="totalCobrar" class="totalGrande"></div>
@@ -20,13 +30,40 @@
 </div>
 
 <style>
+.layout{
+display:flex;
+gap:15px;
+}
+
+.panel-botones{
+width:150px;
+display:flex;
+flex-direction:column;
+gap:8px;
+}
+
+.producto{
+display:flex;
+gap:10px;
+margin-bottom:15px;
+border-bottom:1px solid #ddd;
+padding-bottom:10px;
+}
+
+.producto img{
+width:130px;
+height:130px;
+object-fit:cover;
+border-radius:10px;
+}
+
 .producto.activo-cant{background:#d4ffd4;}
 .producto.activo-din{background:#d4e4ff;}
 </style>
 
 <script>
 
-let modo = "promo"; // promo | original | alexa | tiberio
+let modo="promo";
 
 const productos=[
 {name:"PAN DE 500",precio:500,b:true,img:""},
@@ -47,13 +84,13 @@ const productos=[
 {name:"CROASANES",precio:1500,b:false,img:""}
 ];
 
-// 👉 RENDER
+// 🔹 RENDER PRODUCTOS
 const div=document.getElementById("productos");
 
 productos.forEach((p,i)=>{
 div.innerHTML+=`
-<div class='producto' id='prod${i}' style="display:flex;gap:10px;margin-bottom:10px;">
-<img src='${p.img || "https://via.placeholder.com/100"}'>
+<div class='producto' id='prod${i}'>
+<img src='${p.img || "https://via.placeholder.com/130"}'>
 <div style='flex:1'>
 <b>${p.name}</b><br>
 Cantidad:
@@ -64,7 +101,7 @@ Dinero:
 </div>`;
 });
 
-// 👉 COLORES
+// 🔹 COLORES AUTOMÁTICOS
 productos.forEach((p,i)=>{
 let cant=document.getElementById("cant"+i);
 let din=document.getElementById("din"+i);
@@ -89,8 +126,7 @@ cont.classList.remove("activo-din");
 });
 });
 
-
-// 👉 REGLA PAN 2000
+// 🔹 PROMO PAN 2000
 function promo2000(cant){
 
 if(modo==="original") return {panes:cant,total:cant*2000};
@@ -105,8 +141,7 @@ return {panes:9,total:15000};
 return {panes:cant,total:cant*2000};
 }
 
-
-// 👉 CALCULAR
+// 🔹 CALCULAR
 function calcular(){
 
 let total=0;
@@ -123,16 +158,10 @@ let precio=p.precio;
 if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
 if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
 
+let panes = din>0 ? Math.floor(din/precio) : cant;
 let subtotal=0;
-let panes=0;
 
-if(din>0){
-panes=Math.floor(din/precio);
-}else{
-panes=cant;
-}
-
-// 👉 PROMO ESPECIAL SOLO PAN 2000
+// PROMO SOLO PAN 2000
 if(p.name==="PAN DE 2.000"){
 let res=promo2000(panes);
 panes=res.panes;
@@ -157,11 +186,13 @@ window.totalPedido=total;
 window.textoPedido=texto;
 }
 
-
-// 👉 GUARDAR DIRECTO Y CERRAR
+// 🔥 GUARDAR + CERRAR + REFRESCAR
 async function guardarPedidoDirecto(){
 
-if(!window.totalPedido) return;
+if(!window.totalPedido){
+alert("Primero calcula el pedido");
+return;
+}
 
 await db.from("pedidos")
 .update({
@@ -171,18 +202,12 @@ editado:false
 })
 .eq("id", actualId);
 
-cerrarTomarPedido(); // 🔥 CIERRA AUTOMÁTICO
-cargar(); // 🔥 REFRESCA PANEL
+// 🔥 CERRAR MODAL PRINCIPAL
+document.getElementById("modal").style.display="none";
+
+// 🔥 REFRESCAR PANEL
+cargar();
 
 }
-
-// 👉 AUTO GUARDADO AL CALCULAR
-function calcularYGuardar(){
-calcular();
-guardarPedidoDirecto();
-}
-
-// opcional: puedes cambiar botón calcular por este
-// onclick="calcularYGuardar()"
 
 </script>
