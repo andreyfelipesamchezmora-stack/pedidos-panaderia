@@ -337,6 +337,7 @@ productos.forEach((p,i)=>{
 let cantInput = document.getElementById("cant"+i);
 let dinInput = document.getElementById("din"+i);
 
+// 🚨 si no encuentra inputs, salta
 if(!cantInput || !dinInput) return;
 
 let cant = Number(cantInput.value) || 0;
@@ -344,38 +345,44 @@ let din = Number(dinInput.value) || 0;
 
 let precio = p.precio;
 
+// 🔥 MODOS
 if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
 if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
 
-if(p.name==="PAN DE 2.000" && modo!=="original"){
-if(panes>=3 && panes<=4){panes=3; subtotal=5000;}
-if(panes>=7){panes=9; subtotal=15000;}
-  
 let panes = din>0 ? Math.floor(din/precio) : cant;
 let subtotal = panes * precio;
 
+// 🔥 CONDICIONES PAN 2.000
+if(p.name==="PAN DE 2.000" && modo!=="original"){
+if(panes>=3 && panes<=4){panes=3; subtotal=5000;}
+if(panes>=7){panes=9; subtotal=15000;}
+}
+
+// 🚨 SOLO SI HAY ALGO
 if(subtotal > 0){
 
 let b = p.b ? Math.round(panes * 0.2) : 0;
+
+// 🔥 ESTO ES LO QUE TE FALLABA
 total += subtotal;
+
 texto += `
 ------------------------------
-${p.name} x${panes} =$${subtotal.toLocaleString('es-CO')}
+${p.name}
+Cantidad: ${panes}
+Subtotal: $${subtotal.toLocaleString('es-CO')}
 Bendaje: ${b}
 `;
-}
-if(p.b){
-let b = Math.round(panes * 0.2);
-bendaje += `${p.name} → ${b}\n`;
-}
 
 }
 
 });
 
+// 🔥 MOSTRAR RESULTADOS
 document.getElementById("resultadoBox").innerText = texto;
 document.getElementById("bendajeBox").innerText = bendaje;
 
+// 🔥 GUARDAR GLOBAL
 window.totalPedido = total;
 window.textoPedido = texto;
 
