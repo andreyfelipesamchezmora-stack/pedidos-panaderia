@@ -352,8 +352,13 @@ let subtotal = panes * precio;
 
 if(subtotal > 0){
 
-texto += `${p.name} x${panes} = $${subtotal}\n`;
-total += subtotal;
+let b = p.b ? Math.round(panes * 0.2) : 0;
+
+texto += `
+\n------------------------------\n
+${p.name} x${panes} =$${subtotal.toLocaleString('es-CO')}
+Bendaje: ${b}
+`;
 
 if(p.b){
 let b = Math.round(panes * 0.2);
@@ -438,7 +443,12 @@ let contenido = `
 <div style="font-family:monospace;width:80mm">
 
 <div style="text-align:center;">
+<div style="text-align:center;">
+<img src="https://via.placeholder.com/80"><br>
 <b>Panadería VIANNYS</b><br>
+NIT: 1.076.501.617<br>
+Tel: 3134062278<br>
+Barrio: San Jorge
 </div>
 
 <hr>
@@ -452,13 +462,13 @@ ${window.textoPedido || ""}
 </pre>
 
 <hr>
-
+Comentario:
 ${comentario}
 
 <hr>
 
 <div style="font-size:22px;font-weight:bold;text-align:center;">
-TOTAL: $${window.totalPedido || 0}
+TOTAL: $${(window.totalPedido || 0).toLocaleString('es-CO')}
 </div>
 
 </div>
