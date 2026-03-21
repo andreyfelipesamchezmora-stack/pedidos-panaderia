@@ -295,7 +295,7 @@ if(clientes.length === 0){
 {nombre:"CORUÑA",tipo:"lejano"},
 {nombre:"RUTH",tipo:"lejano"}
 
-}];
+];
 document.getElementById("fecha").value = new Date().toISOString().split("T")[0];
 
 function renderProductos(){
@@ -498,17 +498,17 @@ async function guardar() {
         return;
     }
 
-let fechaInput = document.getElementById("fecha");
-let fecha = fechaInput.value;
+    let fechaInput = document.getElementById("fecha");
+    let fecha = fechaInput.value;
 
-// 🔥 si está vacío, lo asigna automáticamente
-if (!fecha) {
-    fecha = new Date().toISOString().split("T")[0];
-    fechaInput.value = fecha;
-}
+    if (!fecha) {
+        fecha = new Date().toISOString().split("T")[0];
+        fechaInput.value = fecha;
+    }
 
     let total = 0;
     let texto = "";
+    let listaProductos = []; // ✅ FUERA del loop
 
     productos.forEach((p, i) => {
 
@@ -523,33 +523,25 @@ if (!fecha) {
         let panes = din>0 ? Math.floor(din/precio) : cant;
         let subtotal = panes * precio;
 
-        if(subtotal > 0){
+        if(cant > 0 || din > 0){
+            listaProductos.push({
+                nombre: p.name,
+                cantidad: cant,
+                dinero: din
+            });
+        }
 
+        if(subtotal > 0){
             total += subtotal;
 
             texto += `
 ${p.name} x${panes} = $${subtotal}
 `;
-let listaProductos = [];
-
-productos.forEach((p, i) => {
-
-    let cant = Number(document.getElementById("cant"+i)?.value) || 0;
-    let din = Number(document.getElementById("din"+i)?.value) || 0;
-
-    if(cant > 0 || din > 0){
-        listaProductos.push({
-            nombre: p.name,
-            cantidad: cant,
-            dinero: din
-        });
         }
-
     });
 
     let comentario = document.getElementById("comentarios").value || "";
 
-    // 🔥 SI YA EXISTE → UPDATE
     if (actualId) {
 
         let { error } = await db.from("pedidos")
@@ -557,7 +549,7 @@ productos.forEach((p, i) => {
             total: total,
             pedido: texto,
             comentario: comentario,
-            productos: listaProductos
+            productos: listaProductos,
             editado: true
         })
         .eq("id", actualId);
@@ -570,7 +562,6 @@ productos.forEach((p, i) => {
 
     } else {
 
-        // 🔥 SI NO EXISTE → INSERT
         let { error } = await db.from("pedidos")
         .insert([{
             cliente: actualCliente,
@@ -578,7 +569,7 @@ productos.forEach((p, i) => {
             total: total,
             pedido: texto,
             comentario: comentario,
-            productos: listaProductos
+            productos: listaProductos,
             editado: false
         }]);
 
@@ -587,17 +578,12 @@ productos.forEach((p, i) => {
             alert("Error al guardar");
             return;
         }
-
     }
 
     alert("✅ Guardado en Supabase");
 
     cerrarModal();
-    cargar(); // 🔥 recarga el panel
-
-    }
-
-});
+    cargar();
 }
 async function eliminar(id,nombre){
 
@@ -621,7 +607,6 @@ let tipo=prompt("moto / auto / recoge / lejano");
 if(nombre){
 clientes.push({nombre,tipo});
 localStorage.setItem("clientes",JSON.stringify(clientes));
-comentario: document.getElementById("comentarios").value
 cargar();
 }
 }
