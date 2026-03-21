@@ -332,25 +332,41 @@ grid.innerHTML+=`
 document.getElementById("totalGeneral").innerText="TOTAL: $"+total.toLocaleString('es-CO');
 }
 
-function abrir(nombre,id){
-actualCliente=nombre;
-actualId=id;
+async function abrir(nombre,id){
 
-document.getElementById("clienteTitulo").innerText=nombre;
-document.getElementById("modalPedido").style.display="flex";
+actualCliente = nombre;
+actualId = id || null;
+
+document.getElementById("clienteTitulo").innerText = nombre;
+document.getElementById("modalPedido").style.display = "flex";
 
 renderProductos();
 
-// 🔥 cargar pedido existente
-if(id){
-db.from("pedidos").select("*").eq("id",id).then(res=>{
-let p = res.data[0];
-if(!p) return;
+// 🔥 LIMPIAR TODO (esto evita mezcla)
+resetear();
+document.getElementById("comentarios").value = "";
 
-document.getElementById("comentarios").value = p.comentario || "";
+// 🔥 CARGAR PEDIDO REAL POR CLIENTE + FECHA
+let fechaSeleccionada = document.getElementById("fecha").value;
 
-});
+let {data} = await db.from("pedidos")
+.select("*")
+.eq("cliente", nombre)
+.eq("fecha", fechaSeleccionada)
+.single();
+
+if(data){
+
+window.totalPedido = data.total;
+window.textoPedido = data.pedido;
+
+document.getElementById("resultadoBox").innerText = data.pedido;
+document.getElementById("bendajeBox").innerText = "";
+
+document.getElementById("comentarios").value = data.comentario || "";
+
 }
+
 }
 function calcular(){
 
@@ -419,19 +435,30 @@ renderPreview();
 }
 
 async function guardar(){
-if(!window.totalPedido)return alert("Calcula primero");
+
+if(!window.totalPedido){
+alert("Primero calcula el pedido");
+return;
+}
+
+let comentario = document.getElementById("comentarios").value;
 
 await db.from("pedidos").upsert({
 id: actualId || undefined,
 cliente: actualCliente,
 pedido: window.textoPedido,
 total: window.totalPedido,
-editado: actualId ? true : false,
+comentario: comentario,
 fecha: document.getElementById("fecha").value
 });
 
-cerrarModal();
+alert("Guardado ✅");
+
 cargar();
+
+// 🔥 cerrar modal automáticamente
+document.getElementById("modalPedido").style.display="none";
+
 }
 async function eliminar(id,nombre){
 
@@ -468,9 +495,15 @@ c.style.display=c.innerText.toLowerCase().includes(txt.toLowerCase())?"block":"n
 }
 
 function resetear(){
+
 document.querySelectorAll("input").forEach(i=>i.value="");
-document.getElementById("resultadoBox").innerText = texto;
-document.getElementById("bendajeBox").innerText = bendaje;
+
+document.getElementById("resultadoBox").innerText="";
+document.getElementById("bendajeBox").innerText="";
+
+window.totalPedido = 0;
+window.textoPedido = "";
+
 }
 function cerrarModal(){
 document.getElementById("modalPedido").style.display="none";
