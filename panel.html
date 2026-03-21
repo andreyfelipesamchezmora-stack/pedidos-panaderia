@@ -303,18 +303,21 @@ Dinero:<input id="din${i}" type="number" oninput="marcar(${i});calcular()">
 }
 
 async function cargar(){
-let fecha = document.getElementById("fecha").value;
 
 let fechaSeleccionada = document.getElementById("fecha").value;
 
-let {data, error}=await db.from("pedidos")
+// 🔥 proteger data
+let {data, error} = await db.from("pedidos")
 .select("*")
 .eq("fecha", fechaSeleccionada);
 
 if(error){
-    console.error(error);
-    alert("Error cargando datos");
-    return;
+    console.error("ERROR SUPABASE:", error);
+    data = []; // 🔥 evita que rompa
+}
+
+if(!data){
+    data = []; // 🔥 doble seguridad
 }
 
 let total=0;
