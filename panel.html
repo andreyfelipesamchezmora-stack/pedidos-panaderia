@@ -135,8 +135,6 @@ white-space:pre-line;
 
 <h2 id="clienteTitulo"></h2>
 
-<div style="display:flex;gap:20px;">
-
 <div>
 <div id="productos"></div>
 
@@ -148,11 +146,9 @@ white-space:pre-line;
 <button onclick="cambiarModo('tiberio')">TIBERIO</button>
 <button onclick="resetear()">🧹 LIMPIAR</button>
 
-<hr>
+<br><br>
 
 <button onclick="guardar()">💾 GUARDAR</button>
-
-</div>
 
 </div>
 
@@ -160,7 +156,7 @@ white-space:pre-line;
 <div id="bendajeBox"></div>  
 <textarea id="comentarios" placeholder="Comentarios del pedido..." style="width:100%;margin-top:10px;"></textarea>
 
-<button onclick="imprimirTicket()" style="
+<button onclick="imprimirTicket()">🖨️ Imprimir Ticket</button> style="
 width:100%;
 padding:12px;
 margin-top:10px;
@@ -494,7 +490,7 @@ document.getElementById("modalPedido").style.display="none";
 }
 function imprimirTicket(){
 
-calcular(); // asegura datos actualizados
+calcular();
 
 let comentario = document.getElementById("comentarios").value;
 
@@ -503,9 +499,6 @@ let contenido = `
 
 <div style="text-align:center;">
 <b>Panadería VIANNYS</b><br>
-NIT: 1.076.501.617<br>
-Tel: 3134062278<br>
-Barrio: San Jorge
 </div>
 
 <hr>
@@ -535,9 +528,7 @@ TOTAL: $${window.totalPedido || 0}
 let ventana = window.open("", "", "width=300,height=600");
 
 ventana.document.write(contenido);
-
 ventana.document.write("<script>window.print();<\/script>");
-
 ventana.document.close();
 }
 
