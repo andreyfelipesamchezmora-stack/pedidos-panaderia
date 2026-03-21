@@ -138,17 +138,14 @@ white-space:pre-line;
 
 <div style="display:flex;gap:20px;">
 
-<div style="flex:1;" id="productos"></div>
+<div style="display:flex;gap:20px;align-items:flex-start;">
 
-<div class="panel-botones" style="
-position:sticky;
-top:10px;
-background:white;
-padding:10px;
-border-radius:10px;
-box-shadow:0 0 10px rgba(0,0,0,0.1);
-z-index:10;
-">
+<div style="flex:2;" id="productos"></div>
+
+<div style="flex:1;position:sticky;top:10px;">
+
+<div class="panel-botones">
+
 <button onclick="cambiarModo('promo')">PROMO</button>
 <button onclick="cambiarModo('original')">ORIGINAL</button>
 <button onclick="cambiarModo('alexa')">ALEXA</button>
@@ -157,8 +154,8 @@ z-index:10;
 
 <hr>
 
-<button onclick="calcular()">CALCULAR</button>
 <button onclick="guardar()">💾 GUARDAR</button>
+
 </div>
 
 </div>
@@ -166,8 +163,7 @@ z-index:10;
 <div id="resultadoBox"></div>
 <div id="bendajeBox"></div>
 <div id="previewFactura"></div>
-<textarea id="comentarios" placeholder="Comentarios del pedido..." 
-style="width:100%;margin-top:10px;"></textarea>
+<textarea id="comentarios" placeholder="Comentarios del pedido..." style="width:100%;margin-top:10px;"></textarea>
   
 <button onclick="imprimirTicket()" style="
 width:100%;
@@ -328,8 +324,44 @@ setTimeout(calcular, 100);
 
 function calcular(){
 let total=0;
-let texto="";
-let bendaje="BENDAJE:\n";
+let texto = "";
+
+productos.forEach((p,i)=>{
+
+let cant = Number(document.getElementById("cant"+i).value)||0;
+let din = Number(document.getElementById("din"+i).value)||0;
+
+let precio = p.precio;
+
+if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
+if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
+
+let panes = din>0 ? Math.floor(din/precio) : cant;
+let subtotal = panes * precio;
+
+let b = 0;
+
+if(p.name==="PAN DE 2.000" && modo!=="original"){
+if(panes>=3 && panes<=4){panes=3; subtotal=5000;}
+if(panes>=7){panes=9; subtotal=15000;}
+}
+
+if(subtotal>0){
+
+b = p.b ? Math.round(panes*0.2) : 0;
+
+texto += `
+--------------------------------
+${p.name}
+Cantidad: ${panes}
+Subtotal: $${subtotal}
+Bendaje: ${b}
+`;
+
+total += subtotal;
+}
+
+});
 
 productos.forEach((p,i)=>{
 let cant=Number(document.getElementById("cant"+i).value)||0;
@@ -366,27 +398,46 @@ document.getElementById("bendajeBox").innerText=bendaje;
 window.totalPedido=total;
 let comentario = document.getElementById("comentarios").value;
 
-window.textoPedido = texto + "\n" + bendaje + "\nCOMENTARIO:\n" + comentario;
+window.textoPedido = texto + `
+--------------------------------
+COMENTARIO:
+${comentario}
+`;
 }
-function renderPreview() {
+function renderPreview(){
+
 let html = `
 <div style="background:white;padding:10px;border:1px solid #ccc">
+
+<div style="text-align:center;">
+<img src="https://via.placeholder.com/100" style="width:80px;"><br>
 <b>Panadería VIANNYS</b><br>
-Cliente: ${actualCliente}<br>
-<hr>
-<div style="font-size:14px;">
-${window.textoPedido || ""}
+NIT: 1.076.501.617<br>
+Tel: 3134062278<br>
+Barrio: San Jorge
 </div>
+
 <hr>
+
+Cliente: ${actualCliente}
+
+<hr>
+
+<pre style="font-family:monospace;">
+${window.textoPedido || ""}
+</pre>
+
+<hr>
+
 <div style="font-size:22px;font-weight:bold;text-align:center;">
 TOTAL: $${window.totalPedido || 0}
 </div>
+
 </div>
 `;
 
 document.getElementById("previewFactura").innerHTML = html;
 }
-
   
 function cambiarModo(m){
 modo = m;
