@@ -223,10 +223,21 @@ const productos=[
 {name:"CROASANES",precio:1500,b:false}
 ];
 
-let clientes = JSON.parse(localStorage.getItem("clientes")) || [
+let clientes = [];
 
+try {
+    let guardados = JSON.parse(localStorage.getItem("clientes"));
+    if(Array.isArray(guardados)){
+        clientes = guardados;
+    }
+} catch(e){
+    console.error("Error leyendo clientes:", e);
+    clientes = [];
 }
 
+// 🔥 si no hay clientes, usa los tuyos por defecto
+if(clientes.length === 0){
+    clientes = [ 
 /* 🟢 MOTO (cercanos) */
 {nombre:"AMPARO MOLINO ROA",tipo:"moto"},
 {nombre:"ANAYIBE",tipo:"moto"},
@@ -284,7 +295,7 @@ let clientes = JSON.parse(localStorage.getItem("clientes")) || [
 {nombre:"CORUÑA",tipo:"lejano"},
 {nombre:"RUTH",tipo:"lejano"}
 
-];
+}];
 document.getElementById("fecha").value = new Date().toISOString().split("T")[0];
 
 function renderProductos(){
