@@ -163,7 +163,7 @@ TOTAL: $0
 
 <br><br>
 
-<button type="button" onclick="guardarPedido(event)">💾 GUARDAR</button>
+<button type="button" onclick="guardar()">💾 GUARDAR</button>
 
 </div>
 
@@ -333,7 +333,7 @@ document.getElementById("totalGeneral").innerText="TOTAL: $"+total.toLocaleStrin
 }
 
 async function abrir(nombre,id){
-
+clienteActivo = nombre;
 actualCliente = nombre;
 actualId = id || null;
 
@@ -457,32 +457,27 @@ renderPreview();
 }
 let pedidos = JSON.parse(localStorage.getItem("pedidos")) || {};
 let clienteActivo = null;
-function guardar(e) {
-    if (e) e.preventDefault(); // 🔥 evita recarga
+function guardar() {
 
     if (!clienteActivo) {
-        alert("Selecciona un cliente");
+        alert("No hay cliente activo");
         return;
     }
 
-    let pedido = {
-        productos: [],
-        total: 0,
-        comentario: document.getElementById("comentarios")?.value || ""
-    };
-
+    let productos = [];
     let total = 0;
 
     document.querySelectorAll(".producto").forEach(p => {
-        let nombre = p.querySelector(".nombre")?.innerText || "";
-        let cantidad = parseInt(p.querySelector(".cantidad")?.value) || 0;
-        let precio = parseInt(p.querySelector(".precio")?.value) || 0;
+
+        let nombre = p.querySelector("h3")?.innerText || "";
+        let cantidad = parseInt(p.querySelector("input[type='number']")?.value) || 0;
+        let precio = parseInt(p.querySelectorAll("input[type='number']")[1]?.value) || 0;
 
         if (cantidad > 0) {
             let subtotal = cantidad * precio;
             total += subtotal;
 
-            pedido.productos.push({
+            productos.push({
                 nombre,
                 cantidad,
                 precio,
@@ -491,15 +486,17 @@ function guardar(e) {
         }
     });
 
-    pedido.total = total;
+    pedidos[clienteActivo] = {
+        productos,
+        total,
+        comentario: document.querySelector("textarea")?.value || ""
+    };
 
-    // 🔥 guardar en memoria global
-    pedidos[clienteActivo] = pedido;
-
-    // 🔥 guardar en localStorage
     localStorage.setItem("pedidos", JSON.stringify(pedidos));
 
-    alert("Guardado correctamente ✅");
+    console.log("GUARDADO:", pedidos); // 👈 para verificar
+
+    alert("✅ Pedido guardado");
 }
 async function eliminar(id,nombre){
 
