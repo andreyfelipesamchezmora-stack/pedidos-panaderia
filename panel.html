@@ -171,17 +171,6 @@ TOTAL: $0
 <div id="bendajeBox"></div>  
 <textarea id="comentarios" placeholder="Comentarios del pedido..." style="width:100%;margin-top:10px;"></textarea>
 
-<button onclick="calcular()" style="
-width:70%;
-padding:14px;
-margin-top:10px;
-font-size:18px;
-font-weight:bold;
-background:#111;
-color:white;
-">
-⚡ CALCULAR
-</button>
 <button onclick="imprimirTicket()" style="
 width:70%;
 padding:12px;
@@ -482,7 +471,24 @@ if(panes>=7){panes=9; subtotal=15000;}
 // 🚨 SOLO SI HAY ALGO
 if(subtotal > 0){
 
-let b = p.b ? Math.round(panes * 0.2) : 0;
+let b = 0;
+
+// 🔥 regla especial PAN DE 2.000
+if(p.name === "PAN DE 2.000"){
+
+    // 👉 solo calcula bendaje en modo ORIGINAL
+    if(modo === "original"){
+        b = Math.round(panes * 0.2);
+    } else {
+        b = 0;
+    }
+
+} else {
+
+    // 👉 resto de productos normal
+    b = p.b ? Math.round(panes * 0.2) : 0;
+
+}
 
 // 🔥 ESTO ES LO QUE TE FALLABA
 total += subtotal;
