@@ -129,6 +129,9 @@ white-space:pre-line;
 <!-- MODAL PEDIDO -->
 <div class="modal" id="modalPedido">
 <div class="modal-content">
+<div style="text-align:right">
+<button onclick="cerrarModal()">❌</button>
+</div>
 
 <h2 id="clienteTitulo"></h2>
 
@@ -137,10 +140,10 @@ white-space:pre-line;
 <div style="flex:1;" id="productos"></div>
 
 <div class="panel-botones">
-<button onclick="modo='promo'">PROMO</button>
-<button onclick="modo='original'">ORIGINAL</button>
-<button onclick="modo='alexa'">ALEXA</button>
-<button onclick="modo='tiberio'">TIBERIO</button>
+<button onclick="cambiarModo('promo')">PROMO</button>
+<button onclick="cambiarModo('original')">ORIGINAL</button>
+<button onclick="cambiarModo('alexa')">ALEXA</button>
+<button onclick="cambiarModo('tiberio')">TIBERIO</button>
 <button onclick="resetear()">🧹 LIMPIAR</button>
 
 <hr>
@@ -153,6 +156,7 @@ white-space:pre-line;
 
 <div id="resultadoBox"></div>
 <div id="bendajeBox"></div>
+<div id="previewFactura"></div>
 
 </div>
 </div>
@@ -266,7 +270,12 @@ Dinero:<input id="din${i}" type="number">
 }
 
 async function cargar(){
-let {data}=await db.from("pedidos").select("*");
+let fecha = document.getElementById("fecha").value;
+
+let {data}=await db
+.from("pedidos")
+.select("*")
+.eq("fecha", fecha);
 
 let total=0;
 let grid=document.getElementById("grid");
@@ -279,7 +288,7 @@ let t=p?p.total:0;
 total+=t;
 
 grid.innerHTML+=`
-<div class="card ${c.tipo}" onclick="abrir('${c.nombre}',${p?.id||0})">
+<div class="card ${c.tipo} ${p ? 'editado' : ''}" onclick="abrir('${c.nombre}',${p?.id||0})">
 <div class="x" onclick="event.stopPropagation();eliminar(${p?.id||0})">✖</div>
 <h4>${c.nombre}</h4>
 <p>$${t}</p>
@@ -328,7 +337,7 @@ let b=Math.round(panes*0.2);
 bendaje+=`${p.name} → ${b}\n`;
 }
 }
-
+renderPreview();
 });
 
 document.getElementById("resultadoBox").innerText=texto;
@@ -337,25 +346,43 @@ document.getElementById("bendajeBox").innerText=bendaje;
 window.totalPedido=total;
 window.textoPedido=texto+"\n"+bendaje;
 }
+function renderPreview() {
+let html = `
+<div style="background:white;padding:10px;border:1px solid #ccc">
+<b>Panadería VIANNYS</b><br>
+Cliente: ${actualCliente}<br>
+<hr>
+${window.textoPedido || ""}
+<hr>
+<b>TOTAL: $${window.totalPedido || 0}</b>
+</div>
+`;
 
+document.getElementById("previewFactura").innerHTML = html;
+}
+function cambiarModo(m){
+modo = m;
+calcular();
+renderPreview();
+}
 async function guardar(){
 if(!window.totalPedido)return alert("Calcula primero");
 
 await db.from("pedidos").upsert({
-id:actualId,
-cliente:actualCliente,
-pedido:window.textoPedido,
-total:window.totalPedido,
-fecha:new Date().toISOString()
+id: actualId || undefined,
+cliente: actualCliente,
+pedido: window.textoPedido,
+total: window.totalPedido,
+fecha: document.getElementById("fecha").value
 });
 
-document.getElementById("modalPedido").style.display="none";
+cerrarModal();
 cargar();
 }
-
-function eliminar(id){
+async function eliminar(id){
 if(!id)return;
-db.from("pedidos").delete().eq("id",id);
+
+await db.from("pedidos").delete().eq("id",id);
 cargar();
 }
 
@@ -380,6 +407,9 @@ function resetear(){
 document.querySelectorAll("input").forEach(i=>i.value="");
 document.getElementById("resultadoBox").innerText="";
 document.getElementById("bendajeBox").innerText="";
+}
+function cerrarModal(){
+document.getElementById("modalPedido").style.display="none";
 }
 
 cargar();
