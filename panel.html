@@ -140,7 +140,15 @@ white-space:pre-line;
 
 <div style="flex:1;" id="productos"></div>
 
-<div class="panel-botones">
+<div class="panel-botones" style="
+position:sticky;
+top:10px;
+background:white;
+padding:10px;
+border-radius:10px;
+box-shadow:0 0 10px rgba(0,0,0,0.1);
+z-index:10;
+">
 <button onclick="cambiarModo('promo')">PROMO</button>
 <button onclick="cambiarModo('original')">ORIGINAL</button>
 <button onclick="cambiarModo('alexa')">ALEXA</button>
@@ -158,7 +166,9 @@ white-space:pre-line;
 <div id="resultadoBox"></div>
 <div id="bendajeBox"></div>
 <div id="previewFactura"></div>
-
+<textarea id="comentarios" placeholder="Comentarios del pedido..." 
+style="width:100%;margin-top:10px;"></textarea>
+  
 <button onclick="imprimirTicket()" style="
 width:100%;
 padding:10px;
@@ -270,8 +280,8 @@ div.innerHTML+=`
 <img src="https://via.placeholder.com/120">
 <div>
 <b>${p.name}</b><br>
-Cantidad:<input id="cant${i}" type="number">
-Dinero:<input id="din${i}" type="number">
+Cantidad:<input id="cant${i}" type="number" oninput="calcular()">
+Dinero:<input id="din${i}" type="number" oninput="calcular()">
 </div>
 </div>`;
 });
@@ -297,7 +307,7 @@ total+=t;
 
 grid.innerHTML+=`
 <div class="card ${c.tipo} ${p && p.editado ? 'editado' : ''}" onclick="abrir('${c.nombre}',${p?.id||0})">
-<div class="x" onclick="event.stopPropagation();eliminarPedido(${p?.id||0})">✖</div>
+<div class="x" onclick="event.stopPropagation();borrarPedido(event, ${p?.id||0})">✖</div>
 <h4>${c.nombre}</h4>
 <p>$${t}</p>
 </div>`;
@@ -313,6 +323,7 @@ document.getElementById("clienteTitulo").innerText=nombre;
 document.getElementById("modalPedido").style.display="flex";
 document.getElementById("comentarios").value="";
 renderProductos();
+setTimeout(calcular, 100);
 }
 
 function calcular(){
@@ -470,6 +481,22 @@ window.print();
 
 ventana.document.write(html);
 ventana.document.close();
+}
+
+async function borrarPedido(e, id){
+e.stopPropagation();
+
+if(!id){
+alert("No hay pedido para borrar");
+return;
+}
+
+let ok = confirm("¿Eliminar pedido?");
+if(!ok) return;
+
+await db.from("pedidos").delete().eq("id",id);
+
+cargar();
 }
 cargar();
 </script>
