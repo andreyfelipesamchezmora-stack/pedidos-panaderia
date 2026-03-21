@@ -224,6 +224,9 @@ const productos=[
 ];
 
 let clientes = JSON.parse(localStorage.getItem("clientes")) || [
+if(!Array.isArray(clientes)){
+    clientes = [];
+}
 
 /* 🟢 MOTO (cercanos) */
 {nombre:"AMPARO MOLINO ROA",tipo:"moto"},
@@ -304,41 +307,71 @@ Dinero:<input id="din${i}" type="number" oninput="marcar(${i});calcular()">
 
 async function cargar(){
 
-let fechaSeleccionada = document.getElementById("fecha").value;
+    let fechaInput = document.getElementById("fecha");
 
-// 🔥 proteger data
-let {data, error} = await db.from("pedidos")
-.select("*")
-.eq("fecha", fechaSeleccionada);
+    // 🔥 asegurar fecha SIEMPRE
+    if(!fechaInput.value){
+        fechaInput.value = new Date().toISOString().split("T")[0];
+    }
 
-if(error){
-    console.error("ERROR SUPABASE:", error);
-    data = []; // 🔥 evita que rompa
-}
+    let fechaSeleccionada = fechaInput.value;
 
-if(!data){
-    data = []; // 🔥 doble seguridad
-}
+    let data = [];
 
-let total=0;
-let grid=document.getElementById("grid");
-grid.innerHTML="";
+    try {
 
-clientes.forEach(c=>{
-let p=data.find(x=>x.cliente===c.nombre);
+        let res = await db.from("pedidos")
+        .select("*")
+        .eq("fecha", fechaSeleccionada);
 
-let t=p?p.total:0;
-total+=t;
+        if(res.error){
+            console.error("❌ Supabase error:", res.error);
+        } else {
+            data = res.data || [];
+        }
 
-grid.innerHTML+=`
-<div class="card ${c.tipo} ${p && p.editado ? 'editado' : ''}" onclick="abrir('${c.nombre}',${p?.id||0})">
-<div class="x" onclick="event.stopPropagation();eliminar(${p?.id||0},'${c.nombre}')">✖</div>
-<h4>${c.nombre}</h4>
-<p>$${t}</p>
-</div>`;
-});
+    } catch(e){
+        console.error("❌ Error general:", e);
+        data = [];
+    }
 
-document.getElementById("totalGeneral").innerText="TOTAL: $"+total.toLocaleString('es-CO');
+    let total = 0;
+    let grid = document.getElementById("grid");
+
+    // 🔥 SIEMPRE limpiar
+    grid.innerHTML = "";
+
+    // 🔥 SI NO HAY CLIENTES (ultra defensa)
+    if(!clientes || clientes.length === 0){
+        grid.innerHTML = "<h3 style='color:red'>No hay clientes cargados</h3>";
+        return;
+    }
+
+    // 🔥 RENDER SEGURO
+    clientes.forEach(c => {
+
+        let p = data.find(x => x.cliente === c.nombre) || null;
+
+        let t = p ? Number(p.total) || 0 : 0;
+        total += t;
+
+        grid.innerHTML += `
+        <div class="card ${c.tipo} ${p && p.editado ? 'editado' : ''}" 
+        onclick="abrir('${c.nombre}', ${p?.id || 0})">
+
+        <div class="x" 
+        onclick="event.stopPropagation(); eliminar(${p?.id || 0}, '${c.nombre}')">
+        ✖
+        </div>
+
+        <h4>${c.nombre}</h4>
+        <p>$${t.toLocaleString('es-CO')}</p>
+
+        </div>`;
+    });
+
+    document.getElementById("totalGeneral").innerText =
+    "TOTAL: $" + total.toLocaleString('es-CO');
 }
 
 async function abrir(nombre,id){
@@ -591,18 +624,17 @@ c.style.display=c.innerText.toLowerCase().includes(txt.toLowerCase())?"block":"n
 
 function resetear(){
 
-document.querySelectorAll("input").forEach(i=>{
-    if(i.id !== "fecha"){
-        i.value="";
-    }
-});
+    document.querySelectorAll("input").forEach(i=>{
+        if(i.id !== "fecha"){ // 🔥 NO BORRAR FECHA
+            i.value="";
+        }
+    });
 
-document.getElementById("resultadoBox").innerText="";
-document.getElementById("bendajeBox").innerText="";
+    document.getElementById("resultadoBox").innerText="";
+    document.getElementById("bendajeBox").innerText="";
 
-window.totalPedido = 0;
-window.textoPedido = "";
-
+    window.totalPedido = 0;
+    window.textoPedido = "";
 }
 function cerrarModal(){
 document.getElementById("modalPedido").style.display="none";
@@ -705,7 +737,9 @@ function guardarTodo() {
 
     alert("Datos guardados por fecha ✅");
 }
-
+document.addEventListener("DOMContentLoaded", () => {
+    cargar();
+});
 cargar();
 </script>
 
