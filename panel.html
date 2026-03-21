@@ -202,8 +202,18 @@ border-radius:12px;
 
 </div>
 
-<pre id="resultado"></pre>
-<div id="totalCobrar" class="totalGrande"></div>
+#resultadoBox, #bendajeBox{
+background:#f9f9f9;
+padding:10px;
+border-radius:10px;
+margin-top:10px;
+font-size:14px;
+white-space:pre-line;
+}
+
+#bendajeBox{
+background:#fff3cd;
+}
 
 </div>
 
@@ -211,13 +221,15 @@ border-radius:12px;
 .layout{
 display:flex;
 gap:15px;
+align-items:flex-start;
 }
 
 .panel-botones{
-width:150px;
-display:flex;
-flex-direction:column;
-gap:8px;
+width:180px;
+min-width:180px;
+position:sticky;
+top:10px;
+height:fit-content;
 }
 
 .producto{
@@ -326,6 +338,8 @@ function calcular(){
 
 let total=0;
 let texto="";
+let textoB="BENDAJE 20%:\n";
+let bendajeTotal=0;
 
 productos.forEach((p,i)=>{
 
@@ -340,6 +354,56 @@ if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
 
 let panes = din>0 ? Math.floor(din/precio) : cant;
 let subtotal=0;
+
+// 🔥 PROMO SOLO SI NO ES ORIGINAL
+if(p.name==="PAN DE 2.000" && modo!=="original"){
+
+if(panes>=3 && panes<=4){
+panes=3;
+subtotal=5000;
+}
+else if(panes>=7 && panes<=9){
+panes=9;
+subtotal=15000;
+}
+else{
+subtotal=panes*precio;
+}
+
+}else{
+subtotal=panes*precio;
+}
+
+// SUMAR
+if(subtotal>0){
+
+texto+=`${p.name} x${panes} = $${subtotal.toLocaleString()}\n`;
+total+=subtotal;
+
+// 🔥 BENDAJE
+if(p.b){
+let b = Math.round(panes*0.20);
+if(b>0){
+textoB+=`${p.name} → ${b} panes\n`;
+bendajeTotal += b * precio;
+}
+}
+
+}
+
+});
+
+texto+=`\nTOTAL = $${total.toLocaleString()}`;
+textoB+=`\nTOTAL BENDAJE = $${bendajeTotal.toLocaleString()}`;
+
+// MOSTRAR BONITO
+document.getElementById("resultadoBox").innerText=texto;
+document.getElementById("bendajeBox").innerText=textoB;
+document.getElementById("totalCobrar").innerText="TOTAL A COBRAR: $"+total.toLocaleString();
+
+window.totalPedido=total;
+window.textoPedido=texto + "\n\n" + textoB;
+}
 
 // PROMO SOLO PAN 2000
 if(p.name==="PAN DE 2.000"){
