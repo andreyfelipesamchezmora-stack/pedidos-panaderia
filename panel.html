@@ -2,15 +2,25 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Panel PRO Panadería</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<title>Panel PRO Panadería</title>
 
 <style>
 body{margin:0;font-family:Arial;background:#f4f4f4;}
 .container{display:flex;height:100vh;}
 
-.sidebar{width:250px;background:#111;color:#fff;padding:10px;}
-.main{flex:1;padding:10px;overflow:auto;}
+.sidebar{
+width:250px;
+background:#111;
+color:white;
+padding:10px;
+overflow:auto;
+}
+
+.main{flex:1;padding:15px;overflow:auto;}
 
 .grid{
 display:grid;
@@ -19,22 +29,23 @@ gap:10px;
 }
 
 .card{
-background:#fff;
+background:white;
 padding:10px;
 border-radius:10px;
-cursor:pointer;
 position:relative;
+cursor:pointer;
 }
 
 .card.moto{border-left:6px solid green;}
 .card.auto{border-left:6px solid blue;}
 .card.recoge{border-left:6px solid orange;}
 .card.lejano{border-left:6px solid purple;}
+.card.editado{background:#fff3a6;}
 
 .x{
 position:absolute;
-right:8px;
 top:5px;
+right:8px;
 color:red;
 cursor:pointer;
 }
@@ -45,18 +56,18 @@ top:0;left:0;
 width:100%;height:100%;
 background:rgba(0,0,0,0.6);
 display:none;
-justify-content:center;
 align-items:center;
+justify-content:center;
 }
 
-.ticket{
-background:#fff;
-padding:15px;
-border-radius:12px;
+.modal-content{
+background:white;
+width:90%;
+max-width:900px;
 max-height:90vh;
 overflow:auto;
-width:95%;
-max-width:900px;
+padding:15px;
+border-radius:10px;
 }
 
 .producto{
@@ -68,27 +79,29 @@ padding-bottom:10px;
 }
 
 .producto img{
-width:100px;height:100px;border-radius:10px;
+width:110px;
+height:110px;
+object-fit:cover;
+border-radius:10px;
 }
 
 .producto.activo-cant{background:#d4ffd4;}
 .producto.activo-din{background:#d4e4ff;}
 
-.panel{
+.panel-botones{
 position:sticky;
 top:10px;
-width:180px;
 }
 
-.layout{display:flex;gap:15px;}
-
-.result{
+#resultadoBox, #bendajeBox{
 background:#f9f9f9;
 padding:10px;
-margin-top:10px;
 border-radius:10px;
+margin-top:10px;
 white-space:pre-line;
 }
+
+#bendajeBox{background:#fff3cd;}
 </style>
 </head>
 
@@ -104,7 +117,7 @@ white-space:pre-line;
 
 <div class="main">
 
-<input placeholder="Buscar..." oninput="filtrar(this.value)">
+<input type="text" placeholder="Buscar..." oninput="filtrar(this.value)">
 
 <h2 id="totalGeneral">TOTAL: $0</h2>
 
@@ -113,17 +126,17 @@ white-space:pre-line;
 </div>
 </div>
 
-<!-- MODAL -->
+<!-- MODAL PEDIDO -->
 <div class="modal" id="modalPedido">
-<div class="ticket">
+<div class="modal-content">
 
-<h2>Pedido</h2>
+<h2 id="clienteTitulo"></h2>
 
-<div class="layout">
+<div style="display:flex;gap:20px;">
 
 <div style="flex:1;" id="productos"></div>
 
-<div class="panel">
+<div class="panel-botones">
 <button onclick="modo='promo'">PROMO</button>
 <button onclick="modo='original'">ORIGINAL</button>
 <button onclick="modo='alexa'">ALEXA</button>
@@ -138,25 +151,44 @@ white-space:pre-line;
 
 </div>
 
-<div id="resultado" class="result"></div>
-<div id="bendaje" class="result"></div>
-<div id="total"></div>
+<div id="resultadoBox"></div>
+<div id="bendajeBox"></div>
 
 </div>
 </div>
 
 <script>
-
 const db = supabase.createClient(
 "https://vswostjubcxjotpqnzhk.supabase.co",
 "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzd29zdGp1YmN4am90cHFuemhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyOTAyNDksImV4cCI6MjA4Nzg2NjI0OX0.VIWMJWyubtKj7QCoOybia_Fv2S4sjxFelQz9x1tZKBo"
 );
 
 let modo="promo";
-let clienteActual="";
+let actualCliente="";
+let actualId=null;
 
-/* CLIENTES COMPLETOS */
-let clientes=[
+const productos=[
+{name:"PAN DE 500",precio:500,b:true},
+{name:"PAN DE 1.000",precio:1000,b:true},
+{name:"PAN DE 2.000",precio:2000,b:true},
+{name:"PAN DE 3.500",precio:3500,b:true},
+{name:"PAN AGRIDULCE DE 500",precio:500,b:true},
+{name:"PAN AGRIDULCE DE 1.000",precio:1000,b:true},
+{name:"PAN ROLLO",precio:500,b:true},
+{name:"PAN QUESILLO",precio:1200,b:false},
+{name:"LIBERALES",precio:500,b:false},
+{name:"CAÑAS",precio:500,b:false},
+{name:"PAN COCO",precio:500,b:false},
+{name:"MOGICON DE 500",precio:500,b:true},
+{name:"MOGICON DE 1.200",precio:1200,b:false},
+{name:"ROSCON DE 2.500",precio:2500,b:false},
+{name:"HAWAIANOS",precio:1500,b:false},
+{name:"CROASANES",precio:1500,b:false}
+];
+
+let clientes = JSON.parse(localStorage.getItem("clientes")) || [
+
+/* 🟢 MOTO (cercanos) */
 {nombre:"AMPARO MOLINO ROA",tipo:"moto"},
 {nombre:"ANAYIBE",tipo:"moto"},
 {nombre:"NATALIA - PATIOS TRANSITO",tipo:"moto"},
@@ -166,7 +198,7 @@ let clientes=[
 {nombre:"DANIEL BISCOCHERIA - MARIA PAULA",tipo:"moto"},
 {nombre:"MERCAFER",tipo:"moto"},
 {nombre:"OLGA TIENDA CONJUNTO SAN TELMO",tipo:"moto"},
-{nombre:"PATRICIA - TIENDA MI SUR",tipo:"moto"},
+{nombre:"PATRICIA - TIENDA MI SUR FRENTE A BOSQUES DE SAN LUIS",tipo:"moto"},
 {nombre:"CONJUNTO CIPRES - MAGNOLIA",tipo:"moto"},
 {nombre:"ABUELA MARGARITAS",tipo:"moto"},
 {nombre:"NELLY SUR ABASTOS",tipo:"moto"},
@@ -187,10 +219,12 @@ let clientes=[
 {nombre:"JAMES",tipo:"moto"},
 {nombre:"MARIA - PASTUSA",tipo:"moto"},
 
+/* 🔵 AUTO (cercanos) */
 {nombre:"MARKET DEL RIO - TIBERIO",tipo:"auto"},
 {nombre:"TIENDA LUFER FRENTE A GOYA",tipo:"auto"},
-{nombre:"CONJUNTO TIZIANO - MIREYA",tipo:"auto"},
+{nombre:"CONJUNTO TIZIANO AL LADO DE GOYA - SEÑORA MIREYA",tipo:"auto"},
 
+/* 🟠 RECOGE */
 {nombre:"YAKELINE CASETA SURABASTOS",tipo:"recoge"},
 {nombre:"JUDITH",tipo:"recoge"},
 {nombre:"SABAS",tipo:"recoge"},
@@ -201,95 +235,154 @@ let clientes=[
 {nombre:"ALONDRA LA SEXTA",tipo:"recoge"},
 {nombre:"MARÍA FRONTERAS DEL MILENIO",tipo:"recoge"},
 
+/* 🟣 LEJANOS */
 {nombre:"LEIDY VERGEL",tipo:"lejano"},
 {nombre:"YENNIFER VERGEL",tipo:"lejano"},
-{nombre:"YURANY DISTRIBUIDORA HUEVOS",tipo:"lejano"},
+{nombre:"YURANY DISTRIBUIDORA HUEVOS - VERGEL",tipo:"lejano"},
 {nombre:"TIENDA DISNEY - VILLA REGINA",tipo:"lejano"},
 {nombre:"CECILIA",tipo:"lejano"},
 {nombre:"CAMBULOS",tipo:"lejano"},
 {nombre:"CORUÑA",tipo:"lejano"},
 {nombre:"RUTH",tipo:"lejano"}
+
 ];
+document.getElementById("fecha").value = new Date().toISOString().split("T")[0];
 
-/* PRODUCTOS COMPLETOS */
-let productos=[
-{name:"PAN DE 500",precio:500,b:true},
-{name:"PAN DE 1.000",precio:1000,b:true},
-{name:"PAN DE 2.000",precio:2000,b:true},
-{name:"PAN DE 3.500",precio:3500,b:true},
-{name:"PAN QUESILLO",precio:1200,b:false}
-];
+function renderProductos(){
+let div=document.getElementById("productos");
+div.innerHTML="";
 
-function render(){
-let grid=document.getElementById("grid");
-grid.innerHTML="";
-
-clientes.forEach(c=>{
-grid.innerHTML+=`
-<div class="card ${c.tipo}" onclick="abrir('${c.nombre}')">
-<div class="x">✖</div>
-${c.nombre}
+productos.forEach((p,i)=>{
+div.innerHTML+=`
+<div class="producto" id="prod${i}">
+<img src="https://via.placeholder.com/120">
+<div>
+<b>${p.name}</b><br>
+Cantidad:<input id="cant${i}" type="number">
+Dinero:<input id="din${i}" type="number">
+</div>
 </div>`;
 });
 }
 
-function abrir(nombre){
-clienteActual=nombre;
+async function cargar(){
+let {data}=await db.from("pedidos").select("*");
+
+let total=0;
+let grid=document.getElementById("grid");
+grid.innerHTML="";
+
+clientes.forEach(c=>{
+let p=data.find(x=>x.cliente===c.nombre);
+
+let t=p?p.total:0;
+total+=t;
+
+grid.innerHTML+=`
+<div class="card ${c.tipo}" onclick="abrir('${c.nombre}',${p?.id||0})">
+<div class="x" onclick="event.stopPropagation();eliminar(${p?.id||0})">✖</div>
+<h4>${c.nombre}</h4>
+<p>$${t}</p>
+</div>`;
+});
+
+document.getElementById("totalGeneral").innerText="TOTAL: $"+total;
+}
+
+function abrir(nombre,id){
+actualCliente=nombre;
+actualId=id;
+document.getElementById("clienteTitulo").innerText=nombre;
 document.getElementById("modalPedido").style.display="flex";
+renderProductos();
 }
 
 function calcular(){
 let total=0;
 let texto="";
-let bendaje="";
+let bendaje="BENDAJE:\n";
 
 productos.forEach((p,i)=>{
 let cant=Number(document.getElementById("cant"+i).value)||0;
+let din=Number(document.getElementById("din"+i).value)||0;
+
+let precio=p.precio;
+
+if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
+if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
+
+let panes = din>0 ? Math.floor(din/precio) : cant;
+let subtotal=panes*precio;
 
 if(p.name==="PAN DE 2.000" && modo!=="original"){
-if(cant>=3) {cant=3; total+=5000;}
-else total+=cant*2000;
-}else total+=cant*p.precio;
+if(panes>=3 && panes<=4){panes=3; subtotal=5000;}
+if(panes>=7){panes=9; subtotal=15000;}
+}
 
-texto+=p.name+" x"+cant+"\n";
+if(subtotal>0){
+texto+=`${p.name} x${panes} = $${subtotal}\n`;
+total+=subtotal;
 
 if(p.b){
-let b=Math.round(cant*0.2);
-bendaje+=p.name+" → "+b+"\n";
+let b=Math.round(panes*0.2);
+bendaje+=`${p.name} → ${b}\n`;
 }
+}
+
 });
 
-document.getElementById("resultado").innerText=texto;
-document.getElementById("bendaje").innerText=bendaje;
-document.getElementById("total").innerText="TOTAL: $"+total;
-window.total=total;
+document.getElementById("resultadoBox").innerText=texto;
+document.getElementById("bendajeBox").innerText=bendaje;
+
+window.totalPedido=total;
+window.textoPedido=texto+"\n"+bendaje;
 }
 
-function guardar(){
-db.from("pedidos").insert({
-cliente:clienteActual,
-total:window.total,
+async function guardar(){
+if(!window.totalPedido)return alert("Calcula primero");
+
+await db.from("pedidos").upsert({
+id:actualId,
+cliente:actualCliente,
+pedido:window.textoPedido,
+total:window.totalPedido,
 fecha:new Date().toISOString()
 });
+
 document.getElementById("modalPedido").style.display="none";
+cargar();
+}
+
+function eliminar(id){
+if(!id)return;
+db.from("pedidos").delete().eq("id",id);
+cargar();
 }
 
 function nuevoCliente(){
-let nombre=prompt("Nombre");
-let tipo=prompt("moto/auto/recoge/lejano");
+let nombre=prompt("Nombre:");
+let tipo=prompt("moto / auto / recoge / lejano");
 
+if(nombre){
 clientes.push({nombre,tipo});
-render();
+localStorage.setItem("clientes",JSON.stringify(clientes));
+cargar();
+}
 }
 
-function filtrar(t){
+function filtrar(txt){
 document.querySelectorAll(".card").forEach(c=>{
-c.style.display=c.innerText.toLowerCase().includes(t.toLowerCase())?"block":"none";
+c.style.display=c.innerText.toLowerCase().includes(txt.toLowerCase())?"block":"none";
 });
 }
 
-render();
+function resetear(){
+document.querySelectorAll("input").forEach(i=>i.value="");
+document.getElementById("resultadoBox").innerText="";
+document.getElementById("bendajeBox").innerText="";
+}
 
+cargar();
 </script>
 
 </body>
