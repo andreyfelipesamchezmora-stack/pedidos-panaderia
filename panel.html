@@ -117,9 +117,24 @@ white-space:pre-line;
 
 <div class="main">
 
-<input type="text" placeholder="Buscar..." oninput="filtrar(this.value)">
+<input type="text" placeholder="🔍 Buscar cliente..." oninput="filtrar(this.value)" style="
+width:100%;
+padding:12px;
+font-size:16px;
+border-radius:10px;
+border:1px solid #ccc;
+margin-bottom:10px;
+">
 
-<h2 id="totalGeneral">TOTAL: $0</h2>
+<h2 id="totalGeneral" style="
+background:#111;
+color:white;
+padding:10px;
+border-radius:10px;
+text-align:center;
+">
+TOTAL: $0
+</h2>
 
 <div class="grid" id="grid"></div>
 
@@ -280,8 +295,8 @@ div.innerHTML+=`
 <img src="https://via.placeholder.com/120">
 <div>
 <b>${p.name}</b><br>
-Cantidad:<input id="cant${i}" type="number" oninput="calcular()">
-Dinero:<input id="din${i}" type="number" oninput="calcular()">
+Cantidad:<input id="cant${i}" type="number" oninput="marcar(${i});calcular()">
+Dinero:<input id="din${i}" type="number" oninput="marcar(${i});calcular()">
 </div>
 </div>`;
 });
@@ -290,10 +305,11 @@ Dinero:<input id="din${i}" type="number" oninput="calcular()">
 async function cargar(){
 let fecha = document.getElementById("fecha").value;
 
-let {data}=await db
-.from("pedidos")
+let fechaSeleccionada = document.getElementById("fecha").value;
+
+let {data}=await db.from("pedidos")
 .select("*")
-.eq("fecha", fecha);
+.eq("fecha", fechaSeleccionada);
 
 let total=0;
 let grid=document.getElementById("grid");
@@ -307,25 +323,35 @@ total+=t;
 
 grid.innerHTML+=`
 <div class="card ${c.tipo} ${p && p.editado ? 'editado' : ''}" onclick="abrir('${c.nombre}',${p?.id||0})">
-<div class="x" onclick="event.stopPropagation();borrarPedido(event, ${p?.id||0})">✖</div>
+<div class="x" onclick="event.stopPropagation();eliminar(${p?.id||0},'${c.nombre}')">✖</div>
 <h4>${c.nombre}</h4>
 <p>$${t}</p>
 </div>`;
 });
 
-document.getElementById("totalGeneral").innerText="TOTAL: $"+total;
+document.getElementById("totalGeneral").innerText="TOTAL: $"+total.toLocaleString('es-CO');
 }
 
 function abrir(nombre,id){
 actualCliente=nombre;
 actualId=id;
+
 document.getElementById("clienteTitulo").innerText=nombre;
 document.getElementById("modalPedido").style.display="flex";
-document.getElementById("comentarios").value="";
-renderProductos();
-setTimeout(calcular, 100);
-}
 
+renderProductos();
+
+// 🔥 cargar pedido existente
+if(id){
+db.from("pedidos").select("*").eq("id",id).then(res=>{
+let p = res.data[0];
+if(!p) return;
+
+document.getElementById("comentarios").value = p.comentario || "";
+
+});
+}
+}
 function calcular(){
 
 let total = 0;
@@ -407,13 +433,19 @@ fecha: document.getElementById("fecha").value
 cerrarModal();
 cargar();
 }
-async function eliminarPedido(id){
-if(!id) return;
+async function eliminar(id,nombre){
 
-let ok = confirm("¿Eliminar pedido?");
-if(!ok) return;
+if(!confirm("Eliminar cliente?")) return;
 
+// borrar pedido
+if(id){
 await db.from("pedidos").delete().eq("id",id);
+}
+
+// borrar cliente del array
+clientes = clientes.filter(c=>c.nombre!==nombre);
+localStorage.setItem("clientes", JSON.stringify(clientes));
+
 cargar();
 }
 
@@ -424,6 +456,7 @@ let tipo=prompt("moto / auto / recoge / lejano");
 if(nombre){
 clientes.push({nombre,tipo});
 localStorage.setItem("clientes",JSON.stringify(clientes));
+comentario: document.getElementById("comentarios").value
 cargar();
 }
 }
@@ -513,6 +546,20 @@ cargar();
 function cambiarModo(nuevoModo){
 modo = nuevoModo;
 calcular(); // 🔥 recalcula automáticamente
+}
+function marcar(i){
+
+let cant = document.getElementById("cant"+i).value;
+let din = document.getElementById("din"+i).value;
+
+let div = document.getElementById("prod"+i);
+
+if(cant>0 || din>0){
+div.style.background="#d4ffd4";
+}else{
+div.style.background="white";
+}
+
 }
 cargar();
 </script>
