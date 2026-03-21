@@ -311,6 +311,7 @@ actualCliente=nombre;
 actualId=id;
 document.getElementById("clienteTitulo").innerText=nombre;
 document.getElementById("modalPedido").style.display="flex";
+document.getElementById("comentarios").value="";
 renderProductos();
 }
 
@@ -374,59 +375,7 @@ TOTAL: $${window.totalPedido || 0}
 
 document.getElementById("previewFactura").innerHTML = html;
 }
-function imprimirTicket(){
-let contenido = document.getElementById("previewFactura").innerHTML;
 
-let ventana = window.open("", "", "width=300,height=600");
-
-ventana.document.write(`
-<html>
-<head>
-<style>
-body{
-font-family: monospace;
-width:80mm;
-}
-
-.ticket{
-width:100%;
-}
-
-h1{
-font-size:18px;
-text-align:center;
-}
-
-.total{
-font-size:22px;
-font-weight:bold;
-text-align:center;
-margin-top:10px;
-}
-
-.line{
-border-top:1px dashed black;
-margin:5px 0;
-}
-</style>
-</head>
-
-<body>
-<div class="ticket">
-<h1>Panadería VIANNYS</h1>
-${contenido}
-</div>
-
-<script>
-window.print();
-</script>
-
-</body>
-</html>
-`);
-
-ventana.document.close();
-}
   
 function cambiarModo(m){
 modo = m;
@@ -484,7 +433,44 @@ document.getElementById("bendajeBox").innerText="";
 function cerrarModal(){
 document.getElementById("modalPedido").style.display="none";
 }
+function imprimirTicket(){
 
+let contenido = document.getElementById("previewFactura").innerHTML;
+
+let ventana = window.open("", "", "width=300,height=600");
+
+let html = `
+<html>
+<head>
+<style>
+body{
+font-family: monospace;
+width:80mm;
+}
+
+.total{
+font-size:22px;
+font-weight:bold;
+text-align:center;
+}
+</style>
+</head>
+
+<body>
+
+${contenido}
+
+<script>
+window.print();
+<\/script>
+
+</body>
+</html>
+`;
+
+ventana.document.write(html);
+ventana.document.close();
+}
 cargar();
 </script>
 
