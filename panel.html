@@ -458,7 +458,7 @@ renderPreview();
 let pedidos = JSON.parse(localStorage.getItem("pedidos")) || {};
 let clienteActivo = null;
 function guardar() {
-console.log("Cliente activo:", clienteActivo);
+
     if (!clienteActivo) {
         alert("No hay cliente activo");
         return;
