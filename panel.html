@@ -327,13 +327,20 @@ setTimeout(calcular, 100);
 }
 
 function calcular(){
-let total=0;
+
+let total = 0;
 let texto = "";
+let bendaje = "BENDAJE:\n";
 
 productos.forEach((p,i)=>{
 
-let cant = Number(document.getElementById("cant"+i).value)||0;
-let din = Number(document.getElementById("din"+i).value)||0;
+let cantInput = document.getElementById("cant"+i);
+let dinInput = document.getElementById("din"+i);
+
+if(!cantInput || !dinInput) return;
+
+let cant = Number(cantInput.value) || 0;
+let din = Number(dinInput.value) || 0;
 
 let precio = p.precio;
 
@@ -343,104 +350,26 @@ if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
 let panes = din>0 ? Math.floor(din/precio) : cant;
 let subtotal = panes * precio;
 
-let b = 0;
+if(subtotal > 0){
 
-if(p.name==="PAN DE 2.000" && modo!=="original"){
-if(panes>=3 && panes<=4){panes=3; subtotal=5000;}
-if(panes>=7){panes=9; subtotal=15000;}
-}
-
-if(subtotal>0){
-
-b = p.b ? Math.round(panes*0.2) : 0;
-
-texto += `
---------------------------------
-${p.name}
-Cantidad: ${panes}
-Subtotal: $${subtotal}
-Bendaje: ${b}
-`;
-
+texto += `${p.name} x${panes} = $${subtotal}\n`;
 total += subtotal;
-}
-
-});
-
-productos.forEach((p,i)=>{
-let cant=Number(document.getElementById("cant"+i).value)||0;
-let din=Number(document.getElementById("din"+i).value)||0;
-
-let precio=p.precio;
-
-if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
-if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
-
-let panes = din>0 ? Math.floor(din/precio) : cant;
-let subtotal=panes*precio;
-
-if(p.name==="PAN DE 2.000" && modo!=="original"){
-if(panes>=3 && panes<=4){panes=3; subtotal=5000;}
-if(panes>=7){panes=9; subtotal=15000;}
-}
-
-if(subtotal>0){
-texto+=`${p.name} x${panes} = $${subtotal}\n`;
-total+=subtotal;
 
 if(p.b){
-let b=Math.round(panes*0.2);
-bendaje+=`${p.name} → ${b}\n`;
+let b = Math.round(panes * 0.2);
+bendaje += `${p.name} → ${b}\n`;
 }
+
 }
-renderPreview();
+
 });
 
-document.getElementById("resultadoBox").innerText=texto;
-document.getElementById("bendajeBox").innerText=bendaje;
+document.getElementById("resultadoBox").innerText = texto;
+document.getElementById("bendajeBox").innerText = bendaje;
 
-window.totalPedido=total;
-let comentario = document.getElementById("comentarios").value;
+window.totalPedido = total;
+window.textoPedido = texto;
 
-window.textoPedido = texto + `
---------------------------------
-COMENTARIO:
-${comentario}
-`;
-}
-function renderPreview(){
-
-let html = `
-<div style="background:white;padding:10px;border:1px solid #ccc">
-
-<div style="text-align:center;">
-<img src="https://via.placeholder.com/100" style="width:80px;"><br>
-<b>Panadería VIANNYS</b><br>
-NIT: 1.076.501.617<br>
-Tel: 3134062278<br>
-Barrio: San Jorge
-</div>
-
-<hr>
-
-Cliente: ${actualCliente}
-
-<hr>
-
-<pre style="font-family:monospace;">
-${window.textoPedido || ""}
-</pre>
-
-<hr>
-
-<div style="font-size:22px;font-weight:bold;text-align:center;">
-TOTAL: $${window.totalPedido || 0}
-</div>
-
-</div>
-`;
-
-document.getElementById("previewFactura").innerHTML = html;
 }
   
 function cambiarModo(m){
@@ -524,7 +453,6 @@ ${window.textoPedido || ""}
 
 <hr>
 
-COMENTARIO:
 ${comentario}
 
 <hr>
@@ -537,6 +465,11 @@ TOTAL: $${window.totalPedido || 0}
 `;
 
 let ventana = window.open("", "", "width=300,height=600");
+
+if(!ventana){
+alert("El navegador bloqueó la impresión");
+return;
+}
 
 ventana.document.write(contenido);
 ventana.document.write("<script>window.print();<\/script>");
