@@ -134,15 +134,11 @@ white-space:pre-line;
 </div>
 
 <h2 id="clienteTitulo"></h2>
-<textarea id="comentarios" placeholder="Comentarios del pedido..." style="width:100%;margin-bottom:10px;"></textarea>
 
 <div style="display:flex;gap:20px;">
 
-<div style="display:flex;gap:20px;align-items:flex-start;">
-
-<div style="flex:2;" id="productos"></div>
-
-<div style="flex:1;position:sticky;top:10px;">
+<div>
+<div id="productos"></div>
 
 <div class="panel-botones">
 
@@ -161,16 +157,17 @@ white-space:pre-line;
 </div>
 
 <div id="resultadoBox"></div>
-<div id="bendajeBox"></div>
-<div id="previewFactura"></div>
+<div id="bendajeBox"></div>  
 <textarea id="comentarios" placeholder="Comentarios del pedido..." style="width:100%;margin-top:10px;"></textarea>
-  
+
 <button onclick="imprimirTicket()" style="
 width:100%;
-padding:10px;
-font-size:16px;
+padding:12px;
 margin-top:10px;
-">🖨️ Imprimir Ticket</button>
+font-size:16px;
+">
+🖨️ Imprimir Ticket
+</button>
 
 </div>
 </div>
@@ -497,40 +494,50 @@ document.getElementById("modalPedido").style.display="none";
 }
 function imprimirTicket(){
 
-let contenido = document.getElementById("previewFactura").innerHTML;
+calcular(); // asegura datos actualizados
+
+let comentario = document.getElementById("comentarios").value;
+
+let contenido = `
+<div style="font-family:monospace;width:80mm">
+
+<div style="text-align:center;">
+<b>Panadería VIANNYS</b><br>
+NIT: 1.076.501.617<br>
+Tel: 3134062278<br>
+Barrio: San Jorge
+</div>
+
+<hr>
+
+Cliente: ${actualCliente}
+
+<hr>
+
+<pre>
+${window.textoPedido || ""}
+</pre>
+
+<hr>
+
+COMENTARIO:
+${comentario}
+
+<hr>
+
+<div style="font-size:22px;font-weight:bold;text-align:center;">
+TOTAL: $${window.totalPedido || 0}
+</div>
+
+</div>
+`;
 
 let ventana = window.open("", "", "width=300,height=600");
 
-let html = `
-<html>
-<head>
-<style>
-body{
-font-family: monospace;
-width:80mm;
-}
+ventana.document.write(contenido);
 
-.total{
-font-size:22px;
-font-weight:bold;
-text-align:center;
-}
-</style>
-</head>
+ventana.document.write("<script>window.print();<\/script>");
 
-<body>
-
-${contenido}
-
-<script>
-window.print();
-<\/script>
-
-</body>
-</html>
-`;
-
-ventana.document.write(html);
 ventana.document.close();
 }
 
