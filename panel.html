@@ -134,6 +134,7 @@ white-space:pre-line;
 </div>
 
 <h2 id="clienteTitulo"></h2>
+<textarea id="comentarios" placeholder="Comentarios del pedido..." style="width:100%;margin-bottom:10px;"></textarea>
 
 <div style="display:flex;gap:20px;">
 
@@ -157,6 +158,13 @@ white-space:pre-line;
 <div id="resultadoBox"></div>
 <div id="bendajeBox"></div>
 <div id="previewFactura"></div>
+
+<button onclick="imprimirTicket()" style="
+width:100%;
+padding:10px;
+font-size:16px;
+margin-top:10px;
+">🖨️ Imprimir Ticket</button>
 
 </div>
 </div>
@@ -288,8 +296,8 @@ let t=p?p.total:0;
 total+=t;
 
 grid.innerHTML+=`
-<div class="card ${c.tipo} ${p ? 'editado' : ''}" onclick="abrir('${c.nombre}',${p?.id||0})">
-<div class="x" onclick="event.stopPropagation();eliminar(${p?.id||0})">✖</div>
+<div class="card ${c.tipo} ${p && p.editado ? 'editado' : ''}" onclick="abrir('${c.nombre}',${p?.id||0})">
+<div class="x" onclick="event.stopPropagation();eliminarPedido(${p?.id||0})">✖</div>
 <h4>${c.nombre}</h4>
 <p>$${t}</p>
 </div>`;
@@ -344,7 +352,9 @@ document.getElementById("resultadoBox").innerText=texto;
 document.getElementById("bendajeBox").innerText=bendaje;
 
 window.totalPedido=total;
-window.textoPedido=texto+"\n"+bendaje;
+let comentario = document.getElementById("comentarios").value;
+
+window.textoPedido = texto + "\n" + bendaje + "\nCOMENTARIO:\n" + comentario;
 }
 function renderPreview() {
 let html = `
@@ -352,19 +362,78 @@ let html = `
 <b>Panadería VIANNYS</b><br>
 Cliente: ${actualCliente}<br>
 <hr>
+<div style="font-size:14px;">
 ${window.textoPedido || ""}
+</div>
 <hr>
-<b>TOTAL: $${window.totalPedido || 0}</b>
+<div style="font-size:22px;font-weight:bold;text-align:center;">
+TOTAL: $${window.totalPedido || 0}
+</div>
 </div>
 `;
 
 document.getElementById("previewFactura").innerHTML = html;
 }
+function imprimirTicket(){
+let contenido = document.getElementById("previewFactura").innerHTML;
+
+let ventana = window.open("", "", "width=300,height=600");
+
+ventana.document.write(`
+<html>
+<head>
+<style>
+body{
+font-family: monospace;
+width:80mm;
+}
+
+.ticket{
+width:100%;
+}
+
+h1{
+font-size:18px;
+text-align:center;
+}
+
+.total{
+font-size:22px;
+font-weight:bold;
+text-align:center;
+margin-top:10px;
+}
+
+.line{
+border-top:1px dashed black;
+margin:5px 0;
+}
+</style>
+</head>
+
+<body>
+<div class="ticket">
+<h1>Panadería VIANNYS</h1>
+${contenido}
+</div>
+
+<script>
+window.print();
+</script>
+
+</body>
+</html>
+`);
+
+ventana.document.close();
+}
+  
 function cambiarModo(m){
 modo = m;
 calcular();
 renderPreview();
 }
+
 async function guardar(){
 if(!window.totalPedido)return alert("Calcula primero");
 
@@ -373,14 +442,18 @@ id: actualId || undefined,
 cliente: actualCliente,
 pedido: window.textoPedido,
 total: window.totalPedido,
+editado: actualId ? true : false,
 fecha: document.getElementById("fecha").value
 });
 
 cerrarModal();
 cargar();
 }
-async function eliminar(id){
-if(!id)return;
+async function eliminarPedido(id){
+if(!id) return;
+
+let ok = confirm("¿Eliminar pedido?");
+if(!ok) return;
 
 await db.from("pedidos").delete().eq("id",id);
 cargar();
