@@ -163,7 +163,7 @@ TOTAL: $0
 
 <br><br>
 
-<button onclick="guardar()">💾 GUARDAR</button>
+<button type="button" onclick="guardarPedido(event)">💾 GUARDAR</button>
 
 </div>
 
@@ -364,7 +364,29 @@ document.getElementById("resultadoBox").innerText = data.pedido;
 document.getElementById("bendajeBox").innerText = "";
 
 document.getElementById("comentarios").value = data.comentario || "";
+clienteActivo = nombre;
 
+// limpiar inputs primero
+document.querySelectorAll(".cantidad").forEach(i => i.value = "");
+document.querySelectorAll(".precio").forEach(i => i.value = "");
+
+// cargar datos si existen
+if (pedidos[nombre]) {
+    let pedido = pedidos[nombre];
+
+    pedido.productos.forEach(prod => {
+        document.querySelectorAll(".producto").forEach(p => {
+            let nombreProd = p.querySelector(".nombre")?.innerText;
+
+            if (nombreProd === prod.nombre) {
+                p.querySelector(".cantidad").value = prod.cantidad;
+                p.querySelector(".precio").value = prod.precio;
+            }
+        });
+    });
+
+    document.getElementById("comentarios").value = pedido.comentario || "";
+}
 }
 
 }
@@ -433,32 +455,51 @@ modo = m;
 calcular();
 renderPreview();
 }
+let pedidos = JSON.parse(localStorage.getItem("pedidos")) || {};
+let clienteActivo = null;
+function guardar(e) {
+    if (e) e.preventDefault(); // 🔥 evita recarga
 
-async function guardar(){
+    if (!clienteActivo) {
+        alert("Selecciona un cliente");
+        return;
+    }
 
-if(!window.totalPedido){
-alert("Primero calcula el pedido");
-return;
-}
+    let pedido = {
+        productos: [],
+        total: 0,
+        comentario: document.getElementById("comentarios")?.value || ""
+    };
 
-let comentario = document.getElementById("comentarios").value;
+    let total = 0;
 
-await db.from("pedidos").upsert({
-id: actualId || undefined,
-cliente: actualCliente,
-pedido: window.textoPedido,
-total: window.totalPedido,
-comentario: comentario,
-fecha: document.getElementById("fecha").value
-});
+    document.querySelectorAll(".producto").forEach(p => {
+        let nombre = p.querySelector(".nombre")?.innerText || "";
+        let cantidad = parseInt(p.querySelector(".cantidad")?.value) || 0;
+        let precio = parseInt(p.querySelector(".precio")?.value) || 0;
 
-alert("Guardado ✅");
+        if (cantidad > 0) {
+            let subtotal = cantidad * precio;
+            total += subtotal;
 
-cargar();
+            pedido.productos.push({
+                nombre,
+                cantidad,
+                precio,
+                subtotal
+            });
+        }
+    });
 
-// 🔥 cerrar modal automáticamente
-document.getElementById("modalPedido").style.display="none";
+    pedido.total = total;
 
+    // 🔥 guardar en memoria global
+    pedidos[clienteActivo] = pedido;
+
+    // 🔥 guardar en localStorage
+    localStorage.setItem("pedidos", JSON.stringify(pedidos));
+
+    alert("Guardado correctamente ✅");
 }
 async function eliminar(id,nombre){
 
@@ -594,6 +635,19 @@ div.style.background="white";
 }
 
 }
+function guardarTodo() {
+    let fecha = document.getElementById("fecha").value;
+
+    if (!fecha) {
+        alert("Selecciona fecha");
+        return;
+    }
+
+    localStorage.setItem("pedidos_" + fecha, JSON.stringify(pedidos));
+
+    alert("Datos guardados por fecha ✅");
+}
+
 cargar();
 </script>
 
