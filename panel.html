@@ -189,8 +189,8 @@ margin-top:10px;
 
 <input 
 type="number" 
-id="meDebeValor" 
-placeholder="Valor que debe el cliente..." 
+id="leDeboValor" 
+placeholder="Valor que le debes al cliente..." 
 style="
 width:100%;
 margin-top:5px;
@@ -558,11 +558,13 @@ let leDebo = document.getElementById("leDebo")?.checked;
 let meDebeCheck = document.getElementById("meDebeCheck")?.checked;
 let meDebeValor = Number(document.getElementById("meDebeValor")?.value) || 0;
 
+let leDeboValor = Number(document.getElementById("leDeboValor")?.value) || 0;
+
 let totalFinal = total;
 
-// 🔴 LE DEBO → NO COBRAR PERO NO BORRAR TOTAL
-if(leDebo){
-    totalFinal = -total; // queda como saldo a favor del cliente
+// 🔴 LE DEBO → RESTA LO QUE DEBO
+if(leDebo && leDeboValor > 0){
+    totalFinal -= leDeboValor;
 }
 
 // 🟢 ME DEBE → SUMA
