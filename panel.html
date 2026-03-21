@@ -409,7 +409,28 @@ let {data} = await db.from("pedidos")
 .single();
 
 if(data){
+// 🔥 CARGAR PRODUCTOS EN INPUTS
+if(data.productos && Array.isArray(data.productos)){
 
+    data.productos.forEach(prodGuardado => {
+
+        let index = productos.findIndex(p => p.name === prodGuardado.nombre);
+
+        if(index !== -1){
+
+            let cantInput = document.getElementById("cant"+index);
+            let dinInput = document.getElementById("din"+index);
+
+            if(cantInput) cantInput.value = prodGuardado.cantidad || "";
+            if(dinInput) dinInput.value = prodGuardado.dinero || "";
+
+            // 🔥 pintar en verde como activo
+            marcar(index);
+        }
+
+    });
+
+}
 window.totalPedido = data.total;
 window.textoPedido = data.pedido;
 
