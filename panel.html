@@ -156,8 +156,19 @@ white-space:pre-line;
 <div id="bendajeBox"></div>  
 <textarea id="comentarios" placeholder="Comentarios del pedido..." style="width:100%;margin-top:10px;"></textarea>
 
-<button onclick="imprimirTicket()">🖨️ Imprimir Ticket</button> style="
-width:100%;
+<button onclick="calcular()" style="
+width:70%;
+padding:14px;
+margin-top:10px;
+font-size:18px;
+font-weight:bold;
+background:#111;
+color:white;
+">
+⚡ CALCULAR
+</button>
+<button onclick="imprimirTicket()" style="
+width:70%;
 padding:12px;
 margin-top:10px;
 font-size:16px;
@@ -482,8 +493,8 @@ c.style.display=c.innerText.toLowerCase().includes(txt.toLowerCase())?"block":"n
 
 function resetear(){
 document.querySelectorAll("input").forEach(i=>i.value="");
-document.getElementById("resultadoBox").innerText="";
-document.getElementById("bendajeBox").innerText="";
+document.getElementById("resultadoBox").innerText = texto;
+document.getElementById("bendajeBox").innerText = bendaje;
 }
 function cerrarModal(){
 document.getElementById("modalPedido").style.display="none";
