@@ -505,6 +505,10 @@ await db.from("pedidos").delete().eq("id",id);
 
 cargar();
 }
+function cambiarModo(nuevoModo){
+modo = nuevoModo;
+calcular(); // 🔥 recalcula automáticamente
+}
 cargar();
 </script>
 
