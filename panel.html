@@ -113,6 +113,18 @@ top:0;
 width:80mm;
 }
 }
+#resultadoBox, #bendajeBox{
+background:#f9f9f9;
+padding:10px;
+border-radius:10px;
+margin-top:10px;
+font-size:14px;
+white-space:pre-line;
+}
+
+#bendajeBox{
+background:#fff3cd;
+}
 </style>
 </head>
 
@@ -193,6 +205,7 @@ border-radius:12px;
 <button onclick="modo='original'">ORIGINAL</button>
 <button onclick="modo='alexa'">ALEXA</button>
 <button onclick="modo='tiberio'">TIBERIO</button>
+<button onclick="resetear()">🧹 LIMPIAR</button>
 
 <hr>
 
@@ -202,18 +215,9 @@ border-radius:12px;
 
 </div>
 
-#resultadoBox, #bendajeBox{
-background:#f9f9f9;
-padding:10px;
-border-radius:10px;
-margin-top:10px;
-font-size:14px;
-white-space:pre-line;
-}
-
-#bendajeBox{
-background:#fff3cd;
-}
+<div id="resultadoBox"></div>
+<div id="bendajeBox"></div>
+<div id="totalCobrar" class="totalGrande"></div>
 
 </div>
 
@@ -618,6 +622,21 @@ document.getElementById("modalPedido").style.display="flex";
 }
 
 cargar();
+ 
+  function resetear(){
+
+productos.forEach((p,i)=>{
+document.getElementById('cant'+i).value="";
+document.getElementById('din'+i).value="";
+document.getElementById('prod'+i).classList.remove("activo-cant","activo-din");
+});
+
+document.getElementById("resultadoBox").innerText="";
+document.getElementById("bendajeBox").innerText="";
+document.getElementById("totalCobrar").innerText="";
+
+window.totalPedido=0;
+}
 
 </script>
 
