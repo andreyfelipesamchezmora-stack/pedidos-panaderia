@@ -280,9 +280,12 @@ let clientes = [];
 
 try {
     let guardados = JSON.parse(localStorage.getItem("clientes"));
-    if(Array.isArray(guardados)){
-        clientes = guardados;
-    }
+// 🔥 usar siempre los del código (ignorar localStorage)
+if(Array.isArray(guardados) && guardados.length > 0){
+    console.log("Clientes cargados desde localStorage");
+} else {
+    localStorage.setItem("clientes", JSON.stringify(clientes));
+}
 } catch(e){
     console.error("Error leyendo clientes:", e);
     clientes = [];
