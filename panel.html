@@ -234,6 +234,8 @@ let modo="promo";
 let actualCliente="";
 let actualId=null;
 
+let numeroTicket = Number(localStorage.getItem("ticketNumero")) || 1;
+
 const imagenes = {
 "PAN DE 500":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138495/PAN500_jeuz1z.jpg",
 "PAN DE 1.000":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138495/PAN1000_hnog08.jpg",
@@ -760,107 +762,116 @@ function resetear(){
 function cerrarModal(){
 document.getElementById("modalPedido").style.display="none";
 }
-function imprimirTicket(){
+async function imprimirTicket(){
 
-calcular();
+    calcular();
 
-let comentario = document.getElementById("comentarios").value;
+    // 🔥 guardar primero
+    await guardar();
 
-let contenido = `
-<div style="
-font-family:monospace;
-width:280px;
-margin:0 auto;
-text-align:center;
-">
+    let comentario = document.getElementById("comentarios").value;
+    let fecha = document.getElementById("fecha").value;
 
-<!-- LOGO -->
-<div style="width:100%; text-align:center;">
-  <img src="https://res.cloudinary.com/deyaftfah/image/upload/v1774142771/image-removebg-preview_ifzkfh.png" style="
-    width:150px;
-    display:block;
-    margin:0 auto 5px auto;
-  ">
-</div>
+    let numero = generarNumeroTicket();
 
-<!-- ENCABEZADO -->
-<div style="text-align:center;">
-  <div style="font-weight:bold; font-size:16px;">Panadería VIANNYS</div>
-  <div>NIT: 1.076.501.617</div>
-  <div>Tel: 3134062278</div>
-  <div>Barrio: San Jorge</div>
-</div>
+    let contenido = `
+    <div style="
+    font-family:monospace;
+    width:280px;
+    margin:0 auto;
+    text-align:center;
+    ">
 
-<!-- LINEA -->
-<div style="border-top:1px dashed black; margin:8px 0;"></div>
+    <!-- LOGO -->
+    <div style="width:100%; text-align:center;">
+      <img src="https://res.cloudinary.com/deyaftfah/image/upload/v1774142771/image-removebg-preview_ifzkfh.png" style="
+        width:150px;
+        display:block;
+        margin:0 auto 5px auto;
+      ">
+    </div>
 
-<!-- CLIENTE -->
-<div style="
-font-size:18px;
-font-weight:bold;
-text-align:center;
-width:100%;
-">
-Cliente: ${actualCliente}
-</div>
+    <!-- ENCABEZADO -->
+    <div style="text-align:center;">
+      <div style="font-weight:bold; font-size:16px;">Panadería VIANNYS</div>
+      <div>NIT: 1.076.501.617</div>
+      <div>Tel: 3134062278</div>
+      <div>Barrio: San Jorge</div>
+    </div>
 
-<!-- LINEA -->
-<div style="border-top:1px dashed black; margin:8px 0;"></div>
+    <div style="border-top:1px dashed black; margin:8px 0;"></div>
 
-<!-- PRODUCTOS -->
-<div style="
-text-align:center;
-font-size:14px;
-line-height:1.4;
-">
-${(window.textoPedido || "").replace(/\n/g,"<br>")}
-</div>
+    <!-- NUMERO + FECHA -->
+    <div style="text-align:center;">
+    <b>Ticket #${numero}</b><br>
+    Fecha: ${fecha}
+    </div>
 
-<!-- LINEA -->
-<div style="border-top:1px dashed black; margin:8px 0;"></div>
+    <div style="border-top:1px dashed black; margin:8px 0;"></div>
 
-<!-- COMENTARIO -->
-<div style="text-align:left;">
-<b>Comentario:</b><br>
-${comentario || ""}
-</div>
+    <!-- CLIENTE -->
+    <div style="
+    font-size:18px;
+    font-weight:bold;
+    text-align:center;
+    ">
+    Cliente: ${actualCliente}
+    </div>
 
-<!-- LINEA -->
-<div style="border-top:1px dashed black; margin:8px 0;"></div>
+    <div style="border-top:1px dashed black; margin:8px 0;"></div>
 
-<!-- TOTALES -->
-<div style="
-font-size:20px;
-font-weight:bold;
-text-align:center;
-">
-TOTAL: $${(window.totalPedido || 0).toLocaleString('es-CO')}
-</div>
+    <!-- PRODUCTOS -->
+    <div style="
+    text-align:center;
+    font-size:14px;
+    line-height:1.4;
+    ">
+    ${(window.textoPedido || "").replace(/\n/g,"<br>")}
+    </div>
 
-<div style="
-font-size:18px;
-font-weight:bold;
-text-align:center;
-margin-top:5px;
-">
-${window.totalFinal < 0 ? "DEBEMOS" : "COBRAR"}: $${Math.abs(window.totalFinal || window.totalPedido || 0).toLocaleString('es-CO')}
-</div>
+    <div style="border-top:1px dashed black; margin:8px 0;"></div>
 
-</div>
-`;
+    <!-- COMENTARIO -->
+    <div style="text-align:left;">
+    <b>Comentario:</b><br>
+    ${comentario || ""}
+    </div>
 
-let ventana = window.open("", "", "width=300,height=600");
+    <div style="border-top:1px dashed black; margin:8px 0;"></div>
 
-if(!ventana){
-alert("El navegador bloqueó la impresión");
-return;
+    <!-- TOTALES -->
+    <div style="
+    font-size:20px;
+    font-weight:bold;
+    text-align:center;
+    ">
+    TOTAL: $${(window.totalPedido || 0).toLocaleString('es-CO')}
+    </div>
+
+    <div style="
+    font-size:18px;
+    font-weight:bold;
+    text-align:center;
+    margin-top:5px;
+    ">
+    ${window.totalFinal < 0 ? "DEBEMOS" : "COBRAR"}: $${Math.abs(window.totalFinal || window.totalPedido || 0).toLocaleString('es-CO')}
+    </div>
+
+    </div>
+    `;
+
+    let ventana = window.open("", "", "width=300,height=600");
+
+    if(!ventana){
+        alert("El navegador bloqueó la impresión");
+        return;
+    }
+
+    ventana.document.write(contenido);
+    ventana.document.write("<script>window.print();<\/script>");
+    ventana.document.close();
+let fecha = document.getElementById("fecha").value;
 }
-
-ventana.document.write(contenido);
-ventana.document.write("<script>window.print();<\/script>");
-ventana.document.close();
-}
-
 async function borrarPedido(e, id){
 e.stopPropagation();
 
@@ -905,6 +916,12 @@ function guardarTodo() {
     localStorage.setItem("pedidos_" + fecha, JSON.stringify(pedidos));
 
     alert("Datos guardados por fecha ✅");
+}
+function generarNumeroTicket(){
+    let num = numeroTicket;
+    numeroTicket++;
+    localStorage.setItem("ticketNumero", numeroTicket);
+    return num;
 }
 document.addEventListener("DOMContentLoaded", () => {
     cargar();
