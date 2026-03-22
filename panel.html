@@ -283,11 +283,14 @@ let clientes = [];
 
 try {
     let guardados = JSON.parse(localStorage.getItem("clientes"));
-// 🔥 usar siempre los del código (ignorar localStorage)
-if(Array.isArray(guardados) && guardados.length > 0){
-    console.log("Clientes cargados desde localStorage");
-} else {
-    localStorage.setItem("clientes", JSON.stringify(clientes));
+
+    if(Array.isArray(guardados) && guardados.length > 0){
+        clientes = guardados; // 🔥 ESTA LÍNEA ERA LA CLAVE
+    }
+
+} catch(e){
+    console.error("Error leyendo clientes:", e);
+    clientes = [];
 }
 } catch(e){
     console.error("Error leyendo clientes:", e);
@@ -871,7 +874,6 @@ async function imprimirTicket(){
     ventana.document.write(contenido);
     ventana.document.write("<script>window.print();<\/script>");
     ventana.document.close();
-let fecha = document.getElementById("fecha").value;
 }
 async function borrarPedido(e, id){
 e.stopPropagation();
