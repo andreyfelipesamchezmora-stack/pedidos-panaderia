@@ -22,11 +22,6 @@ overflow:auto;
 
 .main{flex:1;padding:15px;overflow:auto;}
 
-<div class="panel-deudas">
-<h3>💰 Deudas</h3>
-<div id="listaDeudas"></div>
-</div>
-
 .panel-deudas{
 width:260px;
 background:#0f0f0f;
@@ -218,6 +213,10 @@ color-scheme: dark;
 </div>
 
 <div class="main">
+<div class="panel-deudas">
+<h3>💰 Deudas</h3>
+<div id="listaDeudas"></div>
+</div>
 
 <input type="text" placeholder="🔍 Buscar cliente..." oninput="filtrar(this.value)" style="
 width:100%;
@@ -688,6 +687,10 @@ document.getElementById("bendajeBox").innerText = bendaje;
 
 // 🔥 GUARDAR GLOBAL
 window.totalPedido = total;
+let totalFinal = total;
+let leDeboValor = valorDeuda;
+let meDebeValor = valorDeuda;
+let meDebeCheck = meDebe;
 // 🔥 MANEJO DE DEUDAS
 let leDebo = document.getElementById("leDebo")?.checked;
 let meDebe = document.getElementById("meDebeCheck")?.checked;
@@ -824,8 +827,6 @@ let valorDeuda = Number(limpiarFormato(document.getElementById("leDeboValor")?.v
     comentario: comentario,
     productos: listaProductos,
     editado: false,
-    tipo_deuda: tipoDeuda,
-valor_deuda: valorDeuda
 
     // 🔥 DEUDAS
     tipo_deuda: leDebo ? "debo" : (meDebe ? "debe" : null),
@@ -1169,8 +1170,8 @@ if(!confirm("¿Eliminar deuda?")) return;
 
 await db.from("pedidos")
 .update({
-tipo_deuda: tipoDeuda,
-valor_deuda: valorDeuda
+tipo_deuda: null,
+valor_deuda: 0
 })
 .eq("id", id);
 
