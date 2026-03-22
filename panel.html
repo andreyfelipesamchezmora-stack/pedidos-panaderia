@@ -765,41 +765,36 @@ calcular();
 let comentario = document.getElementById("comentarios").value;
 
 let contenido = `
-<div style="font-family:monospace;width:80mm">
+<div style="font-family:monospace;width:80mm; margin:auto;">
 
 <div style="text-align:center;">
-
-<img src="https://res.cloudinary.com/deyaftfah/image/upload/v1774142771/image-removebg-preview_ifzkfh.png" style="width:160px; display:block; margin:auto;">
-
-<div style="font-size:18px;font-weight:bold;">
-PANADERÍA VIANNYS
-</div>
-
-<div style="font-size:12px;">
+<img src="https://res.cloudinary.com/deyaftfah/image/upload/v1774142771/image-removebg-preview_ifzkfh.png" style="width:150px; margin-bottom:5px;">
+<b>Panadería VIANNYS</b><br>
 NIT: 1.076.501.617<br>
 Tel: 3134062278<br>
 Barrio: San Jorge
 </div>
 
-</div>
+<div style="border-top:1px dashed black; width:100%; margin:8px 0;"></div>
 
-<hr style="margin:5px 0;">
-
-<div style="font-size:13px;">
+<div style="text-align:center; font-size:18px; font-weight:bold;">
 Cliente: ${actualCliente}
 </div>
 
-<hr style="margin:5px 0;">
+<div style="border-top:1px dashed black; width:100%; margin:8px 0;"></div>
 
-<pre>
-${window.textoPedido || ""}
-</pre>
+<div style="text-align:center; font-size:14px;">
+${(window.textoPedido || "").replace(/\n/g,"<br>")}
+</div>
 
-<hr>
-Comentario:
-${comentario}
+<div style="border-top:1px dashed black; width:100%; margin:8px 0;"></div>
 
-<hr>
+<div style="text-align:center;">
+<b>Comentario:</b><br>
+${comentario || ""}
+</div>
+
+<div style="border-top:1px dashed black; width:100%; margin:8px 0;"></div>
 
 <div style="font-size:22px;font-weight:bold;text-align:center;">
 TOTAL: $${(window.totalPedido || 0).toLocaleString('es-CO')}
