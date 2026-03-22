@@ -111,7 +111,16 @@ white-space:pre-line;
 
 <div class="sidebar">
 <h3>Fecha</h3>
-<input type="date" id="fecha" onchange="cargar()"><br>
+<input type="date" id="fecha" onchange="cargar()" style="
+width:100%;
+padding:10px;
+font-size:16px;
+border-radius:10px;
+border:none;
+background:#222;
+color:white;
+margin-bottom:10px;
+">
 <button onclick="nuevoCliente()">➕ Agregar Cliente</button>
 </div>
 
@@ -125,16 +134,6 @@ border-radius:10px;
 border:1px solid #ccc;
 margin-bottom:10px;
 ">
-
-<h2 id="totalGeneral" style="
-background:#111;
-color:white;
-padding:10px;
-border-radius:10px;
-text-align:center;
-">
-TOTAL: $0
-</h2>
 
 <div class="grid" id="grid"></div>
 
@@ -433,9 +432,8 @@ async function cargar(){
 
         </div>`;
     });
-
-    document.getElementById("totalGeneral").innerText =
-    "TOTAL: $" + total.toLocaleString('es-CO');
+// 🔥 guardar siempre el estado actual
+localStorage.setItem("clientes", JSON.stringify(clientes));
 }
 
 async function abrir(nombre,id){
@@ -720,7 +718,7 @@ await db.from("pedidos").delete().eq("id",id);
 
 // borrar cliente del array
 clientes = clientes.filter(c=>c.nombre!==nombre);
-
+localStorage.setItem("clientes", JSON.stringify(clientes));
 cargar();
 }
 
@@ -818,7 +816,7 @@ ${(window.textoPedido || "").replace(/\n/g,"<br>")}
 <div style="border-top:1px dashed black; margin:8px 0;"></div>
 
 <!-- COMENTARIO -->
-<div style="text-align:center;">
+<div style="text-align:left;">
 <b>Comentario:</b><br>
 ${comentario || ""}
 </div>
@@ -841,7 +839,7 @@ font-weight:bold;
 text-align:center;
 margin-top:5px;
 ">
-COBRAR: $${(window.totalFinal || window.totalPedido || 0).toLocaleString('es-CO')}
+${window.totalFinal < 0 ? "DEBEMOS" : "COBRAR"}: $${Math.abs(window.totalFinal || window.totalPedido || 0).toLocaleString('es-CO')}
 </div>
 
 </div>
