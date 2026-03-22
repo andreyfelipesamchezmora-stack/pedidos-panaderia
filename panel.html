@@ -765,45 +765,83 @@ calcular();
 let comentario = document.getElementById("comentarios").value;
 
 let contenido = `
-<div style="font-family:monospace;width:80mm; margin:auto;">
+<div style="
+font-family:monospace;
+width:280px;
+margin:0 auto;
+text-align:center;
+">
 
+<!-- LOGO -->
+<div style="width:100%; text-align:center;">
+  <img src="TU_LOGO" style="
+    width:150px;
+    display:block;
+    margin:0 auto 5px auto;
+  ">
+</div>
+
+<!-- ENCABEZADO -->
 <div style="text-align:center;">
-<img src="https://res.cloudinary.com/deyaftfah/image/upload/v1774142771/image-removebg-preview_ifzkfh.png" style="width:150px; margin-bottom:5px;">
-</div>
-<b>Panadería VIANNYS</b><br>
-NIT: 1.076.501.617<br>
-Tel: 3134062278<br>
-Barrio: San Jorge
+  <div style="font-weight:bold; font-size:16px;">Panadería VIANNYS</div>
+  <div>NIT: 1.076.501.617</div>
+  <div>Tel: 3134062278</div>
+  <div>Barrio: San Jorge</div>
 </div>
 
-<div style="border-top:1px dashed black; width:100%; margin:8px 0;"></div>
+<!-- LINEA -->
+<div style="border-top:1px dashed black; margin:8px 0;"></div>
 
-<div style="text-align:center; font-size:18px; font-weight:bold;">
+<!-- CLIENTE -->
+<div style="
+font-size:18px;
+font-weight:bold;
+text-align:center;
+width:100%;
+">
 Cliente: ${actualCliente}
 </div>
 
-<div style="border-top:1px dashed black; width:100%; margin:8px 0;"></div>
+<!-- LINEA -->
+<div style="border-top:1px dashed black; margin:8px 0;"></div>
 
-<div style="text-align:center; font-size:14px;">
+<!-- PRODUCTOS -->
+<div style="
+text-align:center;
+font-size:14px;
+line-height:1.4;
+">
 ${(window.textoPedido || "").replace(/\n/g,"<br>")}
 </div>
 
-<div style="border-top:1px dashed black; width:100%; margin:8px 0;"></div>
+<!-- LINEA -->
+<div style="border-top:1px dashed black; margin:8px 0;"></div>
 
+<!-- COMENTARIO -->
 <div style="text-align:center;">
 <b>Comentario:</b><br>
 ${comentario || ""}
 </div>
 
-<div style="border-top:1px dashed black; width:100%; margin:8px 0;"></div>
+<!-- LINEA -->
+<div style="border-top:1px dashed black; margin:8px 0;"></div>
 
-<div style="font-size:22px;font-weight:bold;text-align:center;">
+<!-- TOTALES -->
+<div style="
+font-size:20px;
+font-weight:bold;
+text-align:center;
+">
 TOTAL: $${(window.totalPedido || 0).toLocaleString('es-CO')}
+</div>
 
-<br><br>
-<b style="font-size:18px;">
+<div style="
+font-size:18px;
+font-weight:bold;
+text-align:center;
+margin-top:5px;
+">
 COBRAR: $${(window.totalFinal || window.totalPedido || 0).toLocaleString('es-CO')}
-</b>
 </div>
 
 </div>
