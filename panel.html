@@ -281,25 +281,22 @@ const productos = [
 
 let clientes = [];
 
+// 🔥 CARGAR CLIENTES BIEN
 try {
     let guardados = JSON.parse(localStorage.getItem("clientes"));
 
     if(Array.isArray(guardados) && guardados.length > 0){
-        clientes = guardados; // 🔥 ESTA LÍNEA ERA LA CLAVE
+        clientes = guardados;
     }
 
 } catch(e){
     console.error("Error leyendo clientes:", e);
     clientes = [];
 }
-} catch(e){
-    console.error("Error leyendo clientes:", e);
-    clientes = [];
-}
 
-// 🔥 si no hay clientes, usa los tuyos por defecto
+// 🔥 SI NO HAY, USA LOS DEL CÓDIGO
 if(clientes.length === 0){
-    clientes = [ 
+    clientes = [  
 /* 🟢 MOTO (cercanos) */
 {nombre:"AMPARO MOLINO ROA",tipo:"moto"},
 {nombre:"ANAYIBE",tipo:"moto"},
