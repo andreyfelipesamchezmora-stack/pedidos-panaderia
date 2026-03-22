@@ -22,6 +22,59 @@ overflow:auto;
 
 .main{flex:1;padding:15px;overflow:auto;}
 
+<div class="panel-deudas">
+<h3>💰 Deudas</h3>
+<div id="listaDeudas"></div>
+</div>
+
+.panel-deudas{
+width:260px;
+background:#0f0f0f;
+color:white;
+padding:10px;
+overflow:auto;
+border-left:3px solid #222;
+}
+
+.deuda-item{
+background:#1e1e1e;
+padding:10px;
+margin-bottom:10px;
+border-radius:10px;
+position:relative;
+}
+
+.deuda-item.debe{
+border-left:6px solid #4caf50; /* verde */
+}
+
+.deuda-item.debo{
+border-left:6px solid #ff9800; /* naranja */
+}
+
+.deuda-item h4{
+margin:0;
+font-size:14px;
+}
+
+.deuda-item p{
+margin:5px 0 0 0;
+font-weight:bold;
+}
+
+.deuda-actions{
+position:absolute;
+top:5px;
+right:8px;
+display:flex;
+gap:5px;
+}
+
+.deuda-actions span{
+cursor:pointer;
+font-size:14px;
+}
+
 .grid{
 display:grid;
 grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
@@ -497,6 +550,7 @@ onclick="event.stopPropagation(); imprimirDirecto('${c.nombre}')">
     });
 // 🔥 guardar siempre el estado actual
 localStorage.setItem("clientes", JSON.stringify(clientes));
+renderDeudas(data);
 }
 
 async function abrir(nombre,id){
@@ -726,17 +780,24 @@ ${p.name} x${panes} = $${subtotal}
     });
 
     let comentario = document.getElementById("comentarios").value || "";
-
+let leDebo = document.getElementById("leDebo")?.checked;
+let meDebe = document.getElementById("meDebeCheck")?.checked;
+let valorDeuda = Number(limpiarFormato(document.getElementById("leDeboValor")?.value)) || 0;
+    
     if (actualId) {
 
         let { error } = await db.from("pedidos")
-        .update({
-            total: total,
-            pedido: texto,
-            comentario: comentario,
-            productos: listaProductos,
-            editado: true
-        })
+ .update({
+    total: total,
+    pedido: texto,
+    comentario: comentario,
+    productos: listaProductos,
+    editado: true,
+
+    // 🔥 DEUDAS
+    tipo_deuda: leDebo ? "debo" : (meDebe ? "debe" : null),
+    valor_deuda: valorDeuda
+})
         .eq("id", actualId);
 
         if (error) {
@@ -748,16 +809,19 @@ ${p.name} x${panes} = $${subtotal}
     } else {
 
         let { error } = await db.from("pedidos")
-        .insert([{
-            cliente: actualCliente,
-            fecha: fecha,
-            total: total,
-            pedido: texto,
-            comentario: comentario,
-            productos: listaProductos,
-            editado: false
-        }]);
+       .insert([{
+    cliente: actualCliente,
+    fecha: fecha,
+    total: total,
+    pedido: texto,
+    comentario: comentario,
+    productos: listaProductos,
+    editado: false,
 
+    // 🔥 DEUDAS
+    tipo_deuda: leDebo ? "debo" : (meDebe ? "debe" : null),
+    valor_deuda: valorDeuda
+}]);
         if (error) {
             console.error(error);
             alert("Error al guardar");
@@ -1039,6 +1103,69 @@ function formatearMiles(valor){
 
 function limpiarFormato(valor){
     return valor.replace(/\./g, "");
+}
+function renderDeudas(data){
+
+let cont = document.getElementById("listaDeudas");
+cont.innerHTML = "";
+
+if(!data || data.length === 0){
+cont.innerHTML = "<p style='color:#777'>Sin deudas</p>";
+return;
+}
+
+data.forEach(d => {
+
+if(!d.tipo_deuda || !d.valor_deuda) return;
+
+cont.innerHTML += `
+<div class="deuda-item ${d.tipo_deuda}">
+
+<div class="deuda-actions">
+<span onclick="editarDeuda(${d.id})">✏️</span>
+<span onclick="borrarDeuda(${d.id})">❌</span>
+</div>
+
+<h4>${d.cliente}</h4>
+<p>$${Number(d.valor_deuda).toLocaleString('es-CO')}</p>
+
+</div>
+`;
+
+});
+}
+async function editarDeuda(id){
+
+let {data} = await db.from("pedidos").select("*").eq("id", id).single();
+
+if(!data) return;
+
+abrir(data.cliente, data.id);
+
+// 🔥 precargar checks
+if(data.tipo_deuda === "debo"){
+document.getElementById("leDebo").checked = true;
+}
+
+if(data.tipo_deuda === "debe"){
+document.getElementById("meDebeCheck").checked = true;
+}
+
+document.getElementById("leDeboValor").value = data.valor_deuda || "";
+calcular();
+}
+async function borrarDeuda(id){
+
+if(!confirm("¿Eliminar deuda?")) return;
+
+await db.from("pedidos")
+.update({
+tipo_deuda: null,
+valor_deuda: 0
+})
+.eq("id", id);
+
+cargar();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
