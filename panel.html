@@ -769,17 +769,45 @@ c.style.display=c.innerText.toLowerCase().includes(txt.toLowerCase())?"block":"n
 
 function resetear(){
 
-    document.querySelectorAll("input").forEach(i=>{
-        if(i.id !== "fecha"){ // 🔥 NO BORRAR FECHA
-            i.value="";
-        }
+    // 🔥 limpiar inputs de productos
+    productos.forEach((p,i)=>{
+        let cant = document.getElementById("cant"+i);
+        let din = document.getElementById("din"+i);
+
+        if(cant) cant.value = "";
+        if(din) din.value = "";
+
+        // 🔥 quitar color activo
+        let div = document.getElementById("prod"+i);
+        if(div) div.style.background = "white";
     });
 
-    document.getElementById("resultadoBox").innerText="";
-    document.getElementById("bendajeBox").innerText="";
+    // 🔥 limpiar comentarios
+    let comentario = document.getElementById("comentarios");
+    if(comentario) comentario.value = "";
 
+    // 🔥 limpiar checks
+    let leDebo = document.getElementById("leDebo");
+    let meDebe = document.getElementById("meDebeCheck");
+
+    if(leDebo) leDebo.checked = false;
+    if(meDebe) meDebe.checked = false;
+
+    // 🔥 limpiar valores deuda
+    let leDeboValor = document.getElementById("leDeboValor");
+    if(leDeboValor) leDeboValor.value = "";
+
+    // 🔥 limpiar resultados
+    document.getElementById("resultadoBox").innerText = "";
+    document.getElementById("bendajeBox").innerText = "";
+
+    // 🔥 reset global
     window.totalPedido = 0;
+    window.totalFinal = 0;
     window.textoPedido = "";
+
+    // 🔥 recalcular UI (CLAVE)
+    calcular();
 }
 function cerrarModal(){
 document.getElementById("modalPedido").style.display="none";
