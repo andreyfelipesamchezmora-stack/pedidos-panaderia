@@ -289,8 +289,8 @@ try {
 }
 
 // 🔥 si no hay clientes, usa los tuyos por defecto
-if(clientes.length === 0){
-    clientes = [ 
+clientes = [ ... ];
+localStorage.setItem("clientes", JSON.stringify(clientes));
 /* 🟢 MOTO (cercanos) */
 {nombre:"AMPARO MOLINO ROA",tipo:"moto"},
 {nombre:"ANAYIBE",tipo:"moto"},
