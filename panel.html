@@ -36,6 +36,23 @@ position:relative;
 cursor:pointer;
 }
 
+.card.nuevo{
+background:#d4ffd4; /* verde suave */
+border-left:6px solid green;
+}
+
+.printMini{
+position:absolute;
+bottom:5px;
+right:8px;
+font-size:14px;
+cursor:pointer;
+background:#111;
+color:white;
+padding:3px 6px;
+border-radius:6px;
+}
+
 .card.moto{border-left:6px solid green;}
 .card.auto{border-left:6px solid blue;}
 .card.recoge{border-left:6px solid orange;}
@@ -426,8 +443,13 @@ async function cargar(){
         total += t;
 
         grid.innerHTML += `
-        <div class="card ${c.tipo} ${p && p.editado ? 'editado' : ''}" 
+        <div class="card ${c.tipo} ${p ? (p.editado ? 'editado' : 'nuevo') : ''}"
         onclick="abrir('${c.nombre}', ${p?.id || 0})">
+
+        <div class="printMini" 
+onclick="event.stopPropagation(); imprimirDirecto('${c.nombre}')">
+🖨️
+</div>
 
         <div class="x" 
         onclick="event.stopPropagation(); eliminar(${p?.id || 0}, '${c.nombre}')">
