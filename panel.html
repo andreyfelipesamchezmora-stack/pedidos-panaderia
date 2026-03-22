@@ -234,6 +234,27 @@ let modo="promo";
 let actualCliente="";
 let actualId=null;
 
+const imagenes = {
+"PAN DE 500":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138495/PAN500_jeuz1z.jpg",
+"PAN DE 1.000":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138495/PAN1000_hnog08.jpg",
+"PAN DE 2.000":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138495/PAN2000_l1wz7x.jpg",
+"PAN DE 3.500":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138495/PAN3500_fig3ef.jpg",
+"PAN AGRIDULCE DE 500":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138494/AGRIDULCE500_cdtr6x.jpg",
+"PAN AGRIDULCE DE 1.000":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138494/AGRIDULCE1000_owqys8.jpg"
+"PAN ROLLO":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138494/ROLLO_gumcrb.jpg",
+"PAN QUESILLO":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138494/QUESILLOS_y8ssx4.jpg",
+"DEDOS DE QUESO":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138489/DEDODEQUESO_kof5sl.jpg",
+"LIBERALES":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138479/LIBERAL_ptladv.jpg",
+"CAÑAS":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138479/CA%C3%91AS_pfjpqk.jpg",
+"CUCAS":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138478/CUCAS_hswuhm.jpg",
+"PAN COCO":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138477/PANCOCO_j6klnj.jpg",
+"MOGICON DE 500":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138477/MOGICON500_lmuzuc.jpg",
+"MOGICON DE 1.200":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138477/MOGICON1200_haemzg.jpg",
+"ROSCON DE 2.500":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138477/ROSCON_oycmvl.jpg",
+"HAWAIANOS":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138477/HAWAIANO_k5hrih.jpg",
+"CROASANES":"https://res.cloudinary.com/deyaftfah/image/upload/v1774138476/CROASANT_jxincf.jpg"
+};
+
 const productos = [
 {name:"PAN DE 500",precio:500,b:true},
 {name:"PAN DE 1.000",precio:1000,b:true},
@@ -748,7 +769,7 @@ let contenido = `
 
 <div style="text-align:center;">
 <div style="text-align:center;">
-<img src="https://via.placeholder.com/80"><br>
+<img src="${imagenes[p.name] || 'https://via.placeholder.com/120'}"><br>
 <b>Panadería VIANNYS</b><br>
 NIT: 1.076.501.617<br>
 Tel: 3134062278<br>
