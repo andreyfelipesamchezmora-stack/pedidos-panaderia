@@ -944,6 +944,32 @@ function generarNumeroTicket(){
     localStorage.setItem("ticketNumero", numeroTicket);
     return num;
 }
+async function imprimirDirecto(nombre){
+
+let fecha = document.getElementById("fecha").value;
+
+let {data} = await db.from("pedidos")
+.select("*")
+.eq("cliente", nombre)
+.eq("fecha", fecha)
+.single();
+
+if(!data){
+alert("Este cliente no tiene pedido");
+return;
+}
+
+// usar mismos globals
+window.totalPedido = data.total;
+window.totalFinal = data.total;
+window.textoPedido = data.pedido;
+
+actualCliente = nombre;
+
+// reutilizar tu función existente
+imprimirTicket();
+
+}
 document.addEventListener("DOMContentLoaded", () => {
     cargar();
 });
