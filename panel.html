@@ -998,6 +998,21 @@ actualCliente = nombre;
 imprimirTicket();
 
 }
+function exportarParaExcel(){
+
+let datos = {
+cliente: actualCliente,
+total: window.totalFinal || 0
+};
+
+let blob = new Blob([JSON.stringify(datos)], {type:"application/json"});
+let url = URL.createObjectURL(blob);
+
+let a = document.createElement("a");
+a.href = url;
+a.download = "datos.json";
+a.click();
+}
 document.addEventListener("DOMContentLoaded", () => {
     cargar();
 });
