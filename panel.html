@@ -690,13 +690,20 @@ document.getElementById("bendajeBox").innerText = bendaje;
 window.totalPedido = total;
 // 🔥 MANEJO DE DEUDAS
 let leDebo = document.getElementById("leDebo")?.checked;
-let meDebeCheck = document.getElementById("meDebeCheck")?.checked;
-let meDebeValor = Number(document.getElementById("meDebeValor")?.value) || 0;
+let meDebe = document.getElementById("meDebeCheck")?.checked;
 
-let leDeboValor = Number(document.getElementById("leDeboValor")?.value) || 0;
+let valorDeuda = Number(
+    limpiarFormato(document.getElementById("leDeboValor")?.value)
+) || 0;
 
-let totalFinal = total;
+// 🔥 lógica correcta
+let tipoDeuda = null;
 
+if(leDebo && valorDeuda > 0){
+    tipoDeuda = "debo";
+}else if(meDebe && valorDeuda > 0){
+    tipoDeuda = "debe";
+}
 // 🔴 LE DEBO → RESTA LO QUE DEBO
 if(leDebo && leDeboValor > 0){
     totalFinal -= leDeboValor;
@@ -817,6 +824,8 @@ let valorDeuda = Number(limpiarFormato(document.getElementById("leDeboValor")?.v
     comentario: comentario,
     productos: listaProductos,
     editado: false,
+    tipo_deuda: tipoDeuda,
+valor_deuda: valorDeuda
 
     // 🔥 DEUDAS
     tipo_deuda: leDebo ? "debo" : (meDebe ? "debe" : null),
@@ -1160,8 +1169,8 @@ if(!confirm("¿Eliminar deuda?")) return;
 
 await db.from("pedidos")
 .update({
-tipo_deuda: null,
-valor_deuda: 0
+tipo_deuda: tipoDeuda,
+valor_deuda: valorDeuda
 })
 .eq("id", id);
 
