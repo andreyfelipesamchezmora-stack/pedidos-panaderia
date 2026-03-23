@@ -149,8 +149,11 @@ white-space:pre-line;
     margin-top:15px;
 }
 
-.video-container img{
-    width:120px; /* puedes subirlo a 140 o 160 si quieres */
+.video-container img,
+.video-container video{
+    width:120px;
+    height:auto; /* 🔥 ESTO ES LA CLAVE */
+    object-fit:contain; /* evita deformación */
     border-radius:15px;
 }
 .sidebar{
