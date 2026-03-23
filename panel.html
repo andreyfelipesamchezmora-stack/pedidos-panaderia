@@ -147,19 +147,24 @@ white-space:pre-line;
     justify-content:center;
     align-items:center;
     margin-top:15px;
+    width:100%;
 }
 
 .video-container img,
 .video-container video{
-    width:120px;
-    aspect-ratio:1/1; /* lo vuelve cuadrado */
-    object-fit:cover; /* rellena sin deformar */
-    border-radius:15px;
+    width:90%;
+    max-width:150px; /* controla el tamaño máximo */
+    height:auto;
+    display:block;
+    object-fit:contain;
 }
 .sidebar{
     display:flex;
     flex-direction:column;
     align-items:center;
+}
+.sidebar{
+    overflow:hidden;
 }
 </style>
 </head>
