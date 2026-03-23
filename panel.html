@@ -150,23 +150,17 @@ white-space:pre-line;
     width:100%;
 }
 
-.video-container img{
-    width:130px;
-    height:130px;
-    object-fit:cover;
-    border-radius:20px;
-}
+.video-container img,
 .video-container video{
-    width:90%;
-    max-width:150px; /* controla el tamaño máximo */
+    width:100%;
+    max-width:180px; /* controla tamaño */
     height:auto;
-    display:block;
     object-fit:contain;
 }
 .sidebar{
-    display:flex;
-    flex-direction:column;
-    align-items:center;
+    width:220px; /* 🔥 importante */
+    min-width:220px;
+    overflow:hidden;
 }
 .sidebar{
     overflow:hidden;
