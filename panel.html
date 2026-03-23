@@ -142,7 +142,7 @@ white-space:pre-line;
 
 #bendajeBox{background:#fff3cd;}
 
-.video-container{
+.video-sidebar{
     width:100%;
     display:flex;
     justify-content:center;
@@ -150,18 +150,9 @@ white-space:pre-line;
     margin-bottom:15px;
 }
 
-.video-container video{
+.video-sidebar video{
     width:90%;
-    max-width:900px;
-    border-radius:15px;
-    object-fit:cover;
-}
-.video-container{
-    width:100%;
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    margin-bottom:15px;
+    border-radius:10px;
 }
 </style>
 </head>
@@ -171,6 +162,11 @@ white-space:pre-line;
 <div class="container">
 
 <div class="sidebar">
+<div class="video-sidebar">
+    <video autoplay muted loop>
+        <source src="TU_VIDEO.mp4" type="video/mp4">
+    </video>
+</div>
 <h3>Fecha</h3>
 <input type="date" id="fecha" onchange="cargar()" style="
 width:100%;
@@ -187,11 +183,6 @@ color-scheme: dark;
 </div>
 
 <div class="main">
-<div class="video-container">
-    <video autoplay muted loop playsinline>
-        <source src="https://res.cloudinary.com/deyaftfah/video/upload/v1774244261/A_professional_bakery_logo_with_a_bread_and_wheat_design_in_warm_orange_tones__centered_on_a_deep_pu_seed302255122_online-video-cutter.com_s3kmej.mp4" type="video/mp4">
-    </video>
-</div>
 
 <input type="text" placeholder="🔍 Buscar cliente..." oninput="filtrar(this.value)" style="
 width:100%;
