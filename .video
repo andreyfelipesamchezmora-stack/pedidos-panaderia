@@ -145,26 +145,15 @@ white-space:pre-line;
 .video-container{
     display:flex;
     justify-content:center;
-    align-items:center;
-    margin-top:15px;
-    width:100%;
+    margin-top:10px;
 }
 
-.video-container img,
-.video-container video{
-    width:100%;
-    max-width:180px; /* controla tamaño */
+.video-container img{
+    width:120px;
     height:auto;
-    object-fit:contain;
+    display:block;
 }
-.sidebar{
-    width:220px; /* 🔥 importante */
-    min-width:220px;
-    overflow:hidden;
-}
-.sidebar{
-    overflow:hidden;
-}
+
 </style>
 </head>
 
@@ -189,7 +178,7 @@ color-scheme: dark;
 <button onclick="nuevoCliente()">➕ Agregar Cliente</button>
 
 <div class="video-sidebar">
-    <video autoplay muted loop>
+    <video autoplay muted loop style="width:100%; height:auto; object-fit:contain; display:block;">
         <source src="https://res.cloudinary.com/deyaftfah/video/upload/v1774244261/A_professional_bakery_logo_with_a_bread_and_wheat_design_in_warm_orange_tones__centered_on_a_deep_pu_seed302255122_online-video-cutter.com_s3kmej.mp4" type="video/mp4">
     </video>
 </div>
