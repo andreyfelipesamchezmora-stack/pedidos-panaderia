@@ -33,15 +33,13 @@ gap:10px;
     display:flex;
     justify-content:center;
     align-items:center;
-    height:250px; /* 🔥 CONTROLA EL TAMAÑO */
 }
 
 .video-box video{
-    width:100%;
-    height:100%;
-    object-fit:contain; /* 🔥 evita deformación */
+    width:180px;      /* 🔥 tamaño controlado */
+    height:auto;      /* 🔥 NO se deforma */
     border-radius:12px;
-    opacity:0.9;
+    opacity:0.95;
 }
 
 .card{
@@ -172,10 +170,9 @@ white-space:pre-line;
 
     <button onclick="nuevoCliente()">➕ Agregar Cliente</button>
 
-    <!-- VIDEO CENTRADO -->
     <div class="video-box">
         <video autoplay muted loop playsinline>
-            <source src="https://res.cloudinary.com/deyaftfah/video/upload/v1774244261/A_professional_bakery_logo_with_a_bread_and_wheat_design_in_warm_orange_tones__centered_on_a_deep_pu_seed302255122_online-video-cutter.com_s3kmej.mp4" type="video/mp4">
+            <source src="https://res.cloudinary.com/deyaftfah/video/upload/v1774244261/A_professional_bakery_logo_with_a_bread_and_wheat_design_in_warm_orange_tones__centered_on_a_deep_pu_seed302255122_online-video-cutter.com_s3kmej.mp4">
         </video>
     </div>
 
