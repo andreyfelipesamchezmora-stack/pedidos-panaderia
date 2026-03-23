@@ -249,6 +249,19 @@ margin-top:10px;
 <label style="display:block;">
 <input type="checkbox" id="meDebeCheck" onchange="calcular()"> 
 <strong>Me debe el cliente</strong>
+<input 
+type="number" 
+id="meDebeValor" 
+placeholder="Valor que el cliente te debe..." 
+style="
+width:100%;
+margin-top:5px;
+padding:8px;
+border-radius:8px;
+border:1px solid #ccc;
+"
+oninput="calcular()"
+>
 </label>
 
 <input 
@@ -872,7 +885,10 @@ document.getElementById("modalPedido").style.display="none";
 async function imprimirTicket(){
 
     calcular();
+let leDebo = document.getElementById("leDebo")?.checked;
+let meDebe = document.getElementById("meDebeCheck")?.checked;
 
+let bloqueCobro = "";
     // 🔥 guardar primero
     await guardar();
 
@@ -880,7 +896,18 @@ async function imprimirTicket(){
     let fecha = document.getElementById("fecha").value;
 
     let numero = generarNumeroTicket();
-
+if(leDebo || meDebe){
+    bloqueCobro = `
+    <div style="
+    font-size:18px;
+    font-weight:bold;
+    text-align:center;
+    margin-top:5px;
+    ">
+    ${window.totalFinal < 0 ? "DEBEMOS" : "COBRAR"}: $${Math.abs(window.totalFinal || window.totalPedido || 0).toLocaleString('es-CO')}
+    </div>
+    `;
+}
     let contenido = `
     <div style="
     font-family:monospace;
@@ -957,14 +984,7 @@ async function imprimirTicket(){
     TOTAL: $${(window.totalPedido || 0).toLocaleString('es-CO')}
     </div>
 
-    <div style="
-    font-size:18px;
-    font-weight:bold;
-    text-align:center;
-    margin-top:5px;
-    ">
-    ${window.totalFinal < 0 ? "DEBEMOS" : "COBRAR"}: $${Math.abs(window.totalFinal || window.totalPedido || 0).toLocaleString('es-CO')}
-    </div>
+   ${bloqueCobro}
 
     </div>
     `;
