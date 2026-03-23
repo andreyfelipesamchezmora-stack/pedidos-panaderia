@@ -28,6 +28,22 @@ grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
 gap:10px;
 }
 
+.video-box{
+margin-top:20px;
+display:flex;
+justify-content:center;
+align-items:center;
+height:60%;
+}
+
+.video-box video{
+width:90%;
+max-height:300px;
+border-radius:12px;
+object-fit:cover;
+opacity:0.9;
+}
+
 .card{
 background:white;
 padding:10px;
@@ -149,6 +165,10 @@ white-space:pre-line;
 <div class="container">
 
 <div class="sidebar">
+<video autoplay muted loop playsinline>
+  <source src="https://res.cloudinary.com/deyaftfah/video/upload/v1774244261/A_professional_bakery_logo_with_a_bread_and_wheat_design_in_warm_orange_tones__centered_on_a_deep_pu_seed302255122_online-video-cutter.com_s3kmej.mp4" type="video/mp4">
+</video>
+</div>
 <h3>Fecha</h3>
 <input type="date" id="fecha" onchange="cargar()" style="
 width:100%;
