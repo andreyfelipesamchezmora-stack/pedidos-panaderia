@@ -146,13 +146,12 @@ white-space:pre-line;
     width:100%;
     display:flex;
     justify-content:center;
-    align-items:center;
-    margin-bottom:15px;
+    margin-top:15px;   /* espacio arriba */
 }
 
 .video-sidebar video{
-    width:90%;
-    border-radius:10px;
+    width:80%;
+    border-radius:12px;
 }
 </style>
 </head>
@@ -162,11 +161,7 @@ white-space:pre-line;
 <div class="container">
 
 <div class="sidebar">
-<div class="video-sidebar">
-    <video autoplay muted loop>
-        <source src="https://res.cloudinary.com/deyaftfah/video/upload/v1774244261/A_professional_bakery_logo_with_a_bread_and_wheat_design_in_warm_orange_tones__centered_on_a_deep_pu_seed302255122_online-video-cutter.com_s3kmej.mp4" type="video/mp4">
-    </video>
-</div>
+
 <h3>Fecha</h3>
 <input type="date" id="fecha" onchange="cargar()" style="
 width:100%;
@@ -180,6 +175,11 @@ margin-bottom:10px;
 color-scheme: dark;
 ">
 <button onclick="nuevoCliente()">➕ Agregar Cliente</button>
+
+<div class="video-sidebar">
+    <video autoplay muted loop>
+        <source src="https://res.cloudinary.com/deyaftfah/video/upload/v1774244261/A_professional_bakery_logo_with_a_bread_and_wheat_design_in_warm_orange_tones__centered_on_a_deep_pu_seed302255122_online-video-cutter.com_s3kmej.mp4" type="video/mp4">
+    </video>
 </div>
 
 <div class="main">
