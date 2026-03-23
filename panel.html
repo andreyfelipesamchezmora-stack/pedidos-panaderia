@@ -152,8 +152,8 @@ white-space:pre-line;
 .video-container img,
 .video-container video{
     width:120px;
-    height:auto; /* 🔥 ESTO ES LA CLAVE */
-    object-fit:contain; /* evita deformación */
+    aspect-ratio:1/1; /* lo vuelve cuadrado */
+    object-fit:cover; /* rellena sin deformar */
     border-radius:15px;
 }
 .sidebar{
