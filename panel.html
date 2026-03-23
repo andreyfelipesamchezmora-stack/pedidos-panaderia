@@ -723,7 +723,7 @@ async function guardar() {
     productos.forEach((p, i) => {
 
         let cant = Number(document.getElementById("cant"+i)?.value) || 0;
-        let din = Number(document.getElementById("din"+i)?.value) || 0;
+        let din = Number(limpiarFormato(document.getElementById("din"+i)?.value || "0")) || 0;
 
         let precio = p.precio;
 
