@@ -643,11 +643,9 @@ if(p.name === "PAN DE 2.000"){
 // 🔥 ESTO ES LO QUE TE FALLABA
 total += subtotal;
 
-texto += `
-------------------------------
-${p.name} x${panes} =$${subtotal.toLocaleString('es-CO')}
-Bendaje: ${b}
-`;
+texto += "------------------------------\n";
+texto += `${p.name} x${panes} =$${subtotal.toLocaleString('es-CO')}\n`;
+texto += `Bendaje: ${b}\n`;
 
 }
 
@@ -933,7 +931,9 @@ async function imprimirTicket(){
     <div style="
     text-align:center;
     font-size:14px;
-    line-height:1.4;
+    line-height:1.1;
+    margin:0;
+    padding:0;
     ">
     ${(window.textoPedido || "").replace(/\n/g,"<br>")}
     </div>
