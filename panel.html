@@ -636,6 +636,20 @@ if(subtotal > 0){
 
 let b = 0;
 
+// 🔥 reglas
+if(p.name === "PAN DE 2.000"){
+    if(modo === "original"){
+        b = Math.round(panes * 0.2);
+    } else {
+        b = 0;
+    }
+} else {
+    b = p.b ? Math.round(panes * 0.2) : 0;
+}
+
+// ✅ AHORA SÍ AGREGA EL BENDAJE
+bendaje += `${p.name}: ${b}\n`;
+
 // 🔥 regla especial PAN DE 2.000
 if(p.name === "PAN DE 2.000"){
 
