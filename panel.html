@@ -894,6 +894,14 @@ let fecha = document.getElementById("fecha").value;
 
 let numero = generarNumeroTicket();
 
+// 🔥 FORMATEAR MILES (CLAVE)
+let textoFormateado = (window.textoPedido || "")
+.replace(/\$([0-9]+)/g, (match, num) => {
+    return "$" + Number(num).toLocaleString('es-CO');
+})
+.replace(/------------------------------/g, "<div style='border-top:1px dashed black; margin:6px 0;'></div>")
+.replace(/\n/g,"<br>");
+
 if(leDebo || meDebe){
     bloqueCobro = `
     <div style="
@@ -952,18 +960,14 @@ font-size:16px;
 line-height:1.3;
 font-weight:bold;
 ">
-
-${(window.textoPedido || "")
-.replace(/------------------------------/g, "<div style='border-top:1px dashed black; margin:6px 0;'></div>")
-.replace(/\n/g,"<br>")}
-
+${textoFormateado}
 </div>
 
 <div style="border-top:1px dashed black; margin:8px 0;"></div>
 
 <!-- COMENTARIO -->
 <div style="
-text-align:right;
+text-align:left;
 font-size:13px;
 ">
 <b>Comentario:</b><br>
