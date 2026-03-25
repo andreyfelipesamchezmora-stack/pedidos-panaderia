@@ -896,24 +896,28 @@ let numero = generarNumeroTicket();
 
 // 🔥 FORMATEAR MILES (CLAVE)
 let textoFormateado = (window.textoPedido || "")
-.split('------------------------------')
-.filter(b => b.trim() !== "")
-.map(bloque => {
+.split("\n")
+.filter(linea => linea.trim() !== "")
+.map(linea => {
 
-    let limpio = bloque.replace(/\$([0-9]+)/g, (match, num) => {
+    // 🔥 formatear miles
+    linea = linea.replace(/\$([0-9]+)/g, (m, num) => {
         return "$" + Number(num).toLocaleString('es-CO');
     });
 
-    return `
-    <div style="
-        border-top:1px dashed black;
-        padding-top:3px;
-        margin-top:3px;
-        line-height:1.2;
-    ">
-        ${limpio.replace(/\n/g,"<br>")}
-    </div>
-    `;
+    // 🔥 si es producto → línea arriba
+    if(linea.includes("=")){
+        return `
+        <div style="
+            border-top:1px dashed black;
+            padding-top:2px;
+            margin-top:2px;
+        ">${linea}</div>
+        `;
+    }
+
+    // 🔥 bendaje sin espacio extra
+    return `<div style="margin:0;">${linea}</div>`;
 })
 .join("");
 
