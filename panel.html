@@ -1026,8 +1026,7 @@ let fecha = document.getElementById("fecha").value;
 let numero = generarNumeroTicket();
 
 // 🔥 FORMATEAR TEXTO DE PRODUCTOS
-let textoCompleto = 
-(window.textoPedido || "") + "\n" + (window.bendajePedido || "");
+let textoCompleto = (window.textoPedido || "");
 
 let textoFormateado = textoCompleto
 .split("\n")
