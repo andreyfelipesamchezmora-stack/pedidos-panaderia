@@ -943,7 +943,7 @@ let textoFormateado = (window.textoPedido || "")
         `;
     }
 
-    return "";
+    return `<div>${linea}</div>`;
 })
 .join("");
 async function borrarPedido(e, id){
