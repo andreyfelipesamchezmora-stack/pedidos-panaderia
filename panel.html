@@ -896,11 +896,23 @@ let numero = generarNumeroTicket();
 
 // 🔥 FORMATEAR MILES (CLAVE)
 let textoFormateado = (window.textoPedido || "")
-.replace(/\$([0-9]+)/g, (match, num) => {
-    return "$" + Number(num).toLocaleString('es-CO');
+.split('------------------------------')
+.map(bloque => {
+
+    if(!bloque.trim()) return "";
+
+    // formatear miles dentro del bloque
+    let limpio = bloque.replace(/\$([0-9]+)/g, (match, num) => {
+        return "$" + Number(num).toLocaleString('es-CO');
+    });
+
+    return `
+    <div style="border-top:1px dashed black; margin:6px 0; padding-top:5px;">
+        ${limpio.replace(/\n/g,"<br>")}
+    </div>
+    `;
 })
-.replace(/------------------------------/g, "<div style='border-top:1px dashed black; margin:6px 0;'></div>")
-.replace(/\n/g,"<br>");
+.join("");
 
 if(leDebo || meDebe){
     bloqueCobro = `
