@@ -587,7 +587,6 @@ window.totalPedido = data.total;
 window.textoPedido = data.pedido;
 
 document.getElementById("resultadoBox").innerText = data.pedido;
-document.getElementById("bendajeBox").innerText = "";
 
 document.getElementById("comentarios").value = data.comentario || "";
 clienteActivo = nombre;
@@ -722,9 +721,9 @@ document.getElementById("totalFinal").innerText = textoFinal;
 // guardar global
 window.totalFinal = totalFinal;
 window.textoPedido = texto;
-
+window.bendajePedido = bendaje;
 }
-  
+
 function cambiarModo(m){
 modo = m;
 calcular();
@@ -1037,7 +1036,7 @@ function limpiarFormato(valor){
     return valor.replace(/\./g, "");
 }
 async function imprimirTicket(){
-
+calcular(); // 👈 OBLIGATORIO SIEMPRE
 // 🔥 GUARDAR ANTES DE IMPRIMIR
 if(window.totalPedido > 0){
     await guardar();
@@ -1052,7 +1051,10 @@ let fecha = document.getElementById("fecha").value;
 let numero = generarNumeroTicket();
 
 // 🔥 FORMATEAR TEXTO DE PRODUCTOS
-let textoFormateado = (window.textoPedido || "")
+let textoCompleto = 
+(window.textoPedido || "") + "\n" + (window.bendajePedido || "");
+
+let textoFormateado = textoCompleto
 .split("\n")
 .filter(linea => linea.trim() !== "")
 .map(linea => {
