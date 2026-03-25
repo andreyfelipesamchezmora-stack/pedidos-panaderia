@@ -688,6 +688,7 @@ document.getElementById("bendajeBox").innerText = bendaje;
 
 // 🔥 GUARDAR GLOBAL
 window.totalPedido = total;
+window.bendajePedido = bendaje;
 // 🔥 MANEJO DE DEUDAS
 let leDebo = document.getElementById("leDebo")?.checked;
 let meDebeCheck = document.getElementById("meDebeCheck")?.checked;
@@ -900,7 +901,9 @@ function resetear(){
 function cerrarModal(){
 document.getElementById("modalPedido").style.display="none";
 }
-let textoFormateado = (window.textoPedido || "")
+let textoCompleto = (window.textoPedido || "") + "\n" + (window.bendajePedido || "");
+
+let textoFormateado = textoCompleto
 .split("\n")
 .filter(linea => linea.trim() !== "")
 .map(linea => {
@@ -1060,29 +1063,34 @@ let textoFormateado = (window.textoPedido || "")
 
     // PRODUCTO
     if(linea.includes("=")){
-        return `
-        <div style="
-            margin-top:10px;
-            padding-top:6px;
-            border-top:1px dashed black;
-            font-weight:bold;
-        ">
-            ${linea}
-        </div>`;
-    }
+    return `
+    <div style="
+        font-size:20px;
+        font-weight:bold;
+        text-align:center;
+        line-height:1.1;
+        margin:0;
+        padding:2px 0;
+    ">
+        ${linea}
+    </div>`;
+}
 
     // BENDAJE
     if(linea.toLowerCase().includes("bendaje")){
-        return `
-        <div style="
-            font-size:13px;
-            margin-bottom:6px;
-        ">
-            ${linea}
-        </div>`;
-    }
+    return `
+    <div style="
+        font-size:15px;
+        text-align:center;
+        margin:0;
+        padding:0;
+        line-height:1.1;
+    ">
+        ${linea}
+    </div>`;
+}
 
-    return "";
+    return `<div>${linea}</div>`;
 })
 .join("");
 
