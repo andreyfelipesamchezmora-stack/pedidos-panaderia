@@ -914,38 +914,13 @@ let textoFormateado = textoCompleto
 
     // 👉 PRODUCTO (centrado, grande, separado y con X clara)
     if(linea.includes("=")){
-        // separar bien la X
-        linea = linea.replace("x", " x ");
-
-        return `
-        <div style="
-            border-bottom:1px dashed black;
-            padding:3px 0;
-            margin:2px 0;
-            font-weight:bold;
-            font-size:18px;
-            text-align:center;
-            line-height:1.2;
-        ">
-            ${linea}
-        </div>
-        `;
-    }
+    return `<div class="producto">${linea}</div>`;
+}
 
     // 👉 BENDAJE (pegado abajo sin línea extra)
     if(linea.toLowerCase().includes("bendaje")){
-        return `
-        <div style="
-            font-size:15px;
-            text-align:center;
-            margin-top:-4px;
-            margin-bottom:2px;
-            line-height:1.1;
-        ">
-            ${linea}
-        </div>
-        `;
-    }
+    return `<div class="bendaje">${linea}</div>`;
+}
 
     return `<div>${linea}</div>`;
 })
@@ -1146,11 +1121,11 @@ PRODUCTOS
 </div>
 
 
-<div style="text-align:left;margin-top:5px;">
+<div style="margin-top:5px;">
 ${textoFormateado}
 </div>
-<div style="border-top:1px dashed black;width:100%; margin:10px 0;"></div>
-<br>
+
+<div style="border-top:1px dashed black;width:100%; margin:6px 0;"></div>
 
 <div style="text-align:left;font-size:13px;">
 <b>Comentario:</b><br>
@@ -1170,14 +1145,64 @@ ${bloqueCobro}
 `;
 
 // 🔥 IMPRIMIR
-let ventana = window.open("", "", "width=300,height=600");
+let ventana = window.open("", "_blank");
 
 if(!ventana){
     alert("El navegador bloqueó la impresión");
     return;
 }
 
-ventana.document.write(contenido);
+ventana.document.write(`
+<html>
+<head>
+<title>Ticket</title>
+
+<style>
+body{
+    margin:0;
+    padding:0;
+    font-family: monospace;
+}
+
+.ticket{
+    width:280px;
+    margin:0 auto;
+    text-align:center;
+}
+
+.linea{
+    border-top:1px dashed black;
+    margin:6px 0;
+    width:100%;
+}
+
+.producto{
+    font-size:20px;
+    font-weight:bold;
+    text-align:center;
+    line-height:1.1;
+    margin:0;
+    padding:2px 0;
+}
+
+.bendaje{
+    font-size:14px;
+    margin:0;
+    padding:0;
+}
+
+</style>
+</head>
+
+<body onload="window.print(); window.close();">
+
+<div class="ticket">
+${contenido}
+</div>
+
+</body>
+</html>
+`);
 ventana.document.write("<script>window.print();<\/script>");
 ventana.document.close();
 
