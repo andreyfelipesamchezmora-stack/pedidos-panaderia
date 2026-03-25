@@ -641,12 +641,10 @@ if(subtotal > 0){
 
 let b = 0;
 
-const nombre = p.name.toUpperCase().trim();
-
-if (nombre.includes("3.500")) {
+if (p.name.trim() === "PAN DE 3.500") {
     b = 0;
 }
-else if (nombre.includes("2.000")) {
+else if (p.name.trim() === "PAN DE 2.000") {
 
     if (modo === "original") {
         b = Math.round(panes * 0.2);
@@ -657,7 +655,6 @@ else if (nombre.includes("2.000")) {
 }
 else {
     b = p.b ? Math.round(panes * 0.2) : 0;
-}
 }
 // 🔥 ESTO ES LO QUE TE FALLABA
 total += subtotal;
