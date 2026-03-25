@@ -915,31 +915,71 @@ margin:0 auto;
 text-align:center;
 ">
 
-<img src="https://res.cloudinary.com/deyaftfah/image/upload/v1774403798/pixel_art_large_joxyzv.png" style="width:150px; margin-bottom:5px;">
+<!-- LOGO -->
+<img src="https://res.cloudinary.com/deyaftfah/image/upload/v1774142771/image-removebg-preview_ifzkfh.png" style="
+width:130px;
+margin-bottom:5px;
+">
 
-<div style="font-weight:bold;">Panadería VIANNYS</div>
+<!-- ENCABEZADO -->
+<div style="font-weight:bold; font-size:16px;">Panadería VIANNYS</div>
 <div>NIT: 1.076.501.617</div>
+<div>Tel: 3134062278</div>
+<div>Barrio: San Jorge</div>
 
-<hr>
+<div style="border-top:1px dashed black; margin:8px 0;"></div>
 
+<!-- TICKET -->
 <b>Ticket #${numero}</b><br>
 Fecha: ${fecha}
 
-<hr>
+<div style="border-top:1px dashed black; margin:8px 0;"></div>
 
-<b>Cliente:</b><br>${actualCliente}
+<!-- CLIENTE -->
+<div style="
+font-size:20px;
+font-weight:bold;
+">
+Cliente: ${actualCliente}
+</div>
 
-<hr>
+<div style="border-top:1px dashed black; margin:8px 0;"></div>
 
-${(window.textoPedido || "").replace(/\n/g,"<br>")}
+<!-- PRODUCTOS -->
+<div style="
+text-align:center;
+font-size:16px;
+line-height:1.3;
+font-weight:bold;
+">
 
-<hr>
+${(window.textoPedido || "")
+.replace(/------------------------------/g, "<div style='border-top:1px dashed black; margin:6px 0;'></div>")
+.replace(/\n/g,"<br>")}
 
-<b>Comentario:</b><br>${comentario || ""}
+</div>
 
-<hr>
+<div style="border-top:1px dashed black; margin:8px 0;"></div>
 
-<b>TOTAL: $${(window.totalPedido || 0).toLocaleString('es-CO')}</b>
+<!-- COMENTARIO -->
+<div style="
+text-align:right;
+font-size:13px;
+">
+<b>Comentario:</b><br>
+${comentario || ""}
+</div>
+
+<div style="border-top:1px dashed black; margin:8px 0;"></div>
+
+<!-- TOTAL -->
+<div style="
+font-size:22px;
+font-weight:bold;
+text-align:center;
+">
+TOTAL: $${(window.totalPedido || 0).toLocaleString('es-CO')}
+</div>
 
 ${bloqueCobro}
 
