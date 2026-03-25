@@ -637,13 +637,17 @@ if(subtotal > 0){
 let b = 0;
 
 // 🔥 reglas
-if(p.name === "PAN DE 2.000"){
+if(p.name === "PAN DE 3.500"){
+    b = 0;
+}
+else if(p.name === "PAN DE 2.000"){
     if(modo === "original"){
         b = Math.round(panes * 0.2);
     } else {
         b = 0;
     }
-} else {
+}
+else {
     b = p.b ? Math.round(panes * 0.2) : 0;
 }
 
@@ -982,13 +986,11 @@ margin-bottom:5px;
 <div>Tel: 3134062278</div>
 <div>Barrio: San Jorge</div>
 
-<div style="border-top:1px dashed black; margin:8px 0;"></div>
 
 <!-- TICKET -->
 <b>Ticket #${numero}</b><br>
 Fecha: ${fecha}
 
-<div style="border-top:1px dashed black; margin:8px 0;"></div>
 
 <!-- CLIENTE -->
 <div style="
@@ -998,19 +1000,27 @@ font-weight:bold;
 Cliente: ${actualCliente}
 </div>
 
-<div style="border-top:1px dashed black; margin:8px 0;"></div>
 
 <!-- PRODUCTOS -->
 <div style="
+font-size:18px;
+font-weight:bold;
 text-align:center;
+margin-bottom:5px;
+">
+PRODUCTOS
+</div>
+
+<div style="
+text-align:left;
 font-size:16px;
-line-height:1.3;
+line-height:1.4;
 font-weight:bold;
 ">
 ${textoFormateado}
 </div>
 
-<div style="border-top:1px dashed black; margin:8px 0;"></div>
+
 
 <!-- COMENTARIO -->
 <div style="
@@ -1021,7 +1031,6 @@ font-size:13px;
 ${comentario || ""}
 </div>
 
-<div style="border-top:1px dashed black; margin:8px 0;"></div>
 
 <!-- TOTAL -->
 <div style="
