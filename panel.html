@@ -362,9 +362,9 @@ let clientes = [];
 try {
     let guardados = JSON.parse(localStorage.getItem("clientes"));
 
-    if(Array.isArray(guardados) && guardados.length > 0){
-        clientes = guardados;
-    }
+    if(Array.isArray(guardados)){
+    clientes = guardados;
+}
 
 } catch(e){
     console.error("Error leyendo clientes:", e);
@@ -533,8 +533,7 @@ onclick="event.stopPropagation(); imprimirDirecto('${c.nombre}')">
 
         </div>`;
     });
-// 🔥 guardar siempre el estado actual
-localStorage.setItem("clientes", JSON.stringify(clientes));
+
 }
 
 async function abrir(nombre,id){
@@ -820,8 +819,11 @@ await db.from("pedidos").delete().eq("id",id);
 }
 
 // borrar cliente del array
-clientes = clientes.filter(c=>c.nombre!==nombre);
-localStorage.setItem("clientes", JSON.stringify(clientes));
+// SOLO borrar pedido, NO cliente
+await db.from("pedidos").delete().eq("id",id);
+
+// NO tocar clientes
+cargar();
 cargar();
 }
 
