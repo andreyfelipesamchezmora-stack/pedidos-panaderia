@@ -661,13 +661,7 @@ if (p.name.trim() === "PAN DE 3.500") {
     b = 0;
 }
 else if (p.name.trim() === "PAN DE 2.000") {
-
-    if (modo === "original") {
-        b = Math.round(panes * 0.2);
-    } else {
-        b = 0;
-    }
-
+    b = Math.round(panes * 0.2);
 }
 else {
     b = p.b ? Math.round(panes * 0.2) : 0;
