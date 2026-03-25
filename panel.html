@@ -924,30 +924,30 @@ let textoFormateado = (window.textoPedido || "")
     });
 
     // 🔥 PRODUCTO (lleva línea arriba)
-    if(linea.includes("=")){
-        return `
-        <div style="
-            border-top:1px dashed black;
-            padding-top:2px;
-            margin-top:2px;
-            font-weight:bold;
-        ">
-            ${linea}
-        </div>
-        `;
-    }
+if(linea.includes("=")){
+    return `
+    <div style="
+        margin-top:12px;
+        padding-top:6px;
+        border-top:1px solid #ccc;
+        font-weight:bold;
+    ">
+        ${linea}
+    </div>
+    `;
+}
 
     // 🔥 BENDAJE (pegado abajo del producto)
     if(linea.toLowerCase().includes("bendaje")){
-        return `
-        <div style="
-            font-size:14px;
-            margin:0;
-        ">
-            ${linea}
-        </div>
-        `;
-    }
+    return `
+    <div style="
+        font-size:13px;
+        margin-bottom:6px;
+    ">
+        ${linea}
+    </div>
+    `;
+}
 
     return `<div>${linea}</div>`;
 })
@@ -1012,10 +1012,19 @@ PRODUCTOS
 </div>
 
 <div style="
-text-align:left;
-font-size:16px;
-line-height:1.4;
+font-size:18px;
 font-weight:bold;
+text-align:center;
+margin:5px 0;
+">
+PRODUCTOS
+</div>
+
+<div style="
+text-align:left;
+font-size:15px;
+line-height:1.4;
+margin-top:5px;
 ">
 ${textoFormateado}
 </div>
