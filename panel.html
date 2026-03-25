@@ -362,9 +362,9 @@ let clientes = [];
 try {
     let guardados = JSON.parse(localStorage.getItem("clientes"));
 
-    if(Array.isArray(guardados)){
-    clientes = guardados;
-}
+    if(Array.isArray(guardados) && guardados.length > 0){
+        clientes = guardados;
+    }
 
 } catch(e){
     console.error("Error leyendo clientes:", e);
@@ -533,7 +533,8 @@ onclick="event.stopPropagation(); imprimirDirecto('${c.nombre}')">
 
         </div>`;
     });
-
+// 🔥 guardar siempre el estado actual
+localStorage.setItem("clientes", JSON.stringify(clientes));
 }
 
 async function abrir(nombre,id){
@@ -647,9 +648,9 @@ else if (p.name.trim() === "PAN DE 2.000") {
 
     if (modo === "original") {
         b = Math.round(panes * 0.2);
-    else {
-    b = Math.round(panes * 0.2);
-}
+    } else {
+        b = 0;
+    }
 
 }
 else {
@@ -819,11 +820,8 @@ await db.from("pedidos").delete().eq("id",id);
 }
 
 // borrar cliente del array
-// SOLO borrar pedido, NO cliente
-await db.from("pedidos").delete().eq("id",id);
-
-// NO tocar clientes
-cargar();
+clientes = clientes.filter(c=>c.nombre!==nombre);
+localStorage.setItem("clientes", JSON.stringify(clientes));
 cargar();
 }
 
