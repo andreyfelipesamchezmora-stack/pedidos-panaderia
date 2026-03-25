@@ -912,27 +912,31 @@ let textoFormateado = (window.textoPedido || "")
 
     // PRODUCTO
     if(linea.includes("=")){
-        return `
-        <div style="
-            margin-top:10px;
-            padding-top:6px;
-            border-top:1px dashed black;
-            font-weight:bold;
-        ">
-            ${linea}
-        </div>`;
-    }
+    return `
+    <div style="
+        text-align:center;
+        font-size:17px;
+        font-weight:bold;
+        margin:6px 0 2px 0;
+    ">
+        ${linea}
+    </div>
+    <div style="border-top:1px dashed black; margin:4px 0;"></div>
+    `;
+}
 
     // BENDAJE
     if(linea.toLowerCase().includes("bendaje")){
-        return `
-        <div style="
-            font-size:13px;
-            margin-bottom:5px;
-        ">
-            ${linea}
-        </div>`;
-    }
+    return `
+    <div style="
+        text-align:center;
+        font-size:14px;
+        margin:0 0 4px 0;
+    ">
+        ${linea}
+    </div>
+    `;
+}
 
     // OTROS TEXTOS
     return `<div>${linea}</div>`;
@@ -1116,14 +1120,18 @@ Cliente: ${actualCliente}
 <div style="border-top:1px dashed black; margin:8px 0;"></div>
 <br>
 
+<div style="border-top:1px dashed black; margin:6px 0;"></div>
+
 <div style="
 font-size:20px;
 font-weight:bold;
 text-align:center;
-margin:8px 0;
+margin:4px 0;
 ">
 PRODUCTOS
 </div>
+
+<div style="border-top:1px dashed black; margin:6px 0;"></div>
 
 <div style="text-align:left;margin-top:5px;">
 ${textoFormateado}
