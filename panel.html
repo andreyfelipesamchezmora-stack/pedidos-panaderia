@@ -905,39 +905,37 @@ let textoFormateado = (window.textoPedido || "")
 .filter(linea => linea.trim() !== "")
 .map(linea => {
 
-    // 🔥 FORMATEAR DINERO
+    // formatear dinero
     linea = linea.replace(/\$([0-9]+)/g, (m, num) => {
         return "$" + Number(num).toLocaleString('es-CO');
     });
 
-    // 🟢 PRODUCTO
+    // PRODUCTO
     if(linea.includes("=")){
         return `
         <div style="
-            margin-top:12px;
+            margin-top:10px;
             padding-top:6px;
             border-top:1px solid #e5e5e5;
             font-weight:bold;
-            font-size:15px;
         ">
             ${linea}
-        </div>
-        `;
+        </div>`;
     }
 
-    // 🔵 BENDAJE
+    // BENDAJE
     if(linea.toLowerCase().includes("bendaje")){
         return `
         <div style="
             font-size:13px;
-            margin-bottom:6px;
+            margin-bottom:5px;
         ">
             ${linea}
-        </div>
-        `;
+        </div>`;
     }
 
-    return "";
+    // OTROS TEXTOS
+    return `<div>${linea}</div>`;
 })
 .join("");
 async function borrarPedido(e, id){
@@ -1024,6 +1022,136 @@ function formatearMiles(valor){
 
 function limpiarFormato(valor){
     return valor.replace(/\./g, "");
+}
+async function imprimirTicket(){
+
+// 🔥 GUARDAR ANTES DE IMPRIMIR
+await guardar();
+
+let leDebo = document.getElementById("leDebo")?.checked;
+let meDebe = document.getElementById("meDebeCheck")?.checked;
+
+let comentario = document.getElementById("comentarios").value;
+let fecha = document.getElementById("fecha").value;
+
+let numero = generarNumeroTicket();
+
+// 🔥 FORMATEAR TEXTO DE PRODUCTOS
+let textoFormateado = (window.textoPedido || "")
+.split("\n")
+.filter(linea => linea.trim() !== "")
+.map(linea => {
+
+    linea = linea.replace(/\$([0-9]+)/g, (m, num) => {
+        return "$" + Number(num).toLocaleString('es-CO');
+    });
+
+    // PRODUCTO
+    if(linea.includes("=")){
+        return `
+        <div style="
+            margin-top:10px;
+            padding-top:6px;
+            border-top:1px solid #e5e5e5;
+            font-weight:bold;
+        ">
+            ${linea}
+        </div>`;
+    }
+
+    // BENDAJE
+    if(linea.toLowerCase().includes("bendaje")){
+        return `
+        <div style="
+            font-size:13px;
+            margin-bottom:6px;
+        ">
+            ${linea}
+        </div>`;
+    }
+
+    return "";
+})
+.join("");
+
+// 🔥 BLOQUE COBRO
+let bloqueCobro = "";
+
+if(leDebo || meDebe){
+    bloqueCobro = `
+    <div style="
+    font-size:18px;
+    font-weight:bold;
+    text-align:center;
+    margin-top:5px;
+    ">
+    ${window.totalFinal < 0 ? "DEBEMOS" : "COBRAR"}: $${Math.abs(window.totalFinal || window.totalPedido || 0).toLocaleString('es-CO')}
+    </div>
+    `;
+}
+
+// 🔥 CONTENIDO DEL TICKET
+let contenido = `
+<div style="font-family:monospace;width:280px;margin:0 auto;text-align:center;">
+
+<img src="https://res.cloudinary.com/deyaftfah/image/upload/v1774142771/image-removebg-preview_ifzkfh.png" style="width:120px;margin-bottom:5px;">
+
+<div style="font-weight:bold;font-size:16px;">Panadería VIANNYS</div>
+<div>NIT: 1.076.501.617</div>
+<div>Tel: 3134062278</div>
+<div>Barrio: San Jorge</div>
+
+<br>
+
+<b>Ticket #${numero}</b><br>
+Fecha: ${fecha}
+
+<br>
+
+<div style="font-size:18px;font-weight:bold;">
+Cliente: ${actualCliente}
+</div>
+
+<br>
+
+<div style="font-size:17px;font-weight:bold;">
+PRODUCTOS
+</div>
+
+<div style="text-align:left;margin-top:5px;">
+${textoFormateado}
+</div>
+
+<br>
+
+<div style="text-align:left;font-size:13px;">
+<b>Comentario:</b><br>
+${comentario || ""}
+</div>
+
+<br>
+
+<div style="font-size:22px;font-weight:bold;">
+TOTAL: $${(window.totalPedido || 0).toLocaleString('es-CO')}
+</div>
+
+${bloqueCobro}
+
+</div>
+`;
+
+// 🔥 IMPRIMIR
+let ventana = window.open("", "", "width=300,height=600");
+
+if(!ventana){
+    alert("El navegador bloqueó la impresión");
+    return;
+}
+
+ventana.document.write(contenido);
+ventana.document.write("<script>window.print();<\/script>");
+ventana.document.close();
+
 }
 
 document.addEventListener("DOMContentLoaded", () => {
