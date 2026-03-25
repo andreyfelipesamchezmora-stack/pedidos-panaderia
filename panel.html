@@ -975,29 +975,36 @@ function generarNumeroTicket(){
 }
 async function imprimirDirecto(nombre){
 
-let fecha = document.getElementById("fecha").value;
+    let fecha = document.getElementById("fecha").value;
 
-let {data} = await db.from("pedidos")
-.select("*")
-.eq("cliente", nombre)
-.eq("fecha", fecha)
-.single();
+    let { data, error } = await db.from("pedidos")
+    .select("*")
+    .eq("cliente", nombre)
+    .eq("fecha", fecha);
 
-if(!data){
-alert("Este cliente no tiene pedido");
-return;
-}
+    if(error){
+        console.error(error);
+        alert("Error consultando pedido");
+        return;
+    }
 
-// usar mismos globals
-window.totalPedido = data.total;
-window.totalFinal = data.total;
-window.textoPedido = data.pedido;
+    if(!data || data.length === 0){
+        alert("Este cliente no tiene pedido");
+        return;
+    }
 
-actualCliente = nombre;
+    // 🔥 SIEMPRE toma el primero (como hace tu modal)
+    let pedido = data[0];
 
-// reutilizar tu función existente
-imprimirTicket();
+    // 🔥 cargar datos EXACTAMENTE igual que el modal
+    window.totalPedido = pedido.total || 0;
+    window.totalFinal = pedido.total || 0;
+    window.textoPedido = pedido.pedido || "";
 
+    actualCliente = nombre;
+
+    // 🔥 imprimir
+    imprimirTicket();
 }
 function formatearMiles(valor){
     valor = valor.replace(/\D/g, ""); // solo números
