@@ -900,172 +900,46 @@ function resetear(){
 function cerrarModal(){
 document.getElementById("modalPedido").style.display="none";
 }
-function imprimirTicket(){
-
-let leDebo = document.getElementById("leDebo")?.checked;
-let meDebe = document.getElementById("meDebeCheck")?.checked;
-
-let bloqueCobro = "";
-
-let comentario = document.getElementById("comentarios").value;
-let fecha = document.getElementById("fecha").value;
-
-let numero = generarNumeroTicket();
-
-// 🔥 FORMATEAR MILES (CLAVE)
 let textoFormateado = (window.textoPedido || "")
 .split("\n")
 .filter(linea => linea.trim() !== "")
 .map(linea => {
 
-    // 🔥 formatear miles
+    // 🔥 FORMATEAR DINERO
     linea = linea.replace(/\$([0-9]+)/g, (m, num) => {
         return "$" + Number(num).toLocaleString('es-CO');
     });
 
-    // 🔥 PRODUCTO (lleva línea arriba)
-if(linea.includes("=")){
-    return `
-    <div style="
-        margin-top:12px;
-        padding-top:6px;
-        border-top:1px solid #ccc;
-        font-weight:bold;
-    ">
-        ${linea}
-    </div>
-    `;
-}
+    // 🟢 PRODUCTO
+    if(linea.includes("=")){
+        return `
+        <div style="
+            margin-top:12px;
+            padding-top:6px;
+            border-top:1px solid #e5e5e5;
+            font-weight:bold;
+            font-size:15px;
+        ">
+            ${linea}
+        </div>
+        `;
+    }
 
-    // 🔥 BENDAJE (pegado abajo del producto)
+    // 🔵 BENDAJE
     if(linea.toLowerCase().includes("bendaje")){
-    return `
-    <div style="
-        font-size:13px;
-        margin-bottom:6px;
-    ">
-        ${linea}
-    </div>
-    `;
-}
+        return `
+        <div style="
+            font-size:13px;
+            margin-bottom:6px;
+        ">
+            ${linea}
+        </div>
+        `;
+    }
 
-    return `<div>${linea}</div>`;
+    return "";
 })
 .join("");
-
-if(leDebo || meDebe){
-    bloqueCobro = `
-    <div style="
-    font-size:18px;
-    font-weight:bold;
-    text-align:center;
-    margin-top:5px;
-    ">
-    ${window.totalFinal < 0 ? "DEBEMOS" : "COBRAR"}: $${Math.abs(window.totalFinal || window.totalPedido || 0).toLocaleString('es-CO')}
-    </div>
-    `;
-}
-
-let contenido = `
-<div style="
-font-family:monospace;
-width:280px;
-margin:0 auto;
-text-align:center;
-">
-
-<!-- LOGO -->
-<img src="https://res.cloudinary.com/deyaftfah/image/upload/v1774142771/image-removebg-preview_ifzkfh.png" style="
-width:130px;
-margin-bottom:5px;
-">
-
-<!-- ENCABEZADO -->
-<div style="font-weight:bold; font-size:16px;">Panadería VIANNYS</div>
-<div>NIT: 1.076.501.617</div>
-<div>Tel: 3134062278</div>
-<div>Barrio: San Jorge</div>
-
-
-<!-- TICKET -->
-<b>Ticket #${numero}</b><br>
-Fecha: ${fecha}
-
-
-<!-- CLIENTE -->
-<div style="
-font-size:20px;
-font-weight:bold;
-">
-Cliente: ${actualCliente}
-</div>
-
-
-<!-- PRODUCTOS -->
-<div style="
-font-size:18px;
-font-weight:bold;
-text-align:center;
-margin-bottom:5px;
-">
-PRODUCTOS
-</div>
-
-<div style="
-font-size:18px;
-font-weight:bold;
-text-align:center;
-margin:5px 0;
-">
-PRODUCTOS
-</div>
-
-<div style="
-text-align:left;
-font-size:15px;
-line-height:1.4;
-margin-top:5px;
-">
-${textoFormateado}
-</div>
-
-
-
-<!-- COMENTARIO -->
-<div style="
-text-align:left;
-font-size:13px;
-">
-<b>Comentario:</b><br>
-${comentario || ""}
-</div>
-
-
-<!-- TOTAL -->
-<div style="
-font-size:22px;
-font-weight:bold;
-text-align:center;
-">
-TOTAL: $${(window.totalPedido || 0).toLocaleString('es-CO')}
-</div>
-
-${bloqueCobro}
-
-</div>
-`;
-
-let ventana = window.open("", "", "width=300,height=600");
-
-if(!ventana){
-    alert("El navegador bloqueó la impresión");
-    return;
-}
-
-ventana.document.write(contenido);
-ventana.document.write("<script>window.print();<\/script>");
-ventana.document.close();
-}
 async function borrarPedido(e, id){
 e.stopPropagation();
 
