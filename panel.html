@@ -918,11 +918,12 @@ let textoFormateado = (window.textoPedido || "")
         return `
         <div style="
             border-bottom:1px dashed black;
-            padding:6px 0;
-            margin:4px 0;
+            padding:3px 0;
+            margin:2px 0;
             font-weight:bold;
-            font-size:16px;
+            font-size:18px;
             text-align:center;
+            line-height:1.2;
         ">
             ${linea}
         </div>
@@ -933,10 +934,11 @@ let textoFormateado = (window.textoPedido || "")
     if(linea.toLowerCase().includes("bendaje")){
         return `
         <div style="
-            font-size:13px;
+            font-size:15px;
             text-align:center;
-            margin-top:-2px;
-            margin-bottom:4px;
+            margin-top:-4px;
+            margin-bottom:2px;
+            line-height:1.1;
         ">
             ${linea}
         </div>
