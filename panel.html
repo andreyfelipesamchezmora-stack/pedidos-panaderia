@@ -905,41 +905,45 @@ let textoFormateado = (window.textoPedido || "")
 .filter(linea => linea.trim() !== "")
 .map(linea => {
 
-    // formatear dinero
+    // 👉 FORMATEAR MILES
     linea = linea.replace(/\$([0-9]+)/g, (m, num) => {
         return "$" + Number(num).toLocaleString('es-CO');
     });
 
-    // PRODUCTO
+    // 👉 PRODUCTO (centrado, grande, separado y con X clara)
     if(linea.includes("=")){
-    return `
-    <div style="
-        text-align:center;
-        font-size:17px;
-        font-weight:bold;
-        margin:6px 0 2px 0;
-    ">
-        ${linea}
-    </div>
-    <div style="border-top:1px dashed black; margin:4px 0;"></div>
-    `;
-}
+        // separar bien la X
+        linea = linea.replace("x", " x ");
 
-    // BENDAJE
+        return `
+        <div style="
+            border-bottom:1px dashed black;
+            padding:6px 0;
+            margin:4px 0;
+            font-weight:bold;
+            font-size:16px;
+            text-align:center;
+        ">
+            ${linea}
+        </div>
+        `;
+    }
+
+    // 👉 BENDAJE (pegado abajo sin línea extra)
     if(linea.toLowerCase().includes("bendaje")){
-    return `
-    <div style="
-        text-align:center;
-        font-size:14px;
-        margin:0 0 4px 0;
-    ">
-        ${linea}
-    </div>
-    `;
-}
+        return `
+        <div style="
+            font-size:13px;
+            text-align:center;
+            margin-top:-2px;
+            margin-bottom:4px;
+        ">
+            ${linea}
+        </div>
+        `;
+    }
 
-    // OTROS TEXTOS
-    return `<div>${linea}</div>`;
+    return "";
 })
 .join("");
 async function borrarPedido(e, id){
@@ -1120,8 +1124,6 @@ Cliente: ${actualCliente}
 <div style="border-top:1px dashed black; margin:8px 0;"></div>
 <br>
 
-<div style="border-top:1px dashed black; margin:6px 0;"></div>
-
 <div style="
 font-size:20px;
 font-weight:bold;
@@ -1131,7 +1133,6 @@ margin:4px 0;
 PRODUCTOS
 </div>
 
-<div style="border-top:1px dashed black; margin:6px 0;"></div>
 
 <div style="text-align:left;margin-top:5px;">
 ${textoFormateado}
@@ -1143,7 +1144,7 @@ ${textoFormateado}
 <b>Comentario:</b><br>
 ${comentario || ""}
 </div>
-
+<div style="border-top:1px dashed black; margin:6px 0;"></div>
 <br>
 
 <div style="font-size:22px;font-weight:bold;">
