@@ -641,35 +641,21 @@ if(subtotal > 0){
 
 let b = 0;
 
-// ❌ PAN DE 3.500 NO tiene bendaje
-if(p.name === "PAN DE 3.500"){
+if (p.name.trim() === "PAN DE 3.500") {
     b = 0;
-} 
-// ✅ TODOS los demás que tengan b:true
-else if(p.b){
-    b = Math.round(panes * 0.2);
 }
+else if (p.name.trim() === "PAN DE 2.000") {
 
-// ✅ AHORA SÍ AGREGA EL BENDAJE
-bendaje += `${p.name}: ${b}\n`;
-
-// 🔥 regla especial PAN DE 2.000
-if(p.name === "PAN DE 2.000"){
-
-    // 👉 solo calcula bendaje en modo ORIGINAL
-    if(modo === "original"){
+    if (modo === "original") {
         b = Math.round(panes * 0.2);
     } else {
         b = 0;
     }
 
-} else {
-
-    // 👉 resto de productos normal
-    b = p.b ? Math.round(panes * 0.2) : 0;
-
 }
-
+else {
+    b = p.b ? Math.round(panes * 0.2) : 0;
+}
 // 🔥 ESTO ES LO QUE TE FALLABA
 total += subtotal;
 
