@@ -1102,7 +1102,7 @@ let contenido = `
 <div>NIT: 1.076.501.617</div>
 <div>Tel: 3134062278</div>
 <div>Barrio: San Jorge</div>
-
+<div style="border-top:1px dashed black; margin:8px 0;"></div>
 <br>
 
 <b>Ticket #${numero}</b><br>
@@ -1113,7 +1113,7 @@ Fecha: ${fecha}
 <div style="font-size:18px;font-weight:bold;">
 Cliente: ${actualCliente}
 </div>
-
+<div style="border-top:1px dashed black; margin:8px 0;"></div>
 <br>
 
 <div style="
@@ -1128,7 +1128,7 @@ PRODUCTOS
 <div style="text-align:left;margin-top:5px;">
 ${textoFormateado}
 </div>
-
+<div style="border-top:1px dashed black; margin:10px 0;"></div>
 <br>
 
 <div style="text-align:left;font-size:13px;">
@@ -1140,6 +1140,7 @@ ${comentario || ""}
 
 <div style="font-size:22px;font-weight:bold;">
 TOTAL: $${(window.totalPedido || 0).toLocaleString('es-CO')}
+<div style="border-top:1px dashed black; margin:10px 0;"></div>
 </div>
 
 ${bloqueCobro}
