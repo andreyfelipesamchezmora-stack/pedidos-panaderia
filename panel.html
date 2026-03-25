@@ -897,7 +897,7 @@ let numero = generarNumeroTicket();
 // 🔥 FORMATEAR MILES (CLAVE)
 let textoFormateado = (window.textoPedido || "")
 .split('------------------------------')
-.filter(b => b.trim() !== "") // 🔥 elimina bloque vacío
+.filter(b => b.trim() !== "")
 .map(bloque => {
 
     let limpio = bloque.replace(/\$([0-9]+)/g, (match, num) => {
@@ -905,8 +905,12 @@ let textoFormateado = (window.textoPedido || "")
     });
 
     return `
-    <div style="margin:0; padding:4px 0;">
-        <div style="border-top:1px dashed black; margin-bottom:4px;"></div>
+    <div style="
+        border-top:1px dashed black;
+        padding-top:3px;
+        margin-top:3px;
+        line-height:1.2;
+    ">
         ${limpio.replace(/\n/g,"<br>")}
     </div>
     `;
