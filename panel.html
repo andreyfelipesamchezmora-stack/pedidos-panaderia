@@ -882,20 +882,18 @@ function resetear(){
 function cerrarModal(){
 document.getElementById("modalPedido").style.display="none";
 }
-async function imprimirTicket(){
+function imprimirTicket(){
 
-    calcular();
 let leDebo = document.getElementById("leDebo")?.checked;
 let meDebe = document.getElementById("meDebeCheck")?.checked;
 
 let bloqueCobro = "";
-    // 🔥 guardar primero
-    await guardar();
 
-    let comentario = document.getElementById("comentarios").value;
-    let fecha = document.getElementById("fecha").value;
+let comentario = document.getElementById("comentarios").value;
+let fecha = document.getElementById("fecha").value;
 
-    let numero = generarNumeroTicket();
+let numero = generarNumeroTicket();
+
 if(leDebo || meDebe){
     bloqueCobro = `
     <div style="
@@ -908,97 +906,56 @@ if(leDebo || meDebe){
     </div>
     `;
 }
-    let contenido = `
-    <div style="
-    font-family:monospace;
-    width:280px;
-    margin:0 auto;
-    text-align:center;
-    ">
 
-    <!-- LOGO -->
-    <div style="width:100%; text-align:center;">
-      <img src="https://res.cloudinary.com/deyaftfah/image/upload/v1774142771/image-removebg-preview_ifzkfh.png" style="
-        width:150px;
-        display:block;
-        margin:0 auto 5px auto;
-      ">
-    </div>
+let contenido = `
+<div style="
+font-family:monospace;
+width:280px;
+margin:0 auto;
+text-align:center;
+">
 
-    <!-- ENCABEZADO -->
-    <div style="text-align:center;">
-      <div style="font-weight:bold; font-size:16px;">Panadería VIANNYS</div>
-      <div>NIT: 1.076.501.617</div>
-      <div>Tel: 3134062278</div>
-      <div>Barrio: San Jorge</div>
-    </div>
+<img src="https://res.cloudinary.com/deyaftfah/image/upload/v1774142771/image-removebg-preview_ifzkfh.png" style="width:150px; margin-bottom:5px;">
 
-    <div style="border-top:1px dashed black; margin:8px 0;"></div>
+<div style="font-weight:bold;">Panadería VIANNYS</div>
+<div>NIT: 1.076.501.617</div>
 
-    <!-- NUMERO + FECHA -->
-    <div style="text-align:center;">
-    <b>Ticket #${numero}</b><br>
-    Fecha: ${fecha}
-    </div>
+<hr>
 
-    <div style="border-top:1px dashed black; margin:8px 0;"></div>
+<b>Ticket #${numero}</b><br>
+Fecha: ${fecha}
 
-    <!-- CLIENTE -->
-    <div style="
-    font-size:18px;
-    font-weight:bold;
-    text-align:center;
-    ">
-    Cliente: ${actualCliente}
-    </div>
+<hr>
 
-    <div style="border-top:1px dashed black; margin:8px 0;"></div>
+<b>Cliente:</b><br>${actualCliente}
 
-    <!-- PRODUCTOS -->
-    <div style="
-    text-align:center;
-    font-size:14px;
-    line-height:1.1;
-    margin:0;
-    padding:0;
-    ">
-    ${(window.textoPedido || "").replace(/\n/g,"<br>")}
-    </div>
+<hr>
 
-    <div style="border-top:1px dashed black; margin:8px 0;"></div>
+${(window.textoPedido || "").replace(/\n/g,"<br>")}
 
-    <!-- COMENTARIO -->
-    <div style="text-align:left;">
-    <b>Comentario:</b><br>
-    ${comentario || ""}
-    </div>
+<hr>
 
-    <div style="border-top:1px dashed black; margin:8px 0;"></div>
+<b>Comentario:</b><br>${comentario || ""}
 
-    <!-- TOTALES -->
-    <div style="
-    font-size:20px;
-    font-weight:bold;
-    text-align:center;
-    ">
-    TOTAL: $${(window.totalPedido || 0).toLocaleString('es-CO')}
-    </div>
+<hr>
 
-   ${bloqueCobro}
+<b>TOTAL: $${(window.totalPedido || 0).toLocaleString('es-CO')}</b>
 
-    </div>
-    `;
+${bloqueCobro}
 
-    let ventana = window.open("", "", "width=300,height=600");
+</div>
+`;
 
-    if(!ventana){
-        alert("El navegador bloqueó la impresión");
-        return;
-    }
+let ventana = window.open("", "", "width=300,height=600");
 
-    ventana.document.write(contenido);
-    ventana.document.write("<script>window.print();<\/script>");
-    ventana.document.close();
+if(!ventana){
+    alert("El navegador bloqueó la impresión");
+    return;
+}
+
+ventana.document.write(contenido);
+ventana.document.write("<script>window.print();<\/script>");
+ventana.document.close();
 }
 async function borrarPedido(e, id){
 e.stopPropagation();
