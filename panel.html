@@ -1026,7 +1026,9 @@ function limpiarFormato(valor){
 async function imprimirTicket(){
 
 // 🔥 GUARDAR ANTES DE IMPRIMIR
-await guardar();
+if(window.totalPedido > 0){
+    await guardar();
+}
 
 let leDebo = document.getElementById("leDebo")?.checked;
 let meDebe = document.getElementById("meDebeCheck")?.checked;
@@ -1052,7 +1054,7 @@ let textoFormateado = (window.textoPedido || "")
         <div style="
             margin-top:10px;
             padding-top:6px;
-            border-top:1px solid #e5e5e5;
+            border-top:1px dashed black;
             font-weight:bold;
         ">
             ${linea}
