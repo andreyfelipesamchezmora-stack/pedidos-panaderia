@@ -621,7 +621,13 @@ let precio = p.precio;
 if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
 if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
 
-let panes = din>0 ? Math.floor(din/precio) : cant;
+let panes = 0;
+
+if(din > 0){
+    panes = Math.floor(din / precio);
+} else if(cant > 0){
+    panes = cant;
+}
 let subtotal = panes * precio;
 
 // 🔥 CONDICIONES PAN 2.000
