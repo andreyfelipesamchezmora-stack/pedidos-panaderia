@@ -905,19 +905,33 @@ let textoFormateado = (window.textoPedido || "")
         return "$" + Number(num).toLocaleString('es-CO');
     });
 
-    // 🔥 si es producto → línea arriba
+    // 🔥 PRODUCTO (lleva línea arriba)
     if(linea.includes("=")){
         return `
         <div style="
             border-top:1px dashed black;
             padding-top:2px;
             margin-top:2px;
-        ">${linea}</div>
+            font-weight:bold;
+        ">
+            ${linea}
+        </div>
         `;
     }
 
-    // 🔥 bendaje sin espacio extra
-    return `<div style="margin:0;">${linea}</div>`;
+    // 🔥 BENDAJE (pegado abajo del producto)
+    if(linea.toLowerCase().includes("bendaje")){
+        return `
+        <div style="
+            font-size:14px;
+            margin:0;
+        ">
+            ${linea}
+        </div>
+        `;
+    }
+
+    return `<div>${linea}</div>`;
 })
 .join("");
 
