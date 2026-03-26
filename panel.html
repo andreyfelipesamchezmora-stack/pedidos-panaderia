@@ -659,23 +659,20 @@ let esPromo2000 = false;
 
 if(p.name==="PAN DE 2.000" && modo!=="original"){
 
-    if(panes>=3 && panes<=4){
-        panes=3; 
-        subtotal=5000;
+    // 🔥 SOLO 3 panes tiene promo
+    if(panes === 3){
+        subtotal = 5000;
         esPromo2000 = true;
     }
-    else if(panes===7){
-        subtotal=14000;
+
+    // 🔥 7, 8, 9 → se convierten en 9 panes
+    else if(panes >= 7 && panes <= 9){
+        panes = 9;
+        subtotal = 15000;
         esPromo2000 = true;
     }
-    else if(panes===8){
-        subtotal=15000;
-        esPromo2000 = true;
-    }
-    else if(panes===9){
-        subtotal=18000;
-        esPromo2000 = true;
-    }
+
+    // 🔥 TODO LO DEMÁS ES NORMAL (incluye 4 panes)
 }
 
 // 🚨 SOLO SI HAY ALGO
@@ -683,13 +680,12 @@ if(subtotal > 0){
 
 let b = 0;
 
-// 🔥 PAN 2.000 SOLO SIN BENDAJE SI ES PROMO
 if (p.name.trim() === "PAN DE 2.000") {
 
     if(esPromo2000){
-        b = 0; // promo → sin bendaje
+        b = 0; // promo
     } else {
-        b = Math.round(panes * 0.2); // normal → sí bendaje
+        b = Math.round(panes * 0.2); // normal
     }
 
 }
