@@ -759,7 +759,25 @@ async function guardar() {
         if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
 
         let panes = din>0 ? Math.floor(din/precio) : cant;
-        let subtotal = panes * precio;
+let subtotal = panes * precio;
+
+// 🔥 MISMA LÓGICA QUE CALCULAR (PROMO PAN 2000)
+if(p.name==="PAN DE 2.000" && modo!=="original"){
+
+    if(panes>=3 && panes<=4){
+        panes=3; 
+        subtotal=5000;
+    }
+    else if(panes===7){
+        subtotal=14000;
+    }
+    else if(panes===8){
+        subtotal=15000;
+    }
+    else if(panes===9){
+        subtotal=18000;
+    }
+}
 
         if(cant > 0 || din > 0){
             listaProductos.push({
