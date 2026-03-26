@@ -783,7 +783,7 @@ async function guardar() {
 
     let total = 0;
     let texto = "";
-    let listaProductos = []; // ✅ FUERA del loop
+    let listaProductos = [];
 
     productos.forEach((p, i) => {
 
@@ -793,62 +793,33 @@ async function guardar() {
         let precio = p.precio;
 
         if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
-        if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
+        if(modo==="tiberio" && p.name==="PAN QUESILLO (1.200)") precio=1000;
 
         let panes = 0;
-let subtotal = 0;
-let esPromo2000 = false;
+        let subtotal = 0;
 
-// 🔥 CALCULO BASE
-if(din > 0){
-    panes = Math.floor(din / precio);
-} else if(cant > 0){
-    panes = cant;
-}
+        // BASE
+        if(din > 0){
+            panes = Math.floor(din / precio);
+        } else if(cant > 0){
+            panes = cant;
+        }
 
-// 🔥 PROMO SOLO DESPUÉS (NO ANTES)
-subtotal = panes * precio;
+        subtotal = panes * precio;
 
-if(p.name === "PAN DE 2.000" && modo !== "original"){
+        // 🔥 PROMO PAN 2000 (CORRECTA)
+        if(p.name === "PAN DE 2.000" && modo !== "original"){
 
-    if(panes === 3){
-        subtotal = 5000;
-        esPromo2000 = true;
-    }
-    else if(panes >= 7 && panes <= 9){
-        panes = 9;
-        subtotal = 15000;
-        esPromo2000 = true;
-    }
-}
-        else {
-        panes = Math.floor(din / precio);
-    }
+            if(panes === 3){
+                subtotal = 5000;
+            }
+            else if(panes >= 7 && panes <= 9){
+                panes = 9;
+                subtotal = 15000;
+            }
+        }
 
-} else if(cant > 0){
-    panes = cant;
-}
-
-let subtotal = panes * precio;
-
-// 🔥 PROMO TAMBIÉN (la otra regla)
-if(p.name==="PAN DE 2.000" && modo!=="original"){
-
-    if(panes>=3 && panes<=4){
-        panes=3; 
-        subtotal=5000;
-    }
-    else if(panes===7){
-        subtotal=14000;
-    }
-    else if(panes===8){
-        subtotal=15000;
-    }
-    else if(panes===9){
-        subtotal=18000;
-    }
-}
-
+        // GUARDAR PRODUCTO
         if(cant > 0 || din > 0){
             listaProductos.push({
                 nombre: p.name,
@@ -864,6 +835,7 @@ if(p.name==="PAN DE 2.000" && modo!=="original"){
 ${p.name} x${panes} = $${subtotal}
 `;
         }
+
     });
 
     let comentario = document.getElementById("comentarios").value || "";
@@ -905,7 +877,6 @@ ${p.name} x${panes} = $${subtotal}
             return;
         }
     }
-
 
     cerrarModal();
     cargar();
