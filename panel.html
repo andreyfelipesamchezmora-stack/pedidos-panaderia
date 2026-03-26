@@ -576,63 +576,51 @@ localStorage.setItem("clientes", JSON.stringify(clientes));
 }
 
 async function abrir(nombre,id){
-clienteActivo = nombre;
-actualCliente = nombre;
-actualId = id || null;
+    clienteActivo = nombre;
+    actualCliente = nombre;
+    actualId = id || null;
 
-document.getElementById("clienteTitulo").innerText = nombre;
-document.getElementById("modalPedido").style.display = "flex";
+    document.getElementById("clienteTitulo").innerText = nombre;
+    document.getElementById("modalPedido").style.display = "flex";
 
-renderProductos();
+    // 🔥 1. render SIEMPRE primero
+    renderProductos();
 
-// 🔥 LIMPIAR TODO (esto evita mezcla)
-resetear();
-document.getElementById("comentarios").value = "";
+    // 🔥 2. limpiar DESPUÉS pero sin romper
+    setTimeout(() => {
+        resetear();
+    }, 50);
 
-// 🔥 CARGAR PEDIDO REAL POR CLIENTE + FECHA
-let fechaSeleccionada = document.getElementById("fecha").value;
+    document.getElementById("comentarios").value = "";
 
-let {data} = await db.from("pedidos")
-.select("*")
-.eq("cliente", nombre)
-.eq("fecha", fechaSeleccionada)
-.single();
+    let fechaSeleccionada = document.getElementById("fecha").value;
 
-if(data){
-// 🔥 CARGAR PRODUCTOS EN INPUTS
-if(data.productos && Array.isArray(data.productos)){
+    let {data} = await db.from("pedidos")
+    .select("*")
+    .eq("cliente", nombre)
+    .eq("fecha", fechaSeleccionada)
+    .single();
 
-    data.productos.forEach(prodGuardado => {
+    if(data && data.productos){
 
-        let index = productos.findIndex(p => p.name === prodGuardado.nombre);
+        data.productos.forEach(prodGuardado => {
 
-        if(index !== -1){
+            let index = productos.findIndex(p => p.name === prodGuardado.nombre);
 
-            let cantInput = document.getElementById("cant"+index);
-            let dinInput = document.getElementById("din"+index);
+            if(index !== -1){
+                let cantInput = document.getElementById("cant"+index);
+                let dinInput = document.getElementById("din"+index);
 
-            if(cantInput) cantInput.value = prodGuardado.cantidad || "";
-            if(dinInput) dinInput.value = prodGuardado.dinero || "";
+                if(cantInput) cantInput.value = prodGuardado.cantidad || "";
+                if(dinInput) dinInput.value = prodGuardado.dinero || "";
 
-            // 🔥 pintar en verde como activo
-            marcar(index);
-        }
+                marcar(index);
+            }
+        });
 
-    });
-
-}
-window.totalPedido = data.total;
-window.textoPedido = data.pedido;
-
-document.getElementById("resultadoBox").innerText = data.pedido;
-
-document.getElementById("comentarios").value = data.comentario || "";
-clienteActivo = nombre;
-
-// limpiar inputs primero
-document.querySelectorAll(".cantidad").forEach(i => i.value = "");
-document.querySelectorAll(".precio").forEach(i => i.value = "");
-
+        document.getElementById("resultadoBox").innerText = data.pedido || "";
+        document.getElementById("comentarios").value = data.comentario || "";
+    }
 }
 
 }
