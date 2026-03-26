@@ -627,64 +627,28 @@ let panes = 0;
 let subtotal = 0;
 let esPromo2000 = false;
 
+// 🔥 CALCULO BASE
 if(din > 0){
-
-    if(p.name === "PAN DE 2.000"){
-
-        if(din === 5000){
-            panes = 3;
-            subtotal = 5000;
-            esPromo2000 = true;
-        }
-        else if(din >= 14000 && din <= 18000){
-            panes = 9;
-            subtotal = 15000;
-            esPromo2000 = true;
-        }
-        else{
-            panes = Math.floor(din / precio);
-            subtotal = panes * precio;
-        }
-
-    } else {
-        panes = Math.floor(din / precio);
-        subtotal = panes * precio;
-    }
-
+    panes = Math.floor(din / precio);
 } else if(cant > 0){
     panes = cant;
-    subtotal = panes * precio;
 }
-else if(cant > 0){
-    panes = cant;
-    subtotal = panes * precio;
-}
-else if(cant > 0){
-    panes = cant;
-}
-let subtotal = panes * precio;
 
-// 🔥 CONDICIONES PAN 2.000
-let esPromo2000 = false;
+// 🔥 PROMO SOLO DESPUÉS (NO ANTES)
+subtotal = panes * precio;
 
-if(p.name==="PAN DE 2.000" && modo!=="original"){
+if(p.name === "PAN DE 2.000" && modo !== "original"){
 
-    // 🔥 SOLO 3 panes tiene promo
     if(panes === 3){
         subtotal = 5000;
         esPromo2000 = true;
     }
-
-    // 🔥 7, 8, 9 → se convierten en 9 panes
     else if(panes >= 7 && panes <= 9){
         panes = 9;
         subtotal = 15000;
         esPromo2000 = true;
     }
-
-    // 🔥 TODO LO DEMÁS ES NORMAL (incluye 4 panes)
 }
-
 // 🚨 SOLO SI HAY ALGO
 if(subtotal > 0){
 
@@ -796,29 +760,32 @@ async function guardar() {
         if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
 
         let panes = 0;
+let subtotal = 0;
+let esPromo2000 = false;
 
-// 🔥 MISMA LÓGICA QUE CALCULAR
+// 🔥 CALCULO BASE
 if(din > 0){
+    panes = Math.floor(din / precio);
+} else if(cant > 0){
+    panes = cant;
+}
 
-    if(p.name === "PAN DE 2.000"){
+// 🔥 PROMO SOLO DESPUÉS (NO ANTES)
+subtotal = panes * precio;
 
-        if(din >= 5000 && din < 7000){
-            panes = 3;
-        }
-        else if(din >= 7000 && din < 8000){
-            panes = 7;
-        }
-        else if(din >= 8000 && din < 9000){
-            panes = 8;
-        }
-        else if(din >= 9000){
-            panes = 9;
-        }
-        else{
-            panes = Math.floor(din / precio);
-        }
+if(p.name === "PAN DE 2.000" && modo !== "original"){
 
-    } else {
+    if(panes === 3){
+        subtotal = 5000;
+        esPromo2000 = true;
+    }
+    else if(panes >= 7 && panes <= 9){
+        panes = 9;
+        subtotal = 15000;
+        esPromo2000 = true;
+    }
+}
+        else {
         panes = Math.floor(din / precio);
     }
 
