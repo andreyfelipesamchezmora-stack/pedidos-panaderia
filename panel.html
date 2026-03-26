@@ -540,6 +540,10 @@ async function cargar(){
         return;
     }
 
+    if(!Array.isArray(clientes)){
+    console.error("Clientes dañados");
+    clientes = [];
+}
     // 🔥 RENDER SEGURO
     clientes.forEach(c => {
 
@@ -550,7 +554,7 @@ async function cargar(){
 
         grid.innerHTML += `
         <div class="card ${c.tipo} ${p ? (p.editado ? 'editado' : 'nuevo') : ''}"
-        onclick="abrir('${c.nombre}', ${p?.id || 0})">
+        onclick="abrir(\`${c.nombre}\`, ${p?.id || 0})">
 
         <div class="printMini" 
 onclick="event.stopPropagation(); imprimirDirecto('${c.nombre}')">
