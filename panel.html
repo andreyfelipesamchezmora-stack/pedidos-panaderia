@@ -167,49 +167,42 @@ white-space:pre-line;
 
 <div class="container">
 
-    <!-- SIDEBAR -->
-    <div class="sidebar">
+<div class="sidebar">
 
-        <h3>Fecha</h3>
+<h3>Fecha</h3>
+<input type="date" id="fecha" onchange="cargar()" style="
+width:100%;
+padding:10px;
+font-size:16px;
+border-radius:10px;
+border:1px solid #333;
+background:#1e1e1e;
+color:white;
+margin-bottom:10px;
+color-scheme: dark;
+">
+<button onclick="nuevoCliente()">➕ Agregar Cliente</button>
 
-        <input type="date" id="fecha" onchange="cargar()" style="
-        width:100%;
-        padding:10px;
-        font-size:16px;
-        border-radius:10px;
-        border:1px solid #333;
-        background:#1e1e1e;
-        color:white;
-        margin-bottom:10px;
-        color-scheme: dark;
-        ">
+<div class="video-sidebar">
+    <video autoplay muted loop style="width:100%; height:auto; object-fit:contain; display:block;">
+        <source src="https://res.cloudinary.com/deyaftfah/video/upload/v1774284949/0323645621_fotxsp.mp4" type="video/mp4">
+    </video>
+</div>
+</div>
+<div class="main">
 
-        <button onclick="nuevoCliente()">➕ Agregar Cliente</button>
+<input type="text" placeholder="🔍 Buscar cliente..." oninput="filtrar(this.value)" style="
+width:100%;
+padding:12px;
+font-size:16px;
+border-radius:10px;
+border:1px solid #ccc;
+margin-bottom:10px;
+">
 
-        <div class="video-sidebar">
-            <video autoplay muted loop style="width:100%;">
-                <source src="https://res.cloudinary.com/deyaftfah/video/upload/v1774284949/0323645621_fotxsp.mp4">
-            </video>
-        </div>
+<div class="grid" id="grid"></div>
 
-    </div>
-
-    <!-- MAIN -->
-    <div class="main">
-
-        <input type="text" placeholder="🔍 Buscar cliente..." oninput="filtrar(this.value)" style="
-        width:100%;
-        padding:12px;
-        font-size:16px;
-        border-radius:10px;
-        border:1px solid #ccc;
-        margin-bottom:10px;
-        ">
-
-        <div class="grid" id="grid"></div>
-
-    </div>
-
+</div>
 </div>
 
 <!-- MODAL PEDIDO -->
@@ -448,60 +441,28 @@ function renderProductos(){
 let div=document.getElementById("productos");
 div.innerHTML="";
 
-productos.forEach((p, i) => {
-
-    let cant = Number(document.getElementById("cant"+i)?.value) || 0;
-    let din = Number(limpiarFormato(document.getElementById("din"+i)?.value || "0")) || 0;
-
-    let precio = p.precio;
-
-    if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
-    if(modo==="tiberio" && p.name==="PAN QUESILLO (1.200)") precio=1000;
-
-    let panes = 0;
-    let subtotal = 0;
-    let esPromo2000 = false;
-
-    // 🔥 BASE
-    if(din > 0){
-        panes = Math.floor(din / precio);
-    } else if(cant > 0){
-        panes = cant;
-    }
-
-    subtotal = panes * precio;
-
-    // 🔥 PROMO CORRECTA PAN 2000
-    if(p.name === "PAN DE 2.000" && modo !== "original"){
-
-        if(panes === 3){
-            subtotal = 5000;
-            esPromo2000 = true;
-        }
-        else if(panes >= 7 && panes <= 9){
-            panes = 9;
-            subtotal = 15000;
-            esPromo2000 = true;
-        }
-    }
-
-    // 🔥 GUARDAR PRODUCTOS
-    if(cant > 0 || din > 0){
-        listaProductos.push({
-            nombre: p.name,
-            cantidad: cant,
-            dinero: din
-        });
-    }
-
-    if(subtotal > 0){
-        total += subtotal;
-
-        texto += `
-${p.name} x${panes} = $${subtotal}
-`;
-    }
-
+productos.forEach((p,i)=>{
+div.innerHTML+=`
+<div class="producto" id="prod${i}">
+<img src="${imagenes[p.name] || 'https://via.placeholder.com/110'}">
+<div>
+<b class="nombre">${p.name}</b><br>
+Cantidad:<input 
+id="cant${i}" 
+type="number" 
+placeholder="Ej: 20"
+oninput="marcar(${i});calcular()">
+Dinero:<input 
+id="din${i}" 
+type="text"
+placeholder="Ej: 10.000"
+oninput="
+this.value = formatearMiles(this.value);
+marcar(${i});
+calcular();
+">
+</div>
+</div>`;
 });
 }
 
@@ -547,10 +508,6 @@ async function cargar(){
         return;
     }
 
-    if(!Array.isArray(clientes)){
-    console.error("Clientes dañados");
-    clientes = [];
-}
     // 🔥 RENDER SEGURO
     clientes.forEach(c => {
 
@@ -560,8 +517,8 @@ async function cargar(){
         total += t;
 
         grid.innerHTML += `
-<div class="card ${c.tipo} ${p ? (p.editado ? 'editado' : 'nuevo') : ''}"
-onclick='abrir(${JSON.stringify(c.nombre)}, ${p?.id || 0})'>
+        <div class="card ${c.tipo} ${p ? (p.editado ? 'editado' : 'nuevo') : ''}"
+        onclick="abrir('${c.nombre}', ${p?.id || 0})">
 
         <div class="printMini" 
 onclick="event.stopPropagation(); imprimirDirecto('${c.nombre}')">
@@ -583,51 +540,63 @@ localStorage.setItem("clientes", JSON.stringify(clientes));
 }
 
 async function abrir(nombre,id){
-    clienteActivo = nombre;
-    actualCliente = nombre;
-    actualId = id || null;
+clienteActivo = nombre;
+actualCliente = nombre;
+actualId = id || null;
 
-    document.getElementById("clienteTitulo").innerText = nombre;
-    document.getElementById("modalPedido").style.display = "flex";
+document.getElementById("clienteTitulo").innerText = nombre;
+document.getElementById("modalPedido").style.display = "flex";
 
-    // 🔥 1. render SIEMPRE primero
-    renderProductos();
+renderProductos();
 
-    // 🔥 2. limpiar DESPUÉS pero sin romper
-    setTimeout(() => {
-        resetear();
-    }, 50);
+// 🔥 LIMPIAR TODO (esto evita mezcla)
+resetear();
+document.getElementById("comentarios").value = "";
 
-    document.getElementById("comentarios").value = "";
+// 🔥 CARGAR PEDIDO REAL POR CLIENTE + FECHA
+let fechaSeleccionada = document.getElementById("fecha").value;
 
-    let fechaSeleccionada = document.getElementById("fecha").value;
+let {data} = await db.from("pedidos")
+.select("*")
+.eq("cliente", nombre)
+.eq("fecha", fechaSeleccionada)
+.single();
 
-    let {data} = await db.from("pedidos")
-    .select("*")
-    .eq("cliente", nombre)
-    .eq("fecha", fechaSeleccionada)
-    .single();
+if(data){
+// 🔥 CARGAR PRODUCTOS EN INPUTS
+if(data.productos && Array.isArray(data.productos)){
 
-    if(data && data.productos){
+    data.productos.forEach(prodGuardado => {
 
-        data.productos.forEach(prodGuardado => {
+        let index = productos.findIndex(p => p.name === prodGuardado.nombre);
 
-            let index = productos.findIndex(p => p.name === prodGuardado.nombre);
+        if(index !== -1){
 
-            if(index !== -1){
-                let cantInput = document.getElementById("cant"+index);
-                let dinInput = document.getElementById("din"+index);
+            let cantInput = document.getElementById("cant"+index);
+            let dinInput = document.getElementById("din"+index);
 
-                if(cantInput) cantInput.value = prodGuardado.cantidad || "";
-                if(dinInput) dinInput.value = prodGuardado.dinero || "";
+            if(cantInput) cantInput.value = prodGuardado.cantidad || "";
+            if(dinInput) dinInput.value = prodGuardado.dinero || "";
 
-                marcar(index);
-            }
-        });
+            // 🔥 pintar en verde como activo
+            marcar(index);
+        }
 
-        document.getElementById("resultadoBox").innerText = data.pedido || "";
-        document.getElementById("comentarios").value = data.comentario || "";
-    }
+    });
+
+}
+window.totalPedido = data.total;
+window.textoPedido = data.pedido;
+
+document.getElementById("resultadoBox").innerText = data.pedido;
+
+document.getElementById("comentarios").value = data.comentario || "";
+clienteActivo = nombre;
+
+// limpiar inputs primero
+document.querySelectorAll(".cantidad").forEach(i => i.value = "");
+document.querySelectorAll(".precio").forEach(i => i.value = "");
+
 }
 
 }
@@ -655,47 +624,46 @@ if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
 if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
 
 let panes = 0;
-let subtotal = 0;
-let esPromo2000 = false;
 
-// 🔥 CALCULO BASE
 if(din > 0){
     panes = Math.floor(din / precio);
 } else if(cant > 0){
     panes = cant;
 }
+let subtotal = panes * precio;
 
-// 🔥 PROMO SOLO DESPUÉS (NO ANTES)
-subtotal = panes * precio;
+// 🔥 CONDICIONES PAN 2.000
+if(p.name==="PAN DE 2.000" && modo!=="original"){
 
-if(p.name === "PAN DE 2.000" && modo !== "original"){
-
-    if(panes === 3){
-        subtotal = 5000;
-        esPromo2000 = true;
+    if(panes>=3 && panes<=4){
+        panes=3; 
+        subtotal=5000;
     }
-    else if(panes >= 7 && panes <= 9){
-        panes = 9;
-        subtotal = 15000;
-        esPromo2000 = true;
+
+    else if(panes===7){
+        subtotal=14000;
     }
+
+    else if(panes===8){
+        subtotal=15000;
+    }
+
+    else if(panes===9){
+        subtotal=18000;
+    }
+
 }
+
 // 🚨 SOLO SI HAY ALGO
 if(subtotal > 0){
 
 let b = 0;
 
-if (p.name.trim() === "PAN DE 2.000") {
-
-    if(esPromo2000){
-        b = 0; // promo
-    } else {
-        b = Math.round(panes * 0.2); // normal
-    }
-
-}
-else if (p.name.trim() === "PAN DE 3.500") {
+if (p.name.trim() === "PAN DE 3.500") {
     b = 0;
+}
+else if (p.name.trim() === "PAN DE 2.000") {
+    b = Math.round(panes * 0.2);
 }
 else {
     b = p.b ? Math.round(panes * 0.2) : 0;
@@ -778,7 +746,7 @@ async function guardar() {
 
     let total = 0;
     let texto = "";
-    let listaProductos = [];
+    let listaProductos = []; // ✅ FUERA del loop
 
     productos.forEach((p, i) => {
 
@@ -790,34 +758,27 @@ async function guardar() {
         if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
         if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
 
-        let panes = 0;
-        let subtotal = 0;
-        let esPromo2000 = false;
+        let panes = din>0 ? Math.floor(din/precio) : cant;
+let subtotal = panes * precio;
 
-        // 🔥 cálculo base
-        if(din > 0){
-            panes = Math.floor(din / precio);
-        } else if(cant > 0){
-            panes = cant;
-        }
+// 🔥 MISMA LÓGICA QUE CALCULAR (PROMO PAN 2000)
+if(p.name==="PAN DE 2.000" && modo!=="original"){
 
-        subtotal = panes * precio;
+    if(panes>=3 && panes<=4){
+        panes=3; 
+        subtotal=5000;
+    }
+    else if(panes===7){
+        subtotal=14000;
+    }
+    else if(panes===8){
+        subtotal=15000;
+    }
+    else if(panes===9){
+        subtotal=18000;
+    }
+}
 
-        // 🔥 PROMO PAN 2000 (CORRECTA)
-        if(p.name === "PAN DE 2.000" && modo !== "original"){
-
-            if(panes === 3){
-                subtotal = 5000;
-                esPromo2000 = true;
-            }
-            else if(panes >= 7 && panes <= 9){
-                panes = 9;
-                subtotal = 15000;
-                esPromo2000 = true;
-            }
-        }
-
-        // guardar producto
         if(cant > 0 || din > 0){
             listaProductos.push({
                 nombre: p.name,
@@ -829,9 +790,10 @@ async function guardar() {
         if(subtotal > 0){
             total += subtotal;
 
-            texto += `${p.name} x${panes} = $${subtotal}\n`;
+            texto += `
+${p.name} x${panes} = $${subtotal}
+`;
         }
-
     });
 
     let comentario = document.getElementById("comentarios").value || "";
@@ -873,6 +835,7 @@ async function guardar() {
             return;
         }
     }
+
 
     cerrarModal();
     cargar();
@@ -1271,9 +1234,7 @@ ventana.document.close();
 document.addEventListener("DOMContentLoaded", () => {
     cargar();
 });
-window.onload = function(){
-    cargar();
-};
+
 </script>
 
 </body>
