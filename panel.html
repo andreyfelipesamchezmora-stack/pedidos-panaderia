@@ -624,32 +624,40 @@ if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
 if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
 
 let panes = 0;
+let esPromo2000 = false;
 
 if(din > 0){
 
     if(p.name === "PAN DE 2.000"){
-        // 🔥 lógica especial por dinero
-        if(din >= 5000 && din < 7000){
+
+        // 🔥 USAR DINERO, NO PANELES CALCULADOS
+
+        if(din === 5000){
             panes = 3;
+            subtotal = 5000;
+            esPromo2000 = true;
         }
-        else if(din >= 7000 && din < 8000){
-            panes = 7;
-        }
-        else if(din >= 8000 && din < 9000){
-            panes = 8;
-        }
-        else if(din >= 9000){
+        else if(din >= 14000 && din <= 18000){
             panes = 9;
+            subtotal = 15000;
+            esPromo2000 = true;
         }
         else{
             panes = Math.floor(din / precio);
+            subtotal = panes * precio;
         }
-    } 
-    else {
+
+    } else {
         panes = Math.floor(din / precio);
+        subtotal = panes * precio;
     }
 
-} else if(cant > 0){
+}
+else if(cant > 0){
+    panes = cant;
+    subtotal = panes * precio;
+}
+else if(cant > 0){
     panes = cant;
 }
 let subtotal = panes * precio;
