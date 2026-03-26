@@ -624,13 +624,12 @@ if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
 if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
 
 let panes = 0;
+let subtotal = 0;
 let esPromo2000 = false;
 
 if(din > 0){
 
     if(p.name === "PAN DE 2.000"){
-
-        // 🔥 USAR DINERO, NO PANELES CALCULADOS
 
         if(din === 5000){
             panes = 3;
@@ -652,6 +651,9 @@ if(din > 0){
         subtotal = panes * precio;
     }
 
+} else if(cant > 0){
+    panes = cant;
+    subtotal = panes * precio;
 }
 else if(cant > 0){
     panes = cant;
