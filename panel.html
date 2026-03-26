@@ -441,28 +441,60 @@ function renderProductos(){
 let div=document.getElementById("productos");
 div.innerHTML="";
 
-productos.forEach((p,i)=>{
-div.innerHTML+=`
-<div class="producto" id="prod${i}">
-<img src="${imagenes[p.name] || 'https://via.placeholder.com/110'}">
-<div>
-<b class="nombre">${p.name}</b><br>
-Cantidad:<input 
-id="cant${i}" 
-type="number" 
-placeholder="Ej: 20"
-oninput="marcar(${i});calcular()">
-Dinero:<input 
-id="din${i}" 
-type="text"
-placeholder="Ej: 10.000"
-oninput="
-this.value = formatearMiles(this.value);
-marcar(${i});
-calcular();
-">
-</div>
-</div>`;
+productos.forEach((p, i) => {
+
+    let cant = Number(document.getElementById("cant"+i)?.value) || 0;
+    let din = Number(limpiarFormato(document.getElementById("din"+i)?.value || "0")) || 0;
+
+    let precio = p.precio;
+
+    if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
+    if(modo==="tiberio" && p.name==="PAN QUESILLO (1.200)") precio=1000;
+
+    let panes = 0;
+    let subtotal = 0;
+    let esPromo2000 = false;
+
+    // 🔥 BASE
+    if(din > 0){
+        panes = Math.floor(din / precio);
+    } else if(cant > 0){
+        panes = cant;
+    }
+
+    subtotal = panes * precio;
+
+    // 🔥 PROMO CORRECTA PAN 2000
+    if(p.name === "PAN DE 2.000" && modo !== "original"){
+
+        if(panes === 3){
+            subtotal = 5000;
+            esPromo2000 = true;
+        }
+        else if(panes >= 7 && panes <= 9){
+            panes = 9;
+            subtotal = 15000;
+            esPromo2000 = true;
+        }
+    }
+
+    // 🔥 GUARDAR PRODUCTOS
+    if(cant > 0 || din > 0){
+        listaProductos.push({
+            nombre: p.name,
+            cantidad: cant,
+            dinero: din
+        });
+    }
+
+    if(subtotal > 0){
+        total += subtotal;
+
+        texto += `
+${p.name} x${panes} = $${subtotal}
+`;
+    }
+
 });
 }
 
