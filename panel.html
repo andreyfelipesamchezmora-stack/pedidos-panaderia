@@ -626,7 +626,29 @@ if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
 let panes = 0;
 
 if(din > 0){
-    panes = Math.floor(din / precio);
+
+    if(p.name === "PAN DE 2.000"){
+        // 🔥 lógica especial por dinero
+        if(din >= 5000 && din < 7000){
+            panes = 3;
+        }
+        else if(din >= 7000 && din < 8000){
+            panes = 7;
+        }
+        else if(din >= 8000 && din < 9000){
+            panes = 8;
+        }
+        else if(din >= 9000){
+            panes = 9;
+        }
+        else{
+            panes = Math.floor(din / precio);
+        }
+    } 
+    else {
+        panes = Math.floor(din / precio);
+    }
+
 } else if(cant > 0){
     panes = cant;
 }
