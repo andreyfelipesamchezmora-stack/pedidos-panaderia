@@ -793,12 +793,13 @@ async function guardar() {
         let precio = p.precio;
 
         if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
-        if(modo==="tiberio" && p.name==="PAN QUESILLO (1.200)") precio=1000;
+        if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
 
         let panes = 0;
         let subtotal = 0;
+        let esPromo2000 = false;
 
-        // BASE
+        // 🔥 cálculo base
         if(din > 0){
             panes = Math.floor(din / precio);
         } else if(cant > 0){
@@ -812,14 +813,16 @@ async function guardar() {
 
             if(panes === 3){
                 subtotal = 5000;
+                esPromo2000 = true;
             }
             else if(panes >= 7 && panes <= 9){
                 panes = 9;
                 subtotal = 15000;
+                esPromo2000 = true;
             }
         }
 
-        // GUARDAR PRODUCTO
+        // guardar producto
         if(cant > 0 || din > 0){
             listaProductos.push({
                 nombre: p.name,
@@ -831,9 +834,7 @@ async function guardar() {
         if(subtotal > 0){
             total += subtotal;
 
-            texto += `
-${p.name} x${panes} = $${subtotal}
-`;
+            texto += `${p.name} x${panes} = $${subtotal}\n`;
         }
 
     });
