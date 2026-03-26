@@ -167,42 +167,49 @@ white-space:pre-line;
 
 <div class="container">
 
-<div class="sidebar">
+    <!-- SIDEBAR -->
+    <div class="sidebar">
 
-<h3>Fecha</h3>
-<input type="date" id="fecha" onchange="cargar()" style="
-width:100%;
-padding:10px;
-font-size:16px;
-border-radius:10px;
-border:1px solid #333;
-background:#1e1e1e;
-color:white;
-margin-bottom:10px;
-color-scheme: dark;
-">
-<button onclick="nuevoCliente()">➕ Agregar Cliente</button>
+        <h3>Fecha</h3>
 
-<div class="video-sidebar">
-    <video autoplay muted loop style="width:100%; height:auto; object-fit:contain; display:block;">
-        <source src="https://res.cloudinary.com/deyaftfah/video/upload/v1774284949/0323645621_fotxsp.mp4" type="video/mp4">
-    </video>
-</div>
-</div>
-<div class="main">
+        <input type="date" id="fecha" onchange="cargar()" style="
+        width:100%;
+        padding:10px;
+        font-size:16px;
+        border-radius:10px;
+        border:1px solid #333;
+        background:#1e1e1e;
+        color:white;
+        margin-bottom:10px;
+        color-scheme: dark;
+        ">
 
-<input type="text" placeholder="🔍 Buscar cliente..." oninput="filtrar(this.value)" style="
-width:100%;
-padding:12px;
-font-size:16px;
-border-radius:10px;
-border:1px solid #ccc;
-margin-bottom:10px;
-">
+        <button onclick="nuevoCliente()">➕ Agregar Cliente</button>
 
-<div class="grid" id="grid"></div>
+        <div class="video-sidebar">
+            <video autoplay muted loop style="width:100%;">
+                <source src="https://res.cloudinary.com/deyaftfah/video/upload/v1774284949/0323645621_fotxsp.mp4">
+            </video>
+        </div>
 
-</div>
+    </div>
+
+    <!-- MAIN -->
+    <div class="main">
+
+        <input type="text" placeholder="🔍 Buscar cliente..." oninput="filtrar(this.value)" style="
+        width:100%;
+        padding:12px;
+        font-size:16px;
+        border-radius:10px;
+        border:1px solid #ccc;
+        margin-bottom:10px;
+        ">
+
+        <div class="grid" id="grid"></div>
+
+    </div>
+
 </div>
 
 <!-- MODAL PEDIDO -->
