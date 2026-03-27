@@ -630,19 +630,25 @@ if(din > 0){
     // 🔥 CORRECCIÓN ESPECIAL PAN 2.000
     if(p.name === "PAN DE 2.000" && modo !== "original"){
 
-        if(din === 5000){
-            panes = 3;
-        } else if(din === 14000){
-            panes = 7;
-        } else if(din === 15000){
-            panes = 8;
-        } else if(din === 18000){
-            panes = 9;
-        } else {
-            panes = Math.floor(din / precio);
-        }
+    if(din >= 5000 && din < 6000){
+        panes = 3;
+    } 
+    else if(din >= 14000 && din < 15000){
+        panes = 7;
+    } 
+    else if(din >= 15000 && din < 18000){
+        panes = 8;
+    } 
+    else if(din >= 18000 && din < 20000){
+        panes = 9;
+    } 
+    else {
+        panes = Math.floor(din / precio);
+    }
 
-    } else {
+}
+
+     else {
         panes = Math.floor(din / precio);
     }
 
@@ -761,19 +767,23 @@ if(din > 0){
     // 🔥 CORRECCIÓN ESPECIAL PAN 2.000
     if(p.name === "PAN DE 2.000" && modo !== "original"){
 
-        if(din === 5000){
-            panes = 3;
-        } else if(din === 14000){
-            panes = 7;
-        } else if(din === 15000){
-            panes = 8;
-        } else if(din === 18000){
-            panes = 9;
-        } else {
-            panes = Math.floor(din / precio);
-        }
+    if(din >= 5000 && din < 6000){
+        panes = 3;
+    } 
+    else if(din >= 14000 && din < 15000){
+        panes = 7;
+    } 
+    else if(din >= 15000 && din < 18000){
+        panes = 8;
+    } 
+    else if(din >= 18000 && din < 20000){
+        panes = 9;
+    } 
+    else {
+        panes = Math.floor(din / precio);
+    }
 
-    } else {
+} else {
         panes = Math.floor(din / precio);
     }
 
