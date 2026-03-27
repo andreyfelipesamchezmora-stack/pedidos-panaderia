@@ -626,7 +626,7 @@ if(modo==="tiberio" && p.name==="PAN QUESILLO (1.200)") precio=1000;
 let panes = 0;
 let subtotal = 0;
 
-if(p.name === "PAN DE 2.000" && modo !== "original" && din > 0){
+if(p.name === "PAN DE 2.000" && modo !== "original" && (din > 0 || cant > 0)){
 
     // 🔥 PROMOS DIRECTAS POR DINERO
     if(din >= 5000 && din < 6000){
@@ -768,28 +768,54 @@ async function guardar() {
         let panes = 0;
 let subtotal = 0;
 
-if(p.name === "PAN DE 2.000" && modo !== "original" && din > 0){
+if(p.name === "PAN DE 2.000" && modo !== "original"){
 
-    // 🔥 PROMOS DIRECTAS POR DINERO
-    if(din >= 5000 && din < 6000){
-        panes = 3;
-        subtotal = 5000;
-    } 
-    else if(din >= 14000 && din < 15000){
-        panes = 7;
-        subtotal = 14000;
-    } 
-    else if(din >= 15000 && din < 18000){
-        panes = 8;
-        subtotal = 15000;
-    } 
-    else if(din >= 18000 && din < 20000){
-        panes = 9;
-        subtotal = 18000;
-    } 
-    else {
-        panes = Math.floor(din / precio);
-        subtotal = panes * precio;
+    if(din > 0){
+
+        if(din >= 5000 && din < 6000){
+            panes = 3;
+            subtotal = 5000;
+        } 
+        else if(din >= 14000 && din < 15000){
+            panes = 7;
+            subtotal = 14000;
+        } 
+        else if(din >= 15000 && din < 18000){
+            panes = 8;
+            subtotal = 15000;
+        } 
+        else if(din >= 18000 && din < 20000){
+            panes = 9;
+            subtotal = 18000;
+        } 
+        else {
+            panes = Math.floor(din / precio);
+            subtotal = panes * precio;
+        }
+
+    } else if(cant > 0){
+
+        // 🔥 PROMO POR CANTIDAD
+        if(cant === 3){
+            panes = 3;
+            subtotal = 5000;
+        } 
+        else if(cant === 7){
+            panes = 7;
+            subtotal = 14000;
+        } 
+        else if(cant === 8){
+            panes = 8;
+            subtotal = 15000;
+        } 
+        else if(cant === 9){
+            panes = 9;
+            subtotal = 18000;
+        } 
+        else {
+            panes = cant;
+            subtotal = panes * precio;
+        }
     }
 
 } else {
