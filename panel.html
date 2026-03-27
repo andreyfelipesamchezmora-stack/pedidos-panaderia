@@ -160,6 +160,15 @@ white-space:pre-line;
     margin-top:90px; /
 }
 
+#meDebeValor::placeholder{
+    color: red;
+    font-weight: bold;
+}
+
+#leDeboValor::placeholder{
+    color: blue;
+    font-weight: bold;
+}
 </style>
 </head>
 
@@ -989,6 +998,8 @@ function resetear(){
 
     // 🔥 recalcular UI (CLAVE)
     calcular();
+let meDebeValor = document.getElementById("meDebeValor");
+if(meDebeValor) meDebeValor.value = "";
 }
 function cerrarModal(){
 document.getElementById("modalPedido").style.display="none";
