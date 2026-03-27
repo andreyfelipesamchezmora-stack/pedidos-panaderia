@@ -643,17 +643,14 @@ if(p.name === "PAN DE 2.000" && modo !== "original"){
             panes = 3;
             subtotal = 5000;
         } 
-        else if(din >= 14000 && din < 15000){
-            panes = 7;
-            subtotal = 14000;
-        } 
-        else if(din >= 15000 && din < 18000){
-            panes = 8;
-            subtotal = 15000;
-        } 
-        else if(din >= 18000 && din < 20000){
-            panes = 9;
-            subtotal = 18000;
+        else if(din >= 14000 && din < 20000){
+            // 🔥 TODA LA PROMO 7-9 UNIFICADA
+            panes = Math.floor(din / 2000); 
+            if(panes >= 7 && panes <= 9){
+                subtotal = 15000;
+            } else {
+                subtotal = panes * precio;
+            }
         } 
         else {
             panes = Math.floor(din / precio);
@@ -662,29 +659,22 @@ if(p.name === "PAN DE 2.000" && modo !== "original"){
 
     } else if(cant > 0){
 
-        // 🔥 PROMO POR CANTIDAD (LO QUE TE FALTABA)
+        // 🔥 PROMOS POR CANTIDAD (CORREGIDO)
         if(cant === 3){
             panes = 3;
             subtotal = 5000;
         } 
-        else if(cant === 7){
-            panes = 7;
-            subtotal = 14000;
-        } 
-        else if(cant === 8){
-            panes = 8;
+        else if(cant >= 7 && cant <= 9){
+            panes = cant;
             subtotal = 15000;
-        } 
-        else if(cant === 9){
-            panes = 9;
-            subtotal = 18000;
         } 
         else {
             panes = cant;
             subtotal = panes * precio;
         }
     }
-} else {
+}
+    else {
 
     if(din > 0){
         panes = Math.floor(din / precio);
