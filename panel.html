@@ -621,37 +621,33 @@ let precio = p.precio;
 
 // 🔥 MODOS
 if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
-if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
+if(modo==="tiberio" && p.name==="PAN QUESILLO (1.200)") precio=1000;
 
 let panes = 0;
 
 if(din > 0){
-    panes = Math.floor(din / precio);
+
+    // 🔥 CORRECCIÓN ESPECIAL PAN 2.000
+    if(p.name === "PAN DE 2.000" && modo !== "original"){
+
+        if(din === 5000){
+            panes = 3;
+        } else if(din === 14000){
+            panes = 7;
+        } else if(din === 15000){
+            panes = 8;
+        } else if(din === 18000){
+            panes = 9;
+        } else {
+            panes = Math.floor(din / precio);
+        }
+
+    } else {
+        panes = Math.floor(din / precio);
+    }
+
 } else if(cant > 0){
     panes = cant;
-}
-let subtotal = panes * precio;
-
-// 🔥 CONDICIONES PAN 2.000
-if(p.name==="PAN DE 2.000" && modo!=="original"){
-
-    if(panes>=3 && panes<=4){
-        panes=3; 
-        subtotal=5000;
-    }
-
-    else if(panes===7){
-        subtotal=14000;
-    }
-
-    else if(panes===8){
-        subtotal=15000;
-    }
-
-    else if(panes===9){
-        subtotal=18000;
-    }
-
 }
 
 // 🚨 SOLO SI HAY ALGO
@@ -756,28 +752,36 @@ async function guardar() {
         let precio = p.precio;
 
         if(modo==="alexa" && p.name==="PAN DE 3.500") precio=3000;
-        if(modo==="tiberio" && p.name==="PAN QUESILLO") precio=1000;
+        if(modo==="tiberio" && p.name==="PAN QUESILLO (1.200)") precio=1000;
 
-        let panes = din>0 ? Math.floor(din/precio) : cant;
-let subtotal = panes * precio;
+        let panes = 0;
 
-// 🔥 MISMA LÓGICA QUE CALCULAR (PROMO PAN 2000)
-if(p.name==="PAN DE 2.000" && modo!=="original"){
+if(din > 0){
 
-    if(panes>=3 && panes<=4){
-        panes=3; 
-        subtotal=5000;
+    // 🔥 CORRECCIÓN ESPECIAL PAN 2.000
+    if(p.name === "PAN DE 2.000" && modo !== "original"){
+
+        if(din === 5000){
+            panes = 3;
+        } else if(din === 14000){
+            panes = 7;
+        } else if(din === 15000){
+            panes = 8;
+        } else if(din === 18000){
+            panes = 9;
+        } else {
+            panes = Math.floor(din / precio);
+        }
+
+    } else {
+        panes = Math.floor(din / precio);
     }
-    else if(panes===7){
-        subtotal=14000;
-    }
-    else if(panes===8){
-        subtotal=15000;
-    }
-    else if(panes===9){
-        subtotal=18000;
-    }
+
+} else if(cant > 0){
+    panes = cant;
 }
+
+let subtotal = panes * precio;
 
         if(cant > 0 || din > 0){
             listaProductos.push({
