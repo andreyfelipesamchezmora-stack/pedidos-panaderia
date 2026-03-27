@@ -704,7 +704,17 @@ if (p.name.trim() === "PAN DE 3.500") {
     b = 0;
 }
 else if (p.name.trim() === "PAN DE 2.000") {
-    b = Math.round(panes * 0.2);
+
+    // 🔥 SIN BENDAJE EN PROMOS
+    if(
+        modo !== "original" &&
+        (panes === 3 || panes === 7 || panes === 8 || panes === 9)
+    ){
+        b = 0;
+    } else {
+        b = Math.round(panes * 0.2);
+    }
+
 }
 else {
     b = p.b ? Math.round(panes * 0.2) : 0;
