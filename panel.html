@@ -619,15 +619,7 @@ clienteActivo = nombre;
 // limpiar inputs primero
 document.querySelectorAll(".cantidad").forEach(i => i.value = "");
 document.querySelectorAll(".precio").forEach(i => i.value = "");
-// 🔥 CARGAR DEUDAS
-document.getElementById("meDebeCheck").checked = data.meDebe || false;
-document.getElementById("leDebo").checked = data.leDebo || false;
 
-document.getElementById("meDebeValor").value = data.meDebeValor || "";
-document.getElementById("leDeboValor").value = data.leDeboValor || "";
-
-// 🔥 recalcular con deuda incluida
-calcular();
 }
 
 }
@@ -883,28 +875,17 @@ ${p.name} x${panes} = $${subtotal}
     });
 
     let comentario = document.getElementById("comentarios").value || "";
-    let meDebeCheck = document.getElementById("meDebeCheck")?.checked;
-let leDeboCheck = document.getElementById("leDebo")?.checked;
-
-let meDebeValor = Number(document.getElementById("meDebeValor")?.value) || 0;
-let leDeboValor = Number(document.getElementById("leDeboValor")?.value) || 0;
 
     if (actualId) {
 
         let { error } = await db.from("pedidos")
         .update({
-    total: total,
-    pedido: texto,
-    comentario: comentario,
-    productos: listaProductos,
-    editado: true,
-
-    // 🔥 NUEVO
-    meDebe: meDebeCheck,
-    leDebo: leDeboCheck,
-    meDebeValor: meDebeValor,
-    leDeboValor: leDeboValor
-})
+            total: total,
+            pedido: texto,
+            comentario: comentario,
+            productos: listaProductos,
+            editado: true
+        })
         .eq("id", actualId);
 
         if (error) {
@@ -917,20 +898,14 @@ let leDeboValor = Number(document.getElementById("leDeboValor")?.value) || 0;
 
         let { error } = await db.from("pedidos")
         .insert([{
-    cliente: actualCliente,
-    fecha: fecha,
-    total: total,
-    pedido: texto,
-    comentario: comentario,
-    productos: listaProductos,
-    editado: false,
-
-    // 🔥 NUEVO
-    meDebe: meDebeCheck,
-    leDebo: leDeboCheck,
-    meDebeValor: meDebeValor,
-    leDeboValor: leDeboValor
-}]);
+            cliente: actualCliente,
+            fecha: fecha,
+            total: total,
+            pedido: texto,
+            comentario: comentario,
+            productos: listaProductos,
+            editado: false
+        }]);
 
         if (error) {
             console.error(error);
