@@ -559,17 +559,31 @@ document.getElementById("modalPedido").style.display = "flex";
 renderProductos();
 
 // 🔥 LIMPIAR TODO (esto evita mezcla)
-resetear();
+// 🔥 SOLO LIMPIA SI NO HAY DATOS
+if(!id){
+    resetear();
+}
 document.getElementById("comentarios").value = "";
 
 // 🔥 CARGAR PEDIDO REAL POR CLIENTE + FECHA
 let fechaSeleccionada = document.getElementById("fecha").value;
 
-let {data} = await db.from("pedidos")
+let { data, error } = await db.from("pedidos")
 .select("*")
 .eq("cliente", nombre)
-.eq("fecha", fechaSeleccionada)
-.single();
+.eq("fecha", fechaSeleccionada);
+
+if(error){
+    console.error("Error cargando pedido:", error);
+    return;
+}
+
+// 🔥 FORZAR: SI HAY VARIOS, TOMA EL MÁS RECIENTE
+if(data && data.length > 0){
+    data = data[data.length - 1]; // último registro
+} else {
+    data = null;
+}
 
 if(data){
 // 🔥 CARGAR PRODUCTOS EN INPUTS
