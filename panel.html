@@ -644,14 +644,9 @@ if(p.name === "PAN DE 2.000" && modo !== "original"){
             subtotal = 5000;
         } 
         else if(din >= 14000 && din < 20000){
-            // 🔥 TODA LA PROMO 7-9 UNIFICADA
-            panes = Math.floor(din / 2000); 
-            if(panes >= 7 && panes <= 9){
-                subtotal = 15000;
-            } else {
-                subtotal = panes * precio;
-            }
-        } 
+    panes = 9;
+    subtotal = 15000;
+} 
         else {
             panes = Math.floor(din / precio);
             subtotal = panes * precio;
@@ -665,9 +660,9 @@ if(p.name === "PAN DE 2.000" && modo !== "original"){
             subtotal = 5000;
         } 
         else if(cant >= 7 && cant <= 9){
-            panes = cant;
-            subtotal = 15000;
-        } 
+    panes = 9;
+    subtotal = 15000;
+} 
         else {
             panes = cant;
             subtotal = panes * precio;
