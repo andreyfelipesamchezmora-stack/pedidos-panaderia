@@ -810,18 +810,10 @@ if(p.name === "PAN DE 2.000" && modo !== "original"){
             panes = 3;
             subtotal = 5000;
         } 
-        else if(din >= 14000 && din < 15000){
-            panes = 7;
-            subtotal = 14000;
-        } 
-        else if(din >= 15000 && din < 18000){
-            panes = 8;
-            subtotal = 15000;
-        } 
-        else if(din >= 18000 && din < 20000){
-            panes = 9;
-            subtotal = 18000;
-        } 
+        else if(din >= 14000 && din < 20000){
+    panes = 9;
+    subtotal = 15000;
+}
         else {
             panes = Math.floor(din / precio);
             subtotal = panes * precio;
@@ -834,18 +826,10 @@ if(p.name === "PAN DE 2.000" && modo !== "original"){
             panes = 3;
             subtotal = 5000;
         } 
-        else if(cant === 7){
-            panes = 7;
-            subtotal = 14000;
-        } 
-        else if(cant === 8){
-            panes = 8;
-            subtotal = 15000;
-        } 
-        else if(cant === 9){
-            panes = 9;
-            subtotal = 18000;
-        } 
+        else if(cant >= 7 && cant <= 9){
+    panes = 9;
+    subtotal = 15000;
+}
         else {
             panes = cant;
             subtotal = panes * precio;
