@@ -1314,7 +1314,22 @@ ventana.document.close();
 document.addEventListener("DOMContentLoaded", () => {
     cargar();
 });
+document.addEventListener("keydown", function(e){
 
+    let modal = document.getElementById("modalPedido");
+
+    if(modal.style.display === "flex"){
+
+        if(e.key === "Enter"){
+
+            // ❌ NO imprimir si está escribiendo comentario
+            if(document.activeElement.id === "comentarios") return;
+
+            e.preventDefault();
+            imprimirTicket();
+        }
+    }
+});
 </script>
 
 </body>
