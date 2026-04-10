@@ -2654,78 +2654,85 @@ document.addEventListener("keydown", function(e){
         }
     }
 });
-/* ===== PANEL ERP SIMPLE Y FUNCIONAL ===== */
+/* ===== ERP BOTONES FUNCIONANDO ===== */
 
-const btnEstadisticas = document.getElementById("btnEstadisticas");
-const btnContabilidad = document.getElementById("btnContabilidad");
-const erpOverlay = document.getElementById("erpOverlay");
-const erpTitle = document.getElementById("erpPanelTitle");
-const erpSubtitle = document.getElementById("erpPanelSubtitle");
-const erpBadge = document.getElementById("erpPanelBadge");
-const erpBody = document.getElementById("erpPanelBody");
+(function () {
+  const overlay = document.getElementById("erpOverlay");
+  const title = document.getElementById("erpPanelTitle");
+  const subtitle = document.getElementById("erpPanelSubtitle");
+  const badge = document.getElementById("erpPanelBadge");
+  const body = document.getElementById("erpPanelBody");
 
-function abrirPanelERP(tipo){
-  if(!erpOverlay || !erpTitle || !erpSubtitle || !erpBadge || !erpBody){
-    alert("No se encontró el panel ERP en el HTML");
-    return;
+  const btnEstadisticas = document.getElementById("btnEstadisticas");
+  const btnContabilidad = document.getElementById("btnContabilidad");
+
+  function abrirPanelERP(tipo) {
+    if (!overlay || !title || !subtitle || !badge || !body) {
+      console.error("No existe el panel ERP en el HTML");
+      return;
+    }
+
+    if (tipo === "estadisticas") {
+      title.textContent = "Estadísticas";
+      subtitle.textContent = "Panel abierto correctamente";
+      badge.innerHTML = `<i class="fa-solid fa-chart-line"></i> Estadísticas`;
+      body.innerHTML = `
+        <div class="empty-state">
+          <i class="fa-solid fa-chart-column" style="font-size:26px;margin-bottom:10px;"></i>
+          <div>Ya quedó abierto el módulo de estadísticas.</div>
+        </div>
+      `;
+    } else {
+      title.textContent = "Contabilidad";
+      subtitle.textContent = "Panel abierto correctamente";
+      badge.innerHTML = `<i class="fa-solid fa-wallet"></i> Contabilidad`;
+      body.innerHTML = `
+        <div class="empty-state">
+          <i class="fa-solid fa-wallet" style="font-size:26px;margin-bottom:10px;"></i>
+          <div>Ya quedó abierto el módulo de contabilidad.</div>
+        </div>
+      `;
+    }
+
+    overlay.classList.add("show");
+    document.body.style.overflow = "hidden";
   }
 
-  if(tipo === "estadisticas"){
-    erpTitle.textContent = "Estadísticas";
-    erpSubtitle.textContent = "Vista inicial del módulo estadístico";
-    erpBadge.innerHTML = `<i class="fa-solid fa-chart-line"></i> Estadísticas`;
-    erpBody.innerHTML = `
-      <div class="empty-state">
-        <i class="fa-solid fa-chart-column" style="font-size:26px;margin-bottom:10px;"></i>
-        <div>El panel de estadísticas ya abre correctamente.</div>
-      </div>
-    `;
-  } else {
-    erpTitle.textContent = "Contabilidad";
-    erpSubtitle.textContent = "Vista inicial del módulo contable";
-    erpBadge.innerHTML = `<i class="fa-solid fa-wallet"></i> Contabilidad`;
-    erpBody.innerHTML = `
-      <div class="empty-state">
-        <i class="fa-solid fa-wallet" style="font-size:26px;margin-bottom:10px;"></i>
-        <div>El panel de contabilidad ya abre correctamente.</div>
-      </div>
-    `;
+  function cerrarPanelERP() {
+    if (overlay) {
+      overlay.classList.remove("show");
+    }
+    document.body.style.overflow = "";
   }
 
-  erpOverlay.classList.add("show");
-  document.body.style.overflow = "hidden";
-}
+  window.cerrarPanelERP = cerrarPanelERP;
 
-function cerrarPanelERP(){
-  if(erpOverlay){
-    erpOverlay.classList.remove("show");
+  if (btnEstadisticas) {
+    btnEstadisticas.onclick = function () {
+      abrirPanelERP("estadisticas");
+    };
   }
-  document.body.style.overflow = "";
-}
 
-function handleOverlayClose(event){
-  if(event.target === erpOverlay){
-    cerrarPanelERP();
+  if (btnContabilidad) {
+    btnContabilidad.onclick = function () {
+      abrirPanelERP("contabilidad");
+    };
   }
-}
 
-if(btnEstadisticas){
-  btnEstadisticas.addEventListener("click", function(){
-    abrirPanelERP("estadisticas");
+  if (overlay) {
+    overlay.onclick = function (e) {
+      if (e.target === overlay) {
+        cerrarPanelERP();
+      }
+    };
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      cerrarPanelERP();
+    }
   });
-}
-
-if(btnContabilidad){
-  btnContabilidad.addEventListener("click", function(){
-    abrirPanelERP("contabilidad");
-  });
-}
-
-document.addEventListener("keydown", function(e){
-  if(e.key === "Escape"){
-    cerrarPanelERP();
-  }
-});
+})();
 </script>
 </body>
 </html>
