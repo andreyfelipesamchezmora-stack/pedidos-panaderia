@@ -13,52 +13,32 @@
 <title>Panel PRO Panadería</title>
 
 <style>
-body{
-  margin:0;
-  font-family:Arial,sans-serif;
-  background:#f4f4f4;
-}
-
-.container{
-  display:flex !important;
-  height:100vh !important;
-  align-items:stretch !important;
-}
+body{margin:0;font-family:Arial;background:#f4f4f4;}
+.container{display:flex;height:100vh;}
 
 .sidebar{
-  width:250px !important;
-  flex-shrink:0 !important;
+    width:250px;
+    background:#111;
+    color:white;
+    padding:10px;
 }
 
-.main{
-  flex:1 !important;
-  display:flex !important;
-  flex-direction:column !important;
-  justify-content:flex-start !important;
-  align-items:stretch !important;
-  padding:15px !important;
-  overflow:auto !important;
-  min-height:100vh !important;
-}
+.main{flex:1;padding:15px;overflow:auto;}
 
-.dashboard-search{
-  margin:0 0 12px 0 !important;
-  order:1 !important;
-}
-
-#grid,
 .grid{
-  order:2 !important;
-  margin-top:0 !important;
-  align-self:stretch !important;
-  display:grid !important;
-  grid-template-columns:repeat(auto-fill,minmax(220px,1fr)) !important;
-  gap:10px !important;
+display:grid;
+grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+gap:10px;
 }
 
-.main > *{
-  margin-top:0 !important;
+.card{
+background:white;
+padding:10px;
+border-radius:10px;
+position:relative;
+cursor:pointer;
 }
+
 .card.nuevo{
 background:#d4ffd4; /* verde suave */
 border-left:6px solid green;
@@ -164,6 +144,25 @@ white-space:pre-line;
 }
 
 #bendajeBox{background:#fff3cd;}
+
+.video-container{
+    display:flex;
+    justify-content:center;
+    margin-top:10px;
+}
+
+.video-container img{
+    width:120px;
+    height:auto;
+    display:block;
+}
+
+.video-sidebar{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    margin-top:195px; /
+}
 
 #meDebeValor::placeholder{
     color: red;
@@ -693,7 +692,11 @@ color-scheme: dark;
 </button>
 </div>
     
-
+<div class="video-sidebar">
+    <video autoplay muted loop style="width:100%; height:auto; object-fit:contain; display:block;">
+        <source src="https://res.cloudinary.com/deyaftfah/video/upload/v1774284949/0323645621_fotxsp.mp4" type="video/mp4">
+    </video>
+</div>
 </div>
 <div class="main">
 
