@@ -9,6 +9,73 @@
 <title>Panel PRO Panadería</title>
 
 <style>
+/* ===== MÓDULO CUENTAS ===== */
+.cuentas-tabs{display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:12px;}
+.ctab{padding:4px 16px;background:none;border:none;color:#94a3b8;font-size:14px;font-family:var(--font-body);font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-13px;transition:all 180ms;}
+.ctab.active{color:white;border-bottom-color:#16a34a;}
+.ctab:hover:not(.active){color:#e2e8f0;}
+.cuentas-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;}
+@media(max-width:560px){.cuentas-grid{grid-template-columns:1fr;}}
+.cuenta-card{border-radius:12px;overflow:hidden;background:#1e293b;border:1px solid rgba(255,255,255,0.08);transition:box-shadow 180ms;}
+.cuenta-card:hover{box-shadow:0 12px 32px rgba(0,0,0,0.4);}
+.cuenta-header{padding:16px 16px 12px;position:relative;overflow:hidden;min-height:90px;display:flex;flex-direction:column;justify-content:space-between;}
+.cuenta-header::after{content:'';position:absolute;right:-20px;top:-20px;width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,0.10);}
+.cuenta-header-row{display:flex;align-items:center;justify-content:space-between;}
+.cuenta-tipo-badge{font-size:10px;font-weight:700;letter-spacing:0.08em;color:rgba(255,255,255,0.85);text-transform:uppercase;}
+.cuenta-nombre{font-size:20px;font-weight:800;color:white;margin-top:8px;line-height:1.1;position:relative;z-index:1;}
+.cuenta-body{padding:12px 16px 16px;}
+.cuenta-saldo-label{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:4px;}
+.cuenta-saldo-val{font-size:clamp(1.2rem,3vw,1.8rem);font-weight:800;font-variant-numeric:tabular-nums;color:#16a34a;margin-bottom:12px;line-height:1;}
+.cuenta-saldo-val.cero{color:#94a3b8;}
+.cuenta-saldo-val.negativo{color:#f87171;}
+.cuenta-acciones{display:flex;gap:8px;flex-wrap:wrap;}
+.btn-cuenta{flex:1;min-width:70px;display:flex;align-items:center;justify-content:center;gap:5px;padding:7px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:10px;color:#94a3b8;font-size:12px;font-family:var(--font-body);font-weight:600;cursor:pointer;transition:all 180ms;}
+.btn-cuenta:hover{background:rgba(255,255,255,0.12);color:white;}
+.btn-cuenta.peligro:hover{background:rgba(220,38,38,0.2);color:#f87171;border-color:rgba(220,38,38,0.3);}
+.cuenta-card[data-color="gray"] .cuenta-header{background:linear-gradient(135deg,#374151,#4b5563);}
+.cuenta-card[data-color="blue"] .cuenta-header{background:linear-gradient(135deg,#2563eb,#3b82f6);}
+.cuenta-card[data-color="purple"] .cuenta-header{background:linear-gradient(135deg,#7c3aed,#a855f7);}
+.cuenta-card[data-color="orange"] .cuenta-header{background:linear-gradient(135deg,#d97706,#f59e0b);}
+.cuenta-card[data-color="green"] .cuenta-header{background:linear-gradient(135deg,#059669,#10b981);}
+.cuenta-card[data-color="teal"] .cuenta-header{background:linear-gradient(135deg,#0891b2,#06b6d4);}
+.cuenta-card[data-color="red"] .cuenta-header{background:linear-gradient(135deg,#dc2626,#ef4444);}
+.cuentas-page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;}
+.cuentas-page-title{font-size:20px;font-weight:800;color:white;display:flex;align-items:center;gap:8px;}
+.cuentas-page-subtitle{font-size:12px;color:#94a3b8;margin-top:2px;}
+.cuentas-header-btns{display:flex;gap:8px;}
+.btn-transferir{display:flex;align-items:center;gap:6px;padding:8px 16px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:10px;color:white;font-size:13px;font-family:var(--font-body);font-weight:600;cursor:pointer;transition:all 180ms;}
+.btn-transferir:hover{background:rgba(255,255,255,0.15);}
+.btn-nueva-cuenta{display:flex;align-items:center;gap:6px;padding:8px 16px;background:#7c3aed;border:none;border-radius:10px;color:white;font-size:13px;font-family:var(--font-body);font-weight:600;cursor:pointer;transition:all 180ms;}
+.btn-nueva-cuenta:hover{filter:brightness(1.15);}
+.saldo-total-banner{background:linear-gradient(135deg,rgba(124,58,237,0.18),rgba(37,99,235,0.10));border:1px solid rgba(124,58,237,0.25);border-radius:12px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px;}
+.saldo-total-label{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.07em;font-weight:600;}
+.saldo-total-val{font-size:clamp(1.3rem,3vw,1.8rem);font-weight:800;color:white;font-variant-numeric:tabular-nums;}
+.transferencias-list{display:flex;flex-direction:column;}
+.transferencia-item{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.06);transition:background 180ms;}
+.transferencia-item:last-child{border-bottom:none;}
+.transferencia-item:hover{background:rgba(255,255,255,0.03);}
+.transf-ruta{font-size:13px;color:#e2e8f0;font-weight:500;display:flex;align-items:center;gap:6px;}
+.transf-ruta span{color:#94a3b8;font-size:11px;}
+.transf-monto{font-size:13px;font-weight:700;color:white;font-variant-numeric:tabular-nums;text-align:right;}
+.transf-fecha{font-size:11px;color:#94a3b8;text-align:right;margin-top:2px;}
+.mc-overlay-box{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.65);z-index:600;display:flex;align-items:center;justify-content:center;}
+.mc-box{background:#1e293b;border:1px solid rgba(255,255,255,0.10);border-radius:16px;padding:24px;max-width:420px;width:90%;box-shadow:0 24px 64px rgba(0,0,0,0.5);}
+.mc-box h3{font-size:15px;font-weight:700;color:white;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+.mc-field{margin-bottom:12px;}
+.mc-field label{display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;}
+.mc-field input,.mc-field select{width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;font-size:13px;font-family:var(--font-body);}
+.mc-field input::placeholder{color:#64748b;}
+.mc-field input:focus,.mc-field select:focus{outline:none;border-color:#7c3aed;}
+.mc-field select option{background:#1e293b;}
+.mc-btns{display:flex;gap:8px;margin-top:16px;}
+.mc-btn-ok{flex:1;padding:10px;background:#7c3aed;border:none;border-radius:10px;color:white;font-size:13px;font-family:var(--font-body);font-weight:700;cursor:pointer;transition:all 180ms;}
+.mc-btn-ok.verde{background:#16a34a;}
+.mc-btn-ok:hover{filter:brightness(1.15);}
+.mc-btn-cancel{padding:10px 16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:10px;color:#94a3b8;font-size:13px;font-family:var(--font-body);cursor:pointer;transition:all 180ms;}
+.mc-btn-cancel:hover{color:white;background:rgba(255,255,255,0.12);}
+.conciliar-saldo-box{background:rgba(37,99,235,0.12);border:1px solid rgba(37,99,235,0.25);border-radius:10px;padding:12px 16px;margin-bottom:12px;}
+.conciliar-saldo-box p{font-size:11px;color:#60a5fa;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;}
+.conciliar-saldo-box .csval{font-size:22px;font-weight:800;color:white;font-variant-numeric:tabular-nums;}
 /* ===== DESIGN TOKENS ===== */
 :root {
   --font-body: 'Satoshi', Arial, sans-serif;
@@ -1190,117 +1257,191 @@ async function abrirConta(){
   renderConta();
 }
 
-async function renderConta(){
+async function renderConta(tabActiva){
+  tabActiva = tabActiva || "resumen";
   let fechaHoy=new Date().toISOString().split("T")[0];
   let mesInicio=fechaHoy.slice(0,7)+"-01";
-
-  // Ingresos del mes
-  let{data,error}=await db.from("pedidos").select("total").gte("fecha",mesInicio).lte("fecha",fechaHoy);
+  let{data}=await db.from("pedidos").select("total").gte("fecha",mesInicio).lte("fecha",fechaHoy);
   let ingresos=(data||[]).reduce((s,r)=>s+(Number(r.total)||0),0);
-
-  // Gastos en memoria
   let totalGastos=gastosMemoria.reduce((s,g)=>s+g.monto,0);
   let utilidad=ingresos-totalGastos;
   let margen=ingresos>0?((utilidad/ingresos)*100).toFixed(1):0;
-
-  // Agrupar gastos por categoría
   let porCat={};
-  gastosMemoria.forEach(g=>{
-    if(!porCat[g.categoria]) porCat[g.categoria]=0;
-    porCat[g.categoria]+=g.monto;
-  });
+  gastosMemoria.forEach(g=>{if(!porCat[g.categoria])porCat[g.categoria]=0;porCat[g.categoria]+=g.monto;});
+  let saldoTotal=cuentasMemoria.reduce((s,c)=>s+c.saldo,0);
 
   document.getElementById("contaBody").innerHTML=`
-    <p class="section-title">Resumen del mes</p>
-    <div class="conta-kpi-grid">
-      <div class="kpi-card green">
-        <div class="kpi-label">Ingresos</div>
-        <div class="kpi-value" style="font-size:clamp(0.9rem,2.5vw,1.5rem);">$${ingresos.toLocaleString('es-CO')}</div>
-        <div class="kpi-delta neutral">Ventas del mes</div>
+    <div class="cuentas-tabs">
+      <button class="ctab ${tabActiva==='resumen'?'active':''}" onclick="renderConta('resumen')">📊 Resumen</button>
+      <button class="ctab ${tabActiva==='cuentas'?'active':''}" onclick="renderConta('cuentas')">🏦 Cuentas</button>
+    </div>
+
+    <!-- TAB RESUMEN -->
+    <div style="display:${tabActiva==='resumen'?'block':'none'}">
+      <p class="section-title">Resumen del mes</p>
+      <div class="conta-kpi-grid">
+        <div class="kpi-card green">
+          <div class="kpi-label">Ingresos</div>
+          <div class="kpi-value" style="font-size:clamp(0.9rem,2.5vw,1.5rem);">$${ingresos.toLocaleString('es-CO')}</div>
+          <div class="kpi-delta neutral">Ventas del mes</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Gastos</div>
+          <div class="kpi-value" style="font-size:clamp(0.9rem,2.5vw,1.5rem);color:#f87171;">$${totalGastos.toLocaleString('es-CO')}</div>
+          <div class="kpi-delta neutral">${gastosMemoria.length} registro(s)</div>
+        </div>
+        <div class="kpi-card ${utilidad>=0?'green':''}">
+          <div class="kpi-label">Utilidad</div>
+          <div class="kpi-value" style="font-size:clamp(0.9rem,2.5vw,1.5rem);color:${utilidad>=0?'#4ade80':'#f87171'};">$${utilidad.toLocaleString('es-CO')}</div>
+          <div class="kpi-delta ${utilidad>=0?'up':'down'}">Margen: ${margen}%</div>
+        </div>
       </div>
-      <div class="kpi-card" style="--c:var(--clr-error)">
-        <div class="kpi-label" style="position:relative;">Gastos</div>
-        <div class="kpi-value" style="font-size:clamp(0.9rem,2.5vw,1.5rem);color:#f87171;">$${totalGastos.toLocaleString('es-CO')}</div>
-        <div class="kpi-delta neutral">${gastosMemoria.length} registro(s)</div>
+      <div class="utilidad-box">
+        <div class="utilidad-label">Resultado Neto del Mes</div>
+        <div class="utilidad-val ${utilidad<0?'negative':''}">$${utilidad.toLocaleString('es-CO')}</div>
+        <div class="utilidad-margen">Margen: ${margen}% | Ingresos: $${ingresos.toLocaleString('es-CO')}</div>
       </div>
-      <div class="kpi-card ${utilidad>=0?'green':''}">
-        <div class="kpi-label">Utilidad</div>
-        <div class="kpi-value" style="font-size:clamp(0.9rem,2.5vw,1.5rem);color:${utilidad>=0?'#4ade80':'#f87171'};">$${utilidad.toLocaleString('es-CO')}</div>
-        <div class="kpi-delta ${utilidad>=0?'up':'down'}">Margen: ${margen}%</div>
+      ${Object.keys(porCat).length>0?`
+      <p class="section-title" style="margin-top:20px;">Gastos por categoría</p>
+      <div class="chart-card full-w" style="margin-bottom:16px;">
+        <div class="chart-title">Distribución de gastos</div>
+        <div class="chart-wrap"><canvas id="chartConta"></canvas></div>
+      </div>`:''}
+      <p class="section-title">Registrar Gasto</p>
+      <div class="gasto-form">
+        <h3>➕ Nuevo gasto</h3>
+        <div class="gasto-row">
+          <input type="text" id="gastoDesc" placeholder="Descripción (ej: Transporte)">
+          <select id="gastoCat">
+            <option value="Arriendo">Arriendo</option>
+            <option value="Transporte">Transporte</option>
+            <option value="Servicios">Servicios</option>
+            <option value="Materia Prima">Materia Prima</option>
+            <option value="Empleados">Empleados</option>
+            <option value="Otros">Otros</option>
+          </select>
+          <input type="number" id="gastoMonto" placeholder="Valor $">
+          <button class="btn-add-gasto" onclick="agregarGasto()">Agregar</button>
+        </div>
+      </div>
+      <p class="section-title">Gastos registrados</p>
+      <div class="gastos-list">
+        ${gastosMemoria.length===0?`<div class="empty-state" style="padding:24px;">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+          <p>Sin gastos registrados aún</p></div>`:''}
+        ${gastosMemoria.map((g,i)=>`
+        <div class="gasto-item">
+          <span>${g.descripcion} <span class="gasto-cat">[${g.categoria}]</span></span>
+          <span style="display:flex;align-items:center;gap:4px;">
+            <span class="gasto-monto">-$${g.monto.toLocaleString('es-CO')}</span>
+            <button class="gasto-del" onclick="eliminarGasto(${i})">✕</button>
+          </span>
+        </div>`).join('')}
       </div>
     </div>
 
-    <div class="utilidad-box">
-      <div class="utilidad-label">Resultado Neto del Mes</div>
-      <div class="utilidad-val ${utilidad<0?'negative':''}">$${utilidad.toLocaleString('es-CO')}</div>
-      <div class="utilidad-margen">Margen de utilidad: ${margen}% | Ingresos: $${ingresos.toLocaleString('es-CO')}</div>
-    </div>
-
-    ${Object.keys(porCat).length>0?`
-    <p class="section-title" style="margin-top:20px;">Gastos por categoría</p>
-    <div class="chart-card full-w" style="margin-bottom:16px;">
-      <div class="chart-title">Distribución de gastos</div>
-      <div class="chart-wrap"><canvas id="chartConta"></canvas></div>
-    </div>`:''}
-
-    <p class="section-title">Registrar Gasto</p>
-    <div class="gasto-form">
-      <h3>➕ Nuevo gasto</h3>
-      <div class="gasto-row">
-        <input type="text" id="gastoDesc" placeholder="Descripción (ej: Transporte)">
-        <select id="gastoCat">
-          <option value="Arriendo">Arriendo</option>
-          <option value="Transporte">Transporte</option>
-          <option value="Servicios">Servicios</option>
-          <option value="Materia Prima">Materia Prima</option>
-          <option value="Empleados">Empleados</option>
-          <option value="Otros">Otros</option>
-        </select>
-        <input type="number" id="gastoMonto" placeholder="Valor $">
-        <button class="btn-add-gasto" onclick="agregarGasto()">Agregar</button>
+    <!-- TAB CUENTAS -->
+    <div style="display:${tabActiva==='cuentas'?'block':'none'}">
+      <div class="cuentas-page-header">
+        <div>
+          <div class="cuentas-page-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+            Cuentas
+          </div>
+          <div class="cuentas-page-subtitle">Administra tus cuentas bancarias</div>
+        </div>
+        <div class="cuentas-header-btns">
+          <button class="btn-transferir" onclick="abrirModalTransferir()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 16V4m0 0L3 8m4-4 4 4"/><path d="M17 8v12m0 0 4-4m-4 4-4-4"/></svg>
+            Transferir
+          </button>
+          <button class="btn-nueva-cuenta" onclick="abrirModalNuevaCuenta()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            Nueva Cuenta
+          </button>
+        </div>
       </div>
+
+      <div class="saldo-total-banner">
+        <div>
+          <div class="saldo-total-label">Saldo total en todas las cuentas</div>
+          <div class="saldo-total-val">$${saldoTotal.toLocaleString('es-CO')}</div>
+        </div>
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><circle cx="12" cy="15" r="1"/></svg>
+      </div>
+
+      <div class="cuentas-grid">
+        ${cuentasMemoria.length===0?`<div style="grid-column:1/-1">
+          <div class="empty-state"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+          <p>No tienes cuentas. Agrega una con "+ Nueva Cuenta".</p></div></div>`:''}
+        ${cuentasMemoria.map((c,i)=>`
+        <div class="cuenta-card" data-color="${c.color||'gray'}">
+          <div class="cuenta-header">
+            <div class="cuenta-header-row">
+              <span style="font-size:22px;">${tipoEmoji(c.tipo)}</span>
+              <span class="cuenta-tipo-badge">${c.tipo}</span>
+            </div>
+            <div class="cuenta-nombre">${c.nombre}</div>
+          </div>
+          <div class="cuenta-body">
+            <div class="cuenta-saldo-label">Saldo</div>
+            <div class="cuenta-saldo-val ${c.saldo===0?'cero':c.saldo<0?'negativo':''}">$ ${c.saldo.toLocaleString('es-CO')}</div>
+            <div class="cuenta-acciones">
+              <button class="btn-cuenta" onclick="abrirEditarCuenta(${i})">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                Editor
+              </button>
+              <button class="btn-cuenta" onclick="abrirConciliar(${i})">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
+                Conciliar
+              </button>
+              ${i>0?`<button class="btn-cuenta peligro" onclick="eliminarCuenta(${i})" style="flex:0;padding:7px 10px;">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+              </button>`:''}
+            </div>
+          </div>
+        </div>`).join('')}
+      </div>
+
+      ${transferenciasMem.length>0?`
+      <p class="section-title">Historial de Transferencias</p>
+      <div class="chart-card full-w" style="padding:0;overflow:hidden;">
+        <div class="transferencias-list">
+          ${transferenciasMem.slice().reverse().map(t=>`
+          <div class="transferencia-item">
+            <div class="transf-ruta">${t.origen} <span>→</span> ${t.destino}</div>
+            <div>
+              <div class="transf-monto">$${t.monto.toLocaleString('es-CO')}</div>
+              <div class="transf-fecha">${t.fecha}</div>
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>`:''}
     </div>
 
-    <p class="section-title">Gastos registrados</p>
-    <div class="gastos-list" id="gastosList">
-      ${gastosMemoria.length===0?`<div class="empty-state" style="padding:24px;">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
-        <p>Sin gastos registrados aún</p></div>`:''}
-      ${gastosMemoria.map((g,i)=>`
-      <div class="gasto-item">
-        <span>${g.descripcion} <span class="gasto-cat">[${g.categoria}]</span></span>
-        <span style="display:flex;align-items:center;gap:4px;">
-          <span class="gasto-monto">-$${g.monto.toLocaleString('es-CO')}</span>
-          <button class="gasto-del" onclick="eliminarGasto(${i})">✕</button>
-        </span>
-      </div>`).join('')}
+    <!-- MODAL OVERLAY GLOBAL PARA CUENTAS -->
+    <div id="mcOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.65);z-index:600;align-items:center;justify-content:center;">
+      <div class="mc-box" id="mcBox"></div>
     </div>
   `;
 
-  // Chart contabilidad
+  // Render gráfica gastos si existen
   if(Object.keys(porCat).length>0){
-    let ctx=document.getElementById("chartConta");
-    if(chartConta){ chartConta.destroy(); chartConta=null; }
-    if(ctx){
-      let cats=Object.keys(porCat);
-      let vals=cats.map(c=>porCat[c]);
-      let colors=['rgba(22,163,74,0.8)','rgba(37,99,235,0.8)','rgba(217,119,6,0.8)','rgba(124,58,237,0.8)','rgba(220,38,38,0.8)','rgba(148,163,184,0.8)'];
-      chartConta=new Chart(ctx,{
-        type:'doughnut',
-        data:{
-          labels:cats,
-          datasets:[{data:vals,backgroundColor:colors.slice(0,cats.length),borderWidth:0,hoverOffset:8}]
-        },
-        options:{responsive:true,maintainAspectRatio:false,
-          plugins:{
-            legend:{position:'right',labels:{color:'#94a3b8',font:{size:11},boxWidth:12,padding:12}},
-            tooltip:{callbacks:{label:ctx=>`${ctx.label}: $${ctx.raw.toLocaleString('es-CO')}`}}
-          }}
-      });
-    }
+    setTimeout(()=>{
+      let ctx=document.getElementById("chartConta");
+      if(chartConta){chartConta.destroy();chartConta=null;}
+      if(ctx){
+        let cats=Object.keys(porCat),vals=cats.map(c=>porCat[c]);
+        let colors=['rgba(22,163,74,0.8)','rgba(37,99,235,0.8)','rgba(217,119,6,0.8)','rgba(124,58,237,0.8)','rgba(220,38,38,0.8)','rgba(148,163,184,0.8)'];
+        chartConta=new Chart(ctx,{type:'doughnut',
+          data:{labels:cats,datasets:[{data:vals,backgroundColor:colors.slice(0,cats.length),borderWidth:0,hoverOffset:8}]},
+          options:{responsive:true,maintainAspectRatio:false,
+            plugins:{legend:{position:'right',labels:{color:'#94a3b8',font:{size:11},boxWidth:12,padding:12}},
+            tooltip:{callbacks:{label:c=>`${c.label}: $${c.raw.toLocaleString('es-CO')}`}}}}});
+      }
+    },50);
   }
 }
-
 function agregarGasto(){
   let desc=document.getElementById("gastoDesc").value.trim();
   let cat=document.getElementById("gastoCat").value;
@@ -1324,6 +1465,187 @@ document.getElementById("panelStats").addEventListener("click",function(e){
 document.getElementById("panelConta").addEventListener("click",function(e){
   if(e.target===this) cerrarPanel("panelConta");
 });
+// ===== VARIABLES MÓDULO CUENTAS =====
+let cuentasMemoria = [
+  {nombre:"CUENTA BANCOLOMBIA", tipo:"CUENTA CORRIENTE", color:"teal", saldo:0},
+  {nombre:"Efectivo", tipo:"EFECTIVO", color:"orange", saldo:0}
+];
+let transferenciasMem = [];
+
+function tipoEmoji(tipo){
+  const m={"CUENTA CORRIENTE":"🏛️","CUENTA DE AHORRO":"🐖","NEQUI":"📱","DAVIPLATA":"📱","EFECTIVO":"💵"};
+  return m[tipo]||"💳";
+}
+
+// --- MODAL HELPER ---
+function mostrarMC(contenido){
+  let overlay=document.getElementById("mcOverlay");
+  if(!overlay){
+    overlay=document.createElement("div");
+    overlay.id="mcOverlayGlobal";
+    overlay.style.cssText="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.65);z-index:700;display:flex;align-items:center;justify-content:center;";
+    overlay.onclick=function(e){if(e.target===this)cerrarMC();};
+    let box=document.createElement("div");
+    box.className="mc-box";
+    box.id="mcBoxGlobal";
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+  }
+  overlay.style.display="flex";
+  document.getElementById("mcBoxGlobal").innerHTML=contenido;
+}
+function cerrarMC(){
+  let o=document.getElementById("mcOverlayGlobal");
+  if(o) o.style.display="none";
+  let o2=document.getElementById("mcOverlay");
+  if(o2) o2.style.display="none";
+}
+
+// --- NUEVA CUENTA ---
+function abrirModalNuevaCuenta(){
+  mostrarMC(`
+    <h3>➕ Nueva Cuenta</h3>
+    <div class="mc-field"><label>Nombre</label><input id="nc_nombre" placeholder="Ej: Cuenta Davivienda"></div>
+    <div class="mc-field"><label>Tipo</label>
+      <select id="nc_tipo">
+        <option>CUENTA CORRIENTE</option><option>CUENTA DE AHORRO</option>
+        <option>NEQUI</option><option>DAVIPLATA</option><option>EFECTIVO</option><option>OTRO</option>
+      </select>
+    </div>
+    <div class="mc-field"><label>Saldo inicial ($)</label><input type="number" id="nc_saldo" value="0"></div>
+    <div class="mc-field"><label>Color</label>
+      <select id="nc_color">
+        <option value="teal">Teal (Bancolombia)</option><option value="gray">Gris</option>
+        <option value="blue">Azul</option><option value="purple">Morado (Nequi)</option>
+        <option value="orange">Naranja (Efectivo)</option><option value="green">Verde</option>
+        <option value="red">Rojo</option>
+      </select>
+    </div>
+    <div class="mc-btns">
+      <button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>
+      <button class="mc-btn-ok" onclick="confirmarNuevaCuenta()">Crear cuenta</button>
+    </div>
+  `);
+}
+function confirmarNuevaCuenta(){
+  let nombre=document.getElementById("nc_nombre").value.trim();
+  let tipo=document.getElementById("nc_tipo").value;
+  let saldo=Number(document.getElementById("nc_saldo").value)||0;
+  let color=document.getElementById("nc_color").value;
+  if(!nombre){alert("Ingresa un nombre para la cuenta");return;}
+  cuentasMemoria.push({nombre,tipo,color,saldo});
+  cerrarMC();
+  renderConta("cuentas");
+}
+
+// --- EDITAR CUENTA ---
+function abrirEditarCuenta(i){
+  let c=cuentasMemoria[i];
+  let tipoOpts=["CUENTA CORRIENTE","CUENTA DE AHORRO","NEQUI","DAVIPLATA","EFECTIVO","OTRO"]
+    .map(t=>`<option ${t===c.tipo?'selected':''}>${t}</option>`).join('');
+  let colorOpts=[["teal","Teal"],["gray","Gris"],["blue","Azul"],["purple","Morado"],["orange","Naranja"],["green","Verde"],["red","Rojo"]]
+    .map(([v,l])=>`<option value="${v}" ${v===c.color?'selected':''}>${l}</option>`).join('');
+  mostrarMC(`
+    <h3>✏️ Editar: ${c.nombre}</h3>
+    <div class="mc-field"><label>Nombre</label><input id="ec_nombre" value="${c.nombre}"></div>
+    <div class="mc-field"><label>Tipo</label><select id="ec_tipo">${tipoOpts}</select></div>
+    <div class="mc-field"><label>Saldo actual ($)</label><input type="number" id="ec_saldo" value="${c.saldo}"></div>
+    <div class="mc-field"><label>Color</label><select id="ec_color">${colorOpts}</select></div>
+    <div class="mc-btns">
+      <button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>
+      <button class="mc-btn-ok" onclick="confirmarEditarCuenta(${i})">Guardar cambios</button>
+    </div>
+  `);
+}
+function confirmarEditarCuenta(i){
+  let nombre=document.getElementById("ec_nombre").value.trim();
+  if(!nombre){alert("El nombre no puede estar vacío");return;}
+  cuentasMemoria[i].nombre=nombre;
+  cuentasMemoria[i].tipo=document.getElementById("ec_tipo").value;
+  cuentasMemoria[i].saldo=Number(document.getElementById("ec_saldo").value)||0;
+  cuentasMemoria[i].color=document.getElementById("ec_color").value;
+  cerrarMC();
+  renderConta("cuentas");
+}
+function eliminarCuenta(i){
+  if(!confirm(`¿Eliminar la cuenta "${cuentasMemoria[i].nombre}"?`)) return;
+  cuentasMemoria.splice(i,1);
+  renderConta("cuentas");
+}
+
+// --- TRANSFERIR ---
+function abrirModalTransferir(){
+  if(cuentasMemoria.length<2){alert("Necesitas al menos 2 cuentas para transferir");return;}
+  let opts=cuentasMemoria.map((c,i)=>`<option value="${i}">${c.nombre}</option>`).join('');
+  let optsD=cuentasMemoria.map((c,i)=>`<option value="${i}" ${i===1?'selected':''}>${c.nombre}</option>`).join('');
+  mostrarMC(`
+    <h3>⇄ Transferir entre cuentas</h3>
+    <div class="mc-field"><label>Cuenta origen</label><select id="tf_origen">${opts}</select></div>
+    <div class="mc-field"><label>Cuenta destino</label><select id="tf_destino">${optsD}</select></div>
+    <div class="mc-field"><label>Monto ($)</label><input type="number" id="tf_monto" placeholder="Ej: 50000"></div>
+    <div class="mc-btns">
+      <button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>
+      <button class="mc-btn-ok verde" onclick="confirmarTransferencia()">Transferir</button>
+    </div>
+  `);
+}
+function confirmarTransferencia(){
+  let ori=Number(document.getElementById("tf_origen").value);
+  let dest=Number(document.getElementById("tf_destino").value);
+  let monto=Number(document.getElementById("tf_monto").value)||0;
+  if(ori===dest){alert("El origen y el destino deben ser cuentas distintas");return;}
+  if(monto<=0){alert("Ingresa un monto válido mayor a 0");return;}
+  cuentasMemoria[ori].saldo-=monto;
+  cuentasMemoria[dest].saldo+=monto;
+  let fecha=new Date().toLocaleDateString('es-CO',{day:'numeric',month:'long',year:'numeric'});
+  transferenciasMem.push({
+    origen:cuentasMemoria[ori].nombre,
+    destino:cuentasMemoria[dest].nombre,
+    monto,
+    fecha
+  });
+  cerrarMC();
+  renderConta("cuentas");
+}
+
+// --- CONCILIAR ---
+function abrirConciliar(i){
+  let c=cuentasMemoria[i];
+  mostrarMC(`
+    <h3>⚖️ Conciliar: ${c.nombre}</h3>
+    <div class="conciliar-saldo-box">
+      <p>Saldo en sistema</p>
+      <div class="csval">$ ${c.saldo.toLocaleString('es-CO')}</div>
+    </div>
+    <div class="mc-field">
+      <label>Saldo real (banco / físico)</label>
+      <input type="number" id="conc_real" placeholder="Ingresa el saldo real" oninput="calcDiff(${i})">
+    </div>
+    <div id="conc_diff" style="font-size:13px;margin-bottom:8px;color:#94a3b8;min-height:20px;"></div>
+    <div class="mc-btns">
+      <button class="mc-btn-cancel" onclick="cerrarMC()">Cerrar</button>
+      <button class="mc-btn-ok verde" onclick="aplicarConciliacion(${i})">Actualizar saldo</button>
+    </div>
+  `);
+}
+function calcDiff(i){
+  let real=Number(document.getElementById("conc_real").value)||0;
+  let diff=real-cuentasMemoria[i].saldo;
+  let el=document.getElementById("conc_diff");
+  if(!el) return;
+  if(diff===0){
+    el.innerHTML=`<span style="color:#4ade80;font-weight:700;">✔ Sin diferencia — todo cuadra</span>`;
+  } else {
+    el.innerHTML=`<span style="color:#fbbf24;font-weight:700;">Diferencia: ${diff>0?'+':''}$${diff.toLocaleString('es-CO')}</span>`;
+  }
+}
+function aplicarConciliacion(i){
+  let val=document.getElementById("conc_real").value;
+  if(val===""){alert("Ingresa el saldo real");return;}
+  cuentasMemoria[i].saldo=Number(val)||0;
+  cerrarMC();
+  renderConta("cuentas");
+}
 </script>
 </body>
 </html>'''
