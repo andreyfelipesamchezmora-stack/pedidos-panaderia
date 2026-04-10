@@ -1433,80 +1433,246 @@ function mostrarRango(){
 
 // =========== MÓDULO CONTABILIDAD ===========
 
+
+// ===== CONTABILIDAD =====
+let _contaIniciado = false;
+
 async function abrirConta(){
   let panel = document.getElementById("panelConta");
   panel.style.display = "flex";
   panel.classList.add("open");
 
-  // Mostrar skeleton mientras carga
-  document.getElementById("contaBody").innerHTML = `
-    <div class="loading-skeleton">
-      <div class="skel skel-h"></div>
-      <div class="skel skel-c"></div>
-      <div class="skel skel-l"></div>
-      <div class="skel skel-l"></div>
-    </div>`;
+  if(!_contaIniciado){
+    _contaIniciado = true;
+    _renderContaEstructura();
+  }
+
+  document.getElementById("contaBody").querySelector(".conta-loading").style.display = "flex";
+  document.getElementById("contaBody").querySelector(".conta-contenido").style.display = "none";
 
   try {
     let fechaHoy = new Date().toISOString().split("T")[0];
     let mesInicio = fechaHoy.slice(0,7) + "-01";
     let res = await db.from("pedidos").select("total").gte("fecha", mesInicio).lte("fecha", fechaHoy);
-    if(res && res.data){
-      window._ingresosCache = res.data.reduce((s,r) => s + (Number(r.total)||0), 0);
-    } else {
-      window._ingresosCache = 0;
-    }
-  } catch(e){
-    window._ingresosCache = 0;
-  }
+    window._ingresosCache = (res && res.data) ? res.data.reduce((s,r) => s+(Number(r.total)||0), 0) : 0;
+  } catch(e){ window._ingresosCache = 0; }
 
-  _dibujarConta("resumen", window._ingresosCache);
+  document.getElementById("contaBody").querySelector(".conta-loading").style.display = "none";
+  document.getElementById("contaBody").querySelector(".conta-contenido").style.display = "block";
+  _actualizarContaKPIs();
+  _actualizarGastosList();
 }
 
-function renderConta(tab){ _dibujarConta(tab||"resumen", window._ingresosCache||0); }
+function _renderContaEstructura(){
+  let body = document.getElementById("contaBody");
+  body.innerHTML = `
+    <div class="conta-loading" style="display:flex;flex-direction:column;gap:12px;padding:32px 0;">
+      <div class="skel skel-h"></div>
+      <div class="skel skel-c"></div>
+      <div class="skel skel-l"></div>
+    </div>
+    <div class="conta-contenido" style="display:none;">
+      <div class="cuentas-tabs" style="margin-bottom:20px;">
+        <button class="ctab active" id="ctabResumen" onclick="contaTab('resumen')">📊 Resumen</button>
+        <button class="ctab" id="ctabCuentas" onclick="contaTab('cuentas')">🏦 Cuentas</button>
+      </div>
+      <div id="contaTabResumen">
+        <div id="contaKPIs" class="conta-kpi-grid"></div>
+        <div id="contaUtilidadBox" class="utilidad-box" style="margin-bottom:20px;"></div>
+        <p class="section-title">Registrar Gastos</p>
+        <div class="gasto-form">
+          <h3>➕ Agregar gastos</h3>
+          <div id="gastosFilas">
+            <div class="gasto-fila" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;">
+              <input type="text" class="gf-desc" placeholder="Descripción" style="flex:2;min-width:120px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:13px;font-family:var(--font-body);">
+              <select class="gf-cat" style="flex:1;min-width:120px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:13px;font-family:var(--font-body);">
+                <option value="Arriendo">🏠 Arriendo</option>
+                <option value="Transporte">🚗 Transporte</option>
+                <option value="Servicios">💡 Servicios</option>
+                <option value="Materia Prima">🌾 Materia Prima</option>
+                <option value="Empleados">👷 Empleados</option>
+                <option value="Gas">🔥 Gas</option>
+                <option value="Empaques">📦 Empaques</option>
+                <option value="Mantenimiento">🔧 Mantenimiento</option>
+                <option value="Otros">📌 Otros</option>
+              </select>
+              <input type="number" class="gf-monto" placeholder="Valor $" style="flex:1;min-width:100px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:13px;font-family:var(--font-body);">
+              <button onclick="quitarFilaGasto(this)" style="background:rgba(220,38,38,0.2);border:1px solid rgba(220,38,38,0.3);color:#f87171;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px;">✕</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button onclick="agregarFilaGasto()" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#94a3b8;padding:8px;cursor:pointer;font-size:13px;">+ Añadir otra fila</button>
+            <button onclick="guardarTodosGastos()" class="btn-add-gasto" style="flex:2;">💾 Guardar gastos</button>
+          </div>
+        </div>
+        <p class="section-title">Gastos del mes</p>
+        <div id="contaGastosList" class="gastos-list"></div>
+      </div>
+      <div id="contaTabCuentas" style="display:none;">
+        <div id="contaCuentasContenido"></div>
+      </div>
+    </div>`;
+}
 
-function _dibujarConta(tabActiva, ingresos){
-  var body=document.getElementById("contaBody");
-  if(!body){return;}
-  var totalGastos=gastosMemoria.reduce(function(s,g){return s+g.monto;},0);
-  var utilidad=ingresos-totalGastos;
-  var margen=ingresos>0?((utilidad/ingresos)*100).toFixed(1):"0.0";
-  var saldoTotal=cuentasMemoria.reduce(function(s,c){return s+c.saldo;},0);
-  var porCat={};
-  gastosMemoria.forEach(function(g){if(!porCat[g.categoria])porCat[g.categoria]=0;porCat[g.categoria]+=g.monto;});
-  var gastosHtml="";
-  if(gastosMemoria.length===0){gastosHtml='<div style="padding:20px;text-align:center;color:#64748b;">Sin gastos registrados</div>';}
-  else{for(var gi=0;gi<gastosMemoria.length;gi++){var g=gastosMemoria[gi];gastosHtml+='<div class="gasto-item"><span>'+g.descripcion+' <span class="gasto-cat">['+g.categoria+']</span></span><span style="display:flex;align-items:center;gap:4px;"><span class="gasto-monto">-$'+g.monto.toLocaleString("es-CO")+'</span><button class="gasto-del" onclick="eliminarGasto('+gi+')">✕</button></span></div>';}}
-  var utilColor=utilidad>=0?"#4ade80":"#f87171";
-  var utilClass=utilidad<0?" negative":"";
-  var htmlR='<p class="section-title">Resumen del mes</p><div class="conta-kpi-grid"><div class="kpi-card green"><div class="kpi-label">Ingresos</div><div class="kpi-value" style="font-size:1.3rem;">$'+ingresos.toLocaleString("es-CO")+'</div><div class="kpi-delta neutral">Ventas del mes</div></div><div class="kpi-card"><div class="kpi-label">Gastos</div><div class="kpi-value" style="font-size:1.3rem;color:#f87171;">$'+totalGastos.toLocaleString("es-CO")+'</div><div class="kpi-delta neutral">'+gastosMemoria.length+' registro(s)</div></div><div class="kpi-card'+(utilidad>=0?" green":"")+'" ><div class="kpi-label">Utilidad</div><div class="kpi-value" style="font-size:1.3rem;color:'+utilColor+';">$'+utilidad.toLocaleString("es-CO")+'</div><div class="kpi-delta '+(utilidad>=0?"up":"down")+'">Margen: '+margen+'%</div></div></div><div class="utilidad-box"><div class="utilidad-label">Resultado Neto del Mes</div><div class="utilidad-val'+utilClass+'">$'+utilidad.toLocaleString("es-CO")+'</div><div class="utilidad-margen">Margen: '+margen+'% | Ingresos: $'+ingresos.toLocaleString("es-CO")+'</div></div><p class="section-title">Registrar Gasto</p><div class="gasto-form"><h3>➕ Nuevo gasto</h3><div class="gasto-row"><input type="text" id="gastoDesc" placeholder="Descripción"><select id="gastoCat"><option value="Arriendo">Arriendo</option><option value="Transporte">Transporte</option><option value="Servicios">Servicios</option><option value="Materia Prima">Materia Prima</option><option value="Empleados">Empleados</option><option value="Otros">Otros</option></select><input type="number" id="gastoMonto" placeholder="Valor $"><button class="btn-add-gasto" onclick="agregarGasto()">Agregar</button></div></div><p class="section-title">Gastos registrados</p><div class="gastos-list">'+gastosHtml+'</div>';
-  var tarjetas="";
-  for(var ci=0;ci<cuentasMemoria.length;ci++){var c=cuentasMemoria[ci];var sc=c.saldo===0?"cero":(c.saldo<0?"negativo":"");var bd=ci>0?'<button class="btn-cuenta peligro" onclick="eliminarCuenta('+ci+')" style="flex:0;padding:7px 10px;">🗑️</button>':"";tarjetas+='<div class="cuenta-card" data-color="'+(c.color||"gray")+'"><div class="cuenta-header"><div class="cuenta-header-row"><span style="font-size:22px;">'+tipoEmoji(c.tipo)+'</span><span class="cuenta-tipo-badge">'+c.tipo+'</span></div><div class="cuenta-nombre">'+c.nombre+'</div></div><div class="cuenta-body"><div class="cuenta-saldo-label">Saldo</div><div class="cuenta-saldo-val '+sc+'">$ '+c.saldo.toLocaleString("es-CO")+'</div><div class="cuenta-acciones"><button class="btn-cuenta" onclick="abrirEditarCuenta('+ci+')">✏️ Editor</button><button class="btn-cuenta" onclick="abrirConciliar('+ci+')">⚖️ Conciliar</button>'+bd+'</div></div></div>';}
-  var hist="";
-  if(transferenciasMem.length>0){var ff="";var tl=transferenciasMem.slice().reverse();for(var ti=0;ti<tl.length;ti++){var t=tl[ti];ff+='<div class="transferencia-item"><div class="transf-ruta">'+t.origen+' <span>→</span> '+t.destino+'</div><div><div class="transf-monto">$'+t.monto.toLocaleString("es-CO")+'</div><div class="transf-fecha">'+t.fecha+'</div></div></div>';}hist='<p class="section-title">Historial de Transferencias</p><div class="chart-card full-w" style="padding:0;overflow:hidden;"><div class="transferencias-list">'+ff+'</div></div>';}
-  var htmlC='<div class="cuentas-page-header"><div><div class="cuentas-page-title">🏦 Cuentas</div><div class="cuentas-page-subtitle">Administra tus cuentas bancarias</div></div><div class="cuentas-header-btns"><button class="btn-transferir" onclick="abrirModalTransferir()">⇄ Transferir</button><button class="btn-nueva-cuenta" onclick="abrirModalNuevaCuenta()">+ Nueva Cuenta</button></div></div><div class="saldo-total-banner"><div><div class="saldo-total-label">Saldo total en todas las cuentas</div><div class="saldo-total-val">$'+saldoTotal.toLocaleString("es-CO")+'</div></div></div><div class="cuentas-grid">'+tarjetas+'</div>'+hist;
-  var aR=tabActiva==="resumen"?" active":"";var aC=tabActiva==="cuentas"?" active":"";
-  var dR=tabActiva==="resumen"?"block":"none";var dC=tabActiva==="cuentas"?"block":"none";
-  body.innerHTML='<div class="cuentas-tabs"><button class="ctab'+aR+'" onclick="_dibujarConta(\'resumen\',window._ingresosCache||0)">📊 Resumen</button><button class="ctab'+aC+'" onclick="_dibujarConta(\'cuentas\',window._ingresosCache||0)">🏦 Cuentas</button></div><div style="display:'+dR+'">'+htmlR+'</div><div style="display:'+dC+'">'+htmlC+'</div>';
+function contaTab(tab){
+  document.getElementById("ctabResumen").classList.toggle("active", tab==="resumen");
+  document.getElementById("ctabCuentas").classList.toggle("active", tab==="cuentas");
+  document.getElementById("contaTabResumen").style.display = tab==="resumen" ? "block" : "none";
+  document.getElementById("contaTabCuentas").style.display = tab==="cuentas" ? "block" : "none";
+  if(tab==="cuentas") _renderCuentasTab();
+}
+
+function _actualizarContaKPIs(){
+  let ingresos = window._ingresosCache || 0;
+  let totalGastos = gastosMemoria.reduce((s,g) => s+g.monto, 0);
+  let utilidad = ingresos - totalGastos;
+  let margen = ingresos > 0 ? ((utilidad/ingresos)*100).toFixed(1) : "0.0";
+  let utilColor = utilidad >= 0 ? "#4ade80" : "#f87171";
+
+  document.getElementById("contaKPIs").innerHTML = `
+    <div class="kpi-card green"><div class="kpi-label">Ingresos del mes</div><div class="kpi-value" style="font-size:1.3rem;">$${ingresos.toLocaleString("es-CO")}</div><div class="kpi-delta neutral">Ventas registradas</div></div>
+    <div class="kpi-card orange"><div class="kpi-label">Gastos</div><div class="kpi-value" style="font-size:1.3rem;color:#f87171;">-$${totalGastos.toLocaleString("es-CO")}</div><div class="kpi-delta neutral">${gastosMemoria.length} registro(s)</div></div>
+    <div class="kpi-card ${utilidad>=0?'green':''}"><div class="kpi-label">Utilidad neta</div><div class="kpi-value" style="font-size:1.3rem;color:${utilColor};">$${utilidad.toLocaleString("es-CO")}</div><div class="kpi-delta ${utilidad>=0?'up':'down'}">Margen: ${margen}%</div></div>`;
+
+  document.getElementById("contaUtilidadBox").innerHTML = `
+    <div class="utilidad-label">Resultado Neto del Mes</div>
+    <div class="utilidad-val${utilidad<0?' negative':''}">$${utilidad.toLocaleString("es-CO")}</div>
+    <div class="utilidad-margen">Margen: ${margen}% &nbsp;|&nbsp; Ingresos: $${ingresos.toLocaleString("es-CO")}</div>`;
+}
+
+function _actualizarGastosList(){
+  let lista = document.getElementById("contaGastosList");
+  if(!lista) return;
+  if(gastosMemoria.length === 0){
+    lista.innerHTML = '<div style="padding:20px;text-align:center;color:#64748b;">Sin gastos registrados este mes</div>';
+    return;
+  }
+  lista.innerHTML = gastosMemoria.map((g,i) => `
+    <div class="gasto-item">
+      <span>${g.descripcion} <span class="gasto-cat">[${g.categoria}]</span></span>
+      <span style="display:flex;align-items:center;gap:4px;">
+        <span class="gasto-monto">-$${g.monto.toLocaleString("es-CO")}</span>
+        <button class="gasto-del" onclick="eliminarGasto(${i})">✕</button>
+      </span>
+    </div>`).join("");
+}
+
+function _renderCuentasTab(){
+  let saldoTotal = cuentasMemoria.reduce((s,c) => s+c.saldo, 0);
+  let tarjetas = cuentasMemoria.map((c,ci) => {
+    let sc = c.saldo===0?"cero":(c.saldo<0?"negativo":"");
+    let bd = ci>0?`<button class="btn-cuenta peligro" onclick="eliminarCuenta(${ci})" style="flex:0;padding:7px 10px;">🗑️</button>`:"";
+    return `<div class="cuenta-card" data-color="${c.color||'gray'}">
+      <div class="cuenta-header">
+        <div class="cuenta-header-row"><span style="font-size:22px;">${tipoEmoji(c.tipo)}</span><span class="cuenta-tipo-badge">${c.tipo}</span></div>
+        <div class="cuenta-nombre">${c.nombre}</div>
+      </div>
+      <div class="cuenta-body">
+        <div class="cuenta-saldo-label">Saldo</div>
+        <div class="cuenta-saldo-val ${sc}">$ ${c.saldo.toLocaleString("es-CO")}</div>
+        <div class="cuenta-acciones">
+          <button class="btn-cuenta" onclick="abrirEditarCuenta(${ci})">✏️ Editar</button>
+          <button class="btn-cuenta" onclick="abrirConciliar(${ci})">⚖️ Conciliar</button>
+          ${bd}
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+  let hist = "";
+  if(transferenciasMem.length>0){
+    let filas = transferenciasMem.slice().reverse().map(t =>
+      `<div class="transferencia-item"><div class="transf-ruta">${t.origen} <span>→</span> ${t.destino}</div><div><div class="transf-monto">$${t.monto.toLocaleString("es-CO")}</div><div class="transf-fecha">${t.fecha}</div></div></div>`
+    ).join("");
+    hist = `<p class="section-title">Historial de Transferencias</p><div class="chart-card full-w" style="padding:0;overflow:hidden;"><div class="transferencias-list">${filas}</div></div>`;
+  }
+  document.getElementById("contaCuentasContenido").innerHTML = `
+    <div class="cuentas-page-header">
+      <div><div class="cuentas-page-title">🏦 Cuentas</div><div class="cuentas-page-subtitle">Administra tus cuentas bancarias</div></div>
+      <div class="cuentas-header-btns">
+        <button class="btn-transferir" onclick="abrirModalTransferir()">⇄ Transferir</button>
+        <button class="btn-nueva-cuenta" onclick="abrirModalNuevaCuenta()">+ Nueva Cuenta</button>
+      </div>
+    </div>
+    <div class="saldo-total-banner">
+      <div><div class="saldo-total-label">Saldo total en todas las cuentas</div><div class="saldo-total-val">$${saldoTotal.toLocaleString("es-CO")}</div></div>
+    </div>
+    <div class="cuentas-grid">${tarjetas}</div>${hist}`;
+}
+
+// renderConta actualiza sin redibujar estructura
+function renderConta(tab){
+  if(!document.getElementById("contaKPIs")) return;
+  _actualizarContaKPIs();
+  _actualizarGastosList();
+  if(tab==="cuentas") _renderCuentasTab();
+}
+
+// Filas múltiples de gastos
+function agregarFilaGasto(){
+  let fila = document.createElement("div");
+  fila.className = "gasto-fila";
+  fila.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;";
+  fila.innerHTML = `
+    <input type="text" class="gf-desc" placeholder="Descripción" style="flex:2;min-width:120px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:13px;font-family:var(--font-body);">
+    <select class="gf-cat" style="flex:1;min-width:120px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:13px;font-family:var(--font-body);">
+      <option value="Arriendo">🏠 Arriendo</option>
+      <option value="Transporte">🚗 Transporte</option>
+      <option value="Servicios">💡 Servicios</option>
+      <option value="Materia Prima">🌾 Materia Prima</option>
+      <option value="Empleados">👷 Empleados</option>
+      <option value="Gas">🔥 Gas</option>
+      <option value="Empaques">📦 Empaques</option>
+      <option value="Mantenimiento">🔧 Mantenimiento</option>
+      <option value="Otros">📌 Otros</option>
+    </select>
+    <input type="number" class="gf-monto" placeholder="Valor $" style="flex:1;min-width:100px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:13px;font-family:var(--font-body);">
+    <button onclick="quitarFilaGasto(this)" style="background:rgba(220,38,38,0.2);border:1px solid rgba(220,38,38,0.3);color:#f87171;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px;">✕</button>`;
+  document.getElementById("gastosFilas").appendChild(fila);
+}
+
+function quitarFilaGasto(btn){
+  let filas = document.getElementById("gastosFilas").querySelectorAll(".gasto-fila");
+  if(filas.length <= 1){ 
+    btn.closest(".gasto-fila").querySelectorAll("input").forEach(i=>i.value="");
+    return;
+  }
+  btn.closest(".gasto-fila").remove();
+}
+
+function guardarTodosGastos(){
+  let filas = document.getElementById("gastosFilas").querySelectorAll(".gasto-fila");
+  let agregados = 0;
+  filas.forEach(fila => {
+    let desc = fila.querySelector(".gf-desc").value.trim();
+    let cat = fila.querySelector(".gf-cat").value;
+    let monto = Number(fila.querySelector(".gf-monto").value) || 0;
+    if(desc && monto > 0){
+      if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
+      gastosMemoria.push({descripcion:desc, categoria:cat, monto:monto});
+      agregados++;
+    }
+  });
+  if(agregados === 0){ alert("Completa al menos una fila con descripción y valor"); return; }
+  try{ sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria)); }catch(e){}
+  // Limpiar filas y dejar solo una vacía
+  let cont = document.getElementById("gastosFilas");
+  cont.innerHTML = "";
+  agregarFilaGasto();
+  _actualizarContaKPIs();
+  _actualizarGastosList();
 }
 
 function agregarGasto(){
-  let desc = document.getElementById("gastoDesc").value.trim();
-  let cat = document.getElementById("gastoCat").value;
-  let monto = Number(document.getElementById("gastoMonto").value)||0;
-  if(!desc || monto<=0){ alert("Completa descripción y valor"); return; }
-  if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
-  gastosMemoria.push({descripcion:desc, categoria:cat, monto:monto});
-  try{ sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria)); }catch(e){}
-  _dibujarConta("resumen", window._ingresosCache||0);
+  guardarTodosGastos();
 }
-
 
 function eliminarGasto(i){
   gastosMemoria.splice(i,1);
   try{ sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria)); }catch(e){}
-  _dibujarConta("resumen", window._ingresosCache||0);
+  _actualizarContaKPIs();
+  _actualizarGastosList();
 }
+
 
 
 // Close panel clicking outside
