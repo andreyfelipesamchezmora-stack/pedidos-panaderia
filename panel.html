@@ -1463,64 +1463,45 @@ async function abrirConta(){
   _actualizarGastosList();
 }
 
-function _renderContaEstructura(){
-  let body = document.getElementById("contaBody");
-  body.innerHTML = `
-    <div class="conta-loading" style="display:flex;flex-direction:column;gap:12px;padding:32px 0;">
-      <div class="skel skel-h"></div>
-      <div class="skel skel-c"></div>
-      <div class="skel skel-l"></div>
-    </div>
-    <div class="conta-contenido" style="display:none;">
-      <div class="cuentas-tabs" style="margin-bottom:20px;">
-        <button class="ctab active" id="ctabResumen" onclick="contaTab('resumen')">📊 Resumen</button>
-        <button class="ctab" id="ctabCuentas" onclick="contaTab('cuentas')">🏦 Cuentas</button>
-      </div>
-      <div id="contaTabResumen">
-        <div id="contaKPIs" class="conta-kpi-grid"></div>
-        <div id="contaUtilidadBox" class="utilidad-box" style="margin-bottom:20px;"></div>
-        <p class="section-title">Registrar Gastos</p>
-        <div class="gasto-form">
-          <h3>➕ Agregar gastos</h3>
-          <div id="gastosFilas">
-            <div class="gasto-fila" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;">
-              <input type="text" class="gf-desc" placeholder="Descripción" style="flex:2;min-width:120px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:13px;font-family:var(--font-body);">
-              <select class="gf-cat" style="flex:1;min-width:120px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:13px;font-family:var(--font-body);">
-                <option value="Arriendo">🏠 Arriendo</option>
-                <option value="Transporte">🚗 Transporte</option>
-                <option value="Servicios">💡 Servicios</option>
-                <option value="Materia Prima">🌾 Materia Prima</option>
-                <option value="Empleados">👷 Empleados</option>
-                <option value="Gas">🔥 Gas</option>
-                <option value="Empaques">📦 Empaques</option>
-                <option value="Mantenimiento">🔧 Mantenimiento</option>
-                <option value="Otros">📌 Otros</option>
-              </select>
-              <input type="number" class="gf-monto" placeholder="Valor $" style="flex:1;min-width:100px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:13px;font-family:var(--font-body);">
-              <button onclick="quitarFilaGasto(this)" style="background:rgba(220,38,38,0.2);border:1px solid rgba(220,38,38,0.3);color:#f87171;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px;">✕</button>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px;margin-top:8px;">
-            <button onclick="agregarFilaGasto()" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#94a3b8;padding:8px;cursor:pointer;font-size:13px;">+ Añadir otra fila</button>
-            <button onclick="guardarTodosGastos()" class="btn-add-gasto" style="flex:2;">💾 Guardar gastos</button>
-          </div>
-        </div>
-        <p class="section-title">Gastos del mes</p>
-        <div id="contaGastosList" class="gastos-list"></div>
-      </div>
-      <div id="contaTabCuentas" style="display:none;">
-        <div id="contaCuentasContenido"></div>
-      </div>
-    </div>`;
+function renderConta(tab){
+  // Si el panel no está inicializado, ignorar silenciosamente
+  let kpis = document.getElementById("contaKPIs");
+  if(!kpis) return;
+
+  _actualizarContaKPIs();
+  _actualizarGastosList();
+
+  // Si piden tab cuentas: activar ese tab y renderizarlo
+  if(tab === "cuentas"){
+    let tabResumen = document.getElementById("contaTabResumen");
+    let tabCuentas = document.getElementById("contaTabCuentas");
+    let btnR = document.getElementById("ctabResumen");
+    let btnC = document.getElementById("ctabCuentas");
+
+    if(tabResumen) tabResumen.style.display = "none";
+    if(tabCuentas) tabCuentas.style.display = "block";
+    if(btnR) btnR.classList.remove("active");
+    if(btnC) btnC.classList.add("active");
+
+    _renderCuentasTab();
+  }
 }
 
+
 function contaTab(tab){
-  document.getElementById("ctabResumen").classList.toggle("active", tab==="resumen");
-  document.getElementById("ctabCuentas").classList.toggle("active", tab==="cuentas");
-  document.getElementById("contaTabResumen").style.display = tab==="resumen" ? "block" : "none";
-  document.getElementById("contaTabCuentas").style.display = tab==="cuentas" ? "block" : "none";
-  if(tab==="cuentas") _renderCuentasTab();
+  let tabResumen = document.getElementById("contaTabResumen");
+  let tabCuentas = document.getElementById("contaTabCuentas");
+  let btnR = document.getElementById("ctabResumen");
+  let btnC = document.getElementById("ctabCuentas");
+
+  btnR.classList.toggle("active", tab === "resumen");
+  btnC.classList.toggle("active", tab === "cuentas");
+  tabResumen.style.display = tab === "resumen" ? "block" : "none";
+  tabCuentas.style.display = tab === "cuentas" ? "block" : "none";
+
+  if(tab === "cuentas") _renderCuentasTab();
 }
+
 
 function _actualizarContaKPIs(){
   let ingresos = window._ingresosCache || 0;
@@ -1558,45 +1539,74 @@ function _actualizarGastosList(){
 }
 
 function _renderCuentasTab(){
-  let saldoTotal = cuentasMemoria.reduce((s,c) => s+c.saldo, 0);
-  let tarjetas = cuentasMemoria.map((c,ci) => {
-    let sc = c.saldo===0?"cero":(c.saldo<0?"negativo":"");
-    let bd = ci>0?`<button class="btn-cuenta peligro" onclick="eliminarCuenta(${ci})" style="flex:0;padding:7px 10px;">🗑️</button>`:"";
-    return `<div class="cuenta-card" data-color="${c.color||'gray'}">
-      <div class="cuenta-header">
-        <div class="cuenta-header-row"><span style="font-size:22px;">${tipoEmoji(c.tipo)}</span><span class="cuenta-tipo-badge">${c.tipo}</span></div>
-        <div class="cuenta-nombre">${c.nombre}</div>
-      </div>
-      <div class="cuenta-body">
-        <div class="cuenta-saldo-label">Saldo</div>
-        <div class="cuenta-saldo-val ${sc}">$ ${c.saldo.toLocaleString("es-CO")}</div>
-        <div class="cuenta-acciones">
-          <button class="btn-cuenta" onclick="abrirEditarCuenta(${ci})">✏️ Editar</button>
-          <button class="btn-cuenta" onclick="abrirConciliar(${ci})">⚖️ Conciliar</button>
-          ${bd}
+  let cont = document.getElementById("contaCuentasContenido");
+  if(!cont) return;
+
+  let saldoTotal = cuentasMemoria.reduce((s,c) => s + c.saldo, 0);
+
+  let tarjetas = cuentasMemoria.map((c, ci) => {
+    let sc = c.saldo === 0 ? "cero" : (c.saldo < 0 ? "negativo" : "");
+    let btnEliminar = ci > 0
+      ? `<button class="btn-cuenta peligro" onclick="eliminarCuenta(${ci})" style="flex:0;padding:7px 10px;">🗑️</button>`
+      : "";
+    return `
+      <div class="cuenta-card" data-color="${c.color || 'gray'}">
+        <div class="cuenta-header">
+          <div class="cuenta-header-row">
+            <span style="font-size:22px;">${tipoEmoji(c.tipo)}</span>
+            <span class="cuenta-tipo-badge">${c.tipo}</span>
+          </div>
+          <div class="cuenta-nombre">${c.nombre}</div>
         </div>
-      </div>
-    </div>`;
+        <div class="cuenta-body">
+          <div class="cuenta-saldo-label">Saldo</div>
+          <div class="cuenta-saldo-val ${sc}">$${c.saldo.toLocaleString("es-CO")}</div>
+          <div class="cuenta-acciones">
+            <button class="btn-cuenta" onclick="abrirEditarCuenta(${ci})">✏️ Editar</button>
+            <button class="btn-cuenta" onclick="abrirConciliar(${ci})">⚖️ Conciliar</button>
+            ${btnEliminar}
+          </div>
+        </div>
+      </div>`;
   }).join("");
+
   let hist = "";
-  if(transferenciasMem.length>0){
+  if(transferenciasMem.length > 0){
     let filas = transferenciasMem.slice().reverse().map(t =>
-      `<div class="transferencia-item"><div class="transf-ruta">${t.origen} <span>→</span> ${t.destino}</div><div><div class="transf-monto">$${t.monto.toLocaleString("es-CO")}</div><div class="transf-fecha">${t.fecha}</div></div></div>`
+      `<div class="transferencia-item">
+        <div class="transf-ruta">${t.origen} <span>→</span> ${t.destino}</div>
+        <div>
+          <div class="transf-monto">$${t.monto.toLocaleString("es-CO")}</div>
+          <div class="transf-fecha">${t.fecha}</div>
+        </div>
+      </div>`
     ).join("");
-    hist = `<p class="section-title">Historial de Transferencias</p><div class="chart-card full-w" style="padding:0;overflow:hidden;"><div class="transferencias-list">${filas}</div></div>`;
+    hist = `
+      <p class="section-title">Historial de Transferencias</p>
+      <div class="chart-card full-w" style="padding:0;overflow:hidden;">
+        <div class="transferencias-list">${filas}</div>
+      </div>`;
   }
-  document.getElementById("contaCuentasContenido").innerHTML = `
+
+  cont.innerHTML = `
     <div class="cuentas-page-header">
-      <div><div class="cuentas-page-title">🏦 Cuentas</div><div class="cuentas-page-subtitle">Administra tus cuentas bancarias</div></div>
+      <div>
+        <div class="cuentas-page-title">🏦 Cuentas</div>
+        <div class="cuentas-page-subtitle">Administra tus cuentas bancarias</div>
+      </div>
       <div class="cuentas-header-btns">
         <button class="btn-transferir" onclick="abrirModalTransferir()">⇄ Transferir</button>
-        <button class="btn-nueva-cuenta" onclick="abrirModalNuevaCuenta()">+ Nueva Cuenta</button>
+        <button class="btn-nueva-cuenta" onclick="abrirModalNuevaCuenta()">+ Nueva cuenta</button>
       </div>
     </div>
     <div class="saldo-total-banner">
-      <div><div class="saldo-total-label">Saldo total en todas las cuentas</div><div class="saldo-total-val">$${saldoTotal.toLocaleString("es-CO")}</div></div>
+      <div>
+        <div class="saldo-total-label">Saldo total en todas las cuentas</div>
+        <div class="saldo-total-val">$${saldoTotal.toLocaleString("es-CO")}</div>
+      </div>
     </div>
-    <div class="cuentas-grid">${tarjetas}</div>${hist}`;
+    <div class="cuentas-grid">${tarjetas}</div>
+    ${hist}`;
 }
 
 // renderConta actualiza sin redibujar estructura
