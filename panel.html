@@ -888,6 +888,82 @@ const productos = [
 ];
 
 let clientes = [];
+
+// 🔥 CARGAR CLIENTES BIEN
+try {
+    let guardados = JSON.parse(localStorage.getItem("clientes"));
+
+    if(Array.isArray(guardados) && guardados.length > 0){
+        clientes = guardados;
+    }
+
+} catch(e){
+    console.error("Error leyendo clientes:", e);
+    clientes = [];
+}
+
+// 🔥 SI NO HAY, USA LOS DEL CÓDIGO
+if(clientes.length === 0){
+    clientes = [  
+/* 🟢 MOTO (cercanos) */
+{nombre:"AMPARO MOLINO ROA",tipo:"moto"},
+{nombre:"ANAYIBE",tipo:"moto"},
+{nombre:"NATALIA - PATIOS TRANSITO",tipo:"moto"},
+{nombre:"ANA SUEGRA",tipo:"moto"},
+{nombre:"NUBIA CASETA LOS OLIVOS",tipo:"moto"},
+{nombre:"MONICA",tipo:"moto"},
+{nombre:"DANIEL BISCOCHERIA - MARIA PAULA",tipo:"moto"},
+{nombre:"MERCAFER",tipo:"moto"},
+{nombre:"OLGA TIENDA CONJUNTO SAN TELMO",tipo:"moto"},
+{nombre:"PATRICIA - TIENDA MI SUR",tipo:"moto"},
+{nombre:"CONJUNTO CIPRES - MAGNOLIA",tipo:"moto"},
+{nombre:"ABUELA MARGARITAS",tipo:"moto"},
+{nombre:"NELLY SUR ABASTOS",tipo:"moto"},
+{nombre:"RUDVID",tipo:"moto"},
+{nombre:"TIENDA CLAUDIA - LIMONAR",tipo:"moto"},
+{nombre:"ELIDA",tipo:"moto"},
+{nombre:"JUANCA",tipo:"moto"},
+{nombre:"JAVIER",tipo:"moto"},
+{nombre:"CECILIA VECINA",tipo:"moto"},
+{nombre:"GLORIA SUEGRA",tipo:"moto"},
+{nombre:"FLOR LEIDY - PUERTAS DEL SOL",tipo:"moto"},
+{nombre:"OLGA JOVEN",tipo:"moto"},
+{nombre:"PUNTO DE ENCUENTRO",tipo:"moto"},
+{nombre:"MARIA - TIENDA LOS REYES",tipo:"moto"},
+{nombre:"TIENDA CLAUDIA - FRONTERAS DEL MILENIO",tipo:"moto"},
+{nombre:"TIENDA RAFAEL",tipo:"moto"},
+{nombre:"LORENA - COLA CONDOR",tipo:"moto"},
+{nombre:"JAMES",tipo:"moto"},
+{nombre:"MARIA EUGENIA",tipo:"moto"},
+
+/* 🔵 AUTO (cercanos) */
+{nombre:"MARKET DEL RIO - TIBERIO",tipo:"auto"},
+{nombre:"LUFER",tipo:"auto"},
+{nombre:"CONJUNTO TIZIANO MIREYA",tipo:"auto"},
+
+/* 🟠 RECOGE */
+{nombre:"YAKELINE CASETA SURABASTOS",tipo:"recoge"},
+{nombre:"JUDITH",tipo:"recoge"},
+{nombre:"SABAS",tipo:"recoge"},
+{nombre:"JAIR",tipo:"recoge"},
+{nombre:"ALBENYS",tipo:"recoge"},
+{nombre:"ALEXANDRA",tipo:"recoge"},
+{nombre:"ALEJANDRIA",tipo:"recoge"},
+{nombre:"ALONDRA LA SEXTA",tipo:"recoge"},
+{nombre:"MARÍA FRONTERAS DEL MILENIO",tipo:"recoge"},
+
+/* 🟣 LEJANOS */
+{nombre:"LEIDY VERGEL",tipo:"lejano"},
+{nombre:"YENNIFER VERGEL",tipo:"lejano"},
+{nombre:"YURANY DISTRIBUIDORA HUEVOS - VERGEL",tipo:"lejano"},
+{nombre:"TIENDA DISNEY - VILLA REGINA",tipo:"lejano"},
+{nombre:"CECILIA LEJOS",tipo:"lejano"},
+{nombre:"CAMBULOS",tipo:"lejano"},
+{nombre:"LA CORUÑA",tipo:"lejano"},
+{nombre:"RUTH",tipo:"lejano"}
+
+];
+} 
 /* =========================================================
    MINI ERP: ESTADÍSTICAS + CONTABILIDAD
    Integración no destructiva sobre tu panel actual
@@ -1692,82 +1768,6 @@ async function registrarGasto(){
     alert("No se pudo guardar el gasto. Revisa si existe la tabla 'gastos' y sus columnas.");
   }
 }
-
-// 🔥 CARGAR CLIENTES BIEN
-try {
-    let guardados = JSON.parse(localStorage.getItem("clientes"));
-
-    if(Array.isArray(guardados) && guardados.length > 0){
-        clientes = guardados;
-    }
-
-} catch(e){
-    console.error("Error leyendo clientes:", e);
-    clientes = [];
-}
-
-// 🔥 SI NO HAY, USA LOS DEL CÓDIGO
-if(clientes.length === 0){
-    clientes = [  
-/* 🟢 MOTO (cercanos) */
-{nombre:"AMPARO MOLINO ROA",tipo:"moto"},
-{nombre:"ANAYIBE",tipo:"moto"},
-{nombre:"NATALIA - PATIOS TRANSITO",tipo:"moto"},
-{nombre:"ANA SUEGRA",tipo:"moto"},
-{nombre:"NUBIA CASETA LOS OLIVOS",tipo:"moto"},
-{nombre:"MONICA",tipo:"moto"},
-{nombre:"DANIEL BISCOCHERIA - MARIA PAULA",tipo:"moto"},
-{nombre:"MERCAFER",tipo:"moto"},
-{nombre:"OLGA TIENDA CONJUNTO SAN TELMO",tipo:"moto"},
-{nombre:"PATRICIA - TIENDA MI SUR",tipo:"moto"},
-{nombre:"CONJUNTO CIPRES - MAGNOLIA",tipo:"moto"},
-{nombre:"ABUELA MARGARITAS",tipo:"moto"},
-{nombre:"NELLY SUR ABASTOS",tipo:"moto"},
-{nombre:"RUDVID",tipo:"moto"},
-{nombre:"TIENDA CLAUDIA - LIMONAR",tipo:"moto"},
-{nombre:"ELIDA",tipo:"moto"},
-{nombre:"JUANCA",tipo:"moto"},
-{nombre:"JAVIER",tipo:"moto"},
-{nombre:"CECILIA VECINA",tipo:"moto"},
-{nombre:"GLORIA SUEGRA",tipo:"moto"},
-{nombre:"FLOR LEIDY - PUERTAS DEL SOL",tipo:"moto"},
-{nombre:"OLGA JOVEN",tipo:"moto"},
-{nombre:"PUNTO DE ENCUENTRO",tipo:"moto"},
-{nombre:"MARIA - TIENDA LOS REYES",tipo:"moto"},
-{nombre:"TIENDA CLAUDIA - FRONTERAS DEL MILENIO",tipo:"moto"},
-{nombre:"TIENDA RAFAEL",tipo:"moto"},
-{nombre:"LORENA - COLA CONDOR",tipo:"moto"},
-{nombre:"JAMES",tipo:"moto"},
-{nombre:"MARIA EUGENIA",tipo:"moto"},
-
-/* 🔵 AUTO (cercanos) */
-{nombre:"MARKET DEL RIO - TIBERIO",tipo:"auto"},
-{nombre:"LUFER",tipo:"auto"},
-{nombre:"CONJUNTO TIZIANO MIREYA",tipo:"auto"},
-
-/* 🟠 RECOGE */
-{nombre:"YAKELINE CASETA SURABASTOS",tipo:"recoge"},
-{nombre:"JUDITH",tipo:"recoge"},
-{nombre:"SABAS",tipo:"recoge"},
-{nombre:"JAIR",tipo:"recoge"},
-{nombre:"ALBENYS",tipo:"recoge"},
-{nombre:"ALEXANDRA",tipo:"recoge"},
-{nombre:"ALEJANDRIA",tipo:"recoge"},
-{nombre:"ALONDRA LA SEXTA",tipo:"recoge"},
-{nombre:"MARÍA FRONTERAS DEL MILENIO",tipo:"recoge"},
-
-/* 🟣 LEJANOS */
-{nombre:"LEIDY VERGEL",tipo:"lejano"},
-{nombre:"YENNIFER VERGEL",tipo:"lejano"},
-{nombre:"YURANY DISTRIBUIDORA HUEVOS - VERGEL",tipo:"lejano"},
-{nombre:"TIENDA DISNEY - VILLA REGINA",tipo:"lejano"},
-{nombre:"CECILIA LEJOS",tipo:"lejano"},
-{nombre:"CAMBULOS",tipo:"lejano"},
-{nombre:"LA CORUÑA",tipo:"lejano"},
-{nombre:"RUTH",tipo:"lejano"}
-
-];
-}    
 document.getElementById("fecha").value = new Date().toISOString().split("T")[0];
 
 function renderProductos(){
