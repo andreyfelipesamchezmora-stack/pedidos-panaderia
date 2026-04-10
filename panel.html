@@ -683,7 +683,7 @@ color-scheme: dark;
 ">
 <button onclick="nuevoCliente()">➕ Agregar Cliente</button>
 <div class="side-actions">
-<button class="side-action-btn" type="button" id="btnEstadisticas" onclick="abrirPanelERP('estadisticas')">
+ <button class="side-action-btn" type="button" id="btnEstadisticas" onclick="abrirPanelERP('estadisticas')">
   <i class="fa-solid fa-chart-line"></i>
   <span>Estadísticas</span>
 </button>
@@ -1154,6 +1154,34 @@ function showERPError(message){
     <div>${message}</div>
   </div>`;
 }
+
+/* ========= Overlay ========= */
+
+function openERPPanel(moduleName){
+  erpCurrentModule = moduleName;
+  const overlay = document.getElementById("erpOverlay");
+  overlay.classList.add("show");
+  document.body.style.overflow = "hidden";
+  renderERPModule();
+}
+
+function closeERPPanel(){
+  const overlay = document.getElementById("erpOverlay");
+  overlay.classList.remove("show");
+  document.body.style.overflow = "";
+  destroyERPCharts();
+}
+
+function handleOverlayClose(event){
+  if(event.target.id === "erpOverlay"){
+    closeERPPanel();
+  }
+}
+
+document.addEventListener("keydown", (e)=>{
+  if(e.key === "Escape"){
+    closeERPPanel();
+  }
 });
 
 /* ========= Render principal ========= */
