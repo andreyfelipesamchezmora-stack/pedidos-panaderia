@@ -1461,265 +1461,767 @@ function tipoEmoji(tipo){
 let _contaIniciado = false;
 
 async function abrirConta(){
-  let panel = document.getElementById("panelConta");
-  panel.style.display = "flex";
+  let panel=document.getElementById("panelConta");
+  panel.style.display="flex";
   panel.classList.add("open");
+  _dibujarConta("resumen", window._ingresosCache||0);
 
-  if(!_contaIniciado){
-    _contaIniciado = true;
-    document.getElementById("contaBody").innerHTML = `
-      <div id="contaLoading" style="display:flex;flex-direction:column;gap:12px;padding:32px 0;">
-        <div class="skel skel-h"></div>
-        <div class="skel skel-c"></div>
-        <div class="skel skel-l"></div>
-        <div class="skel skel-l"></div>
-      </div>
-      <div id="contaContenido" style="display:none;">
-        <div class="cuentas-tabs" style="margin-bottom:20px;">
-          <button class="ctab active" id="ctabResumen" onclick="contaTab('resumen')">📊 Resumen</button>
-          <button class="ctab" id="ctabCuentas" onclick="contaTab('cuentas')">🏦 Cuentas</button>
-        </div>
-        <div id="contaTabResumen" style="display:block;">
-          <div id="contaKPIs" class="conta-kpi-grid"></div>
-          <div id="contaUtilidadBox" class="utilidad-box" style="margin-bottom:20px;"></div>
-          <p class="section-title">Registrar Gastos</p>
-          <div class="gasto-form">
-            <h3>➕ Agregar gastos</h3>
-            <div id="gastosFilas"></div>
-            <div style="display:flex;gap:8px;margin-top:8px;">
-              <button onclick="agregarFilaGasto()" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#94a3b8;padding:8px;cursor:pointer;font-size:13px;font-family:var(--font-body);">+ Añadir fila</button>
-              <button onclick="guardarTodosGastos()" class="btn-add-gasto" style="flex:2;">💾 Guardar gastos</button>
-            </div>
-          </div>
-          <p class="section-title">Gastos del mes</p>
-          <div id="contaGastosList" class="gastos-list"></div>
-        </div>
-        <div id="contaTabCuentas" style="display:none;">
-          <div id="contaCuentasContenido"></div>
-        </div>
-      </div>`;
-    agregarFilaGasto();
+  try{
+    var fechaHoy=new Date().toISOString().split("T")[0];
+    var mesInicio=fechaHoy.slice(0,7)+"-01";
+
+    var resMes=await db.from("pedidos")
+      .select("total")
+      .gte("fecha",mesInicio)
+      .lte("fecha",fechaHoy);
+
+    if(resMes && resMes.data){
+      window._ingresosCache=resMes.data.reduce(function(s,r){
+        return s+(Number(r.total)||0);
+      },0);
+    }else{
+      window._ingresosCache=0;
+    }
+
+    await cajaCargarResumenDia();
+    if(document.getElementById("contaBody")){
+      _dibujarConta("resumen", window._ingresosCache||0);
+    }
+  }catch(e){
+    console.error("Error abriendo contabilidad:",e);
   }
-
-  let loading  = document.getElementById("contaLoading");
-  let contenido = document.getElementById("contaContenido");
-  if(loading)  loading.style.display  = "flex";
-  if(contenido) contenido.style.display = "none";
-
-  try {
-    let fechaHoy  = new Date().toISOString().split("T")[0];
-    let mesInicio = fechaHoy.slice(0,7) + "-01";
-    let res = await db.from("pedidos").select("total").gte("fecha", mesInicio).lte("fecha", fechaHoy);
-    window._ingresosCache = (res && res.data) ? res.data.reduce((s,r) => s+(Number(r.total)||0), 0) : 0;
-  } catch(e){ window._ingresosCache = 0; }
-
-  if(loading)  loading.style.display  = "none";
-  if(contenido) contenido.style.display = "block";
-
-  actualizarContaKPIs();
-  actualizarGastosList();
-}
-
-function contaTab(tab){
-  document.getElementById("ctabResumen").classList.toggle("active", tab==="resumen");
-  document.getElementById("ctabCuentas").classList.toggle("active", tab==="cuentas");
-  document.getElementById("contaTabResumen").style.display = tab==="resumen" ? "block" : "none";
-  document.getElementById("contaTabCuentas").style.display = tab==="cuentas" ? "block" : "none";
-  if(tab==="cuentas") renderCuentasTab();
-}
-
-function actualizarContaKPIs(){
-  let kpi  = document.getElementById("contaKPIs");
-  let util = document.getElementById("contaUtilidadBox");
-  if(!kpi) return;
-  if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
-  let ingresos    = window._ingresosCache || 0;
-  let totalGastos = gastosMemoria.reduce((s,g) => s+(g.monto||0), 0);
-  let utilidad    = ingresos - totalGastos;
-  let margen      = ingresos > 0 ? ((utilidad/ingresos)*100).toFixed(1) : "0.0";
-  let utilColor   = utilidad >= 0 ? "#4ade80" : "#f87171";
-  kpi.innerHTML = `
-    <div class="kpi-card green">
-      <div class="kpi-label">Ingresos del mes</div>
-      <div class="kpi-value" style="font-size:1.3rem;">$${ingresos.toLocaleString("es-CO")}</div>
-      <div class="kpi-delta neutral">Ventas registradas</div>
-    </div>
-    <div class="kpi-card orange">
-      <div class="kpi-label">Gastos</div>
-      <div class="kpi-value" style="font-size:1.3rem;color:#f87171;">-$${totalGastos.toLocaleString("es-CO")}</div>
-      <div class="kpi-delta neutral">${gastosMemoria.length} registro(s)</div>
-    </div>
-    <div class="kpi-card ${utilidad>=0?'green':''}">
-      <div class="kpi-label">Utilidad neta</div>
-      <div class="kpi-value" style="font-size:1.3rem;color:${utilColor};">$${utilidad.toLocaleString("es-CO")}</div>
-      <div class="kpi-delta ${utilidad>=0?'up':'down'}">Margen: ${margen}%</div>
-    </div>`;
-  if(util) util.innerHTML = `
-    <div class="utilidad-label">Resultado Neto del Mes</div>
-    <div class="utilidad-val${utilidad<0?' negative':''}">$${utilidad.toLocaleString("es-CO")}</div>
-    <div class="utilidad-margen">Margen: ${margen}% &nbsp;|&nbsp; Ingresos: $${ingresos.toLocaleString("es-CO")}</div>`;
-}
-
-function actualizarGastosList(){
-  let lista = document.getElementById("contaGastosList");
-  if(!lista) return;
-  if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
-  if(gastosMemoria.length === 0){
-    lista.innerHTML = '<div style="padding:20px;text-align:center;color:#64748b;">Sin gastos registrados este mes</div>';
-    return;
-  }
-  lista.innerHTML = gastosMemoria.map((g,i) => `
-    <div class="gasto-item">
-      <span>${g.descripcion} <span class="gasto-cat">[${g.categoria}]</span></span>
-      <span style="display:flex;align-items:center;gap:4px;">
-        <span class="gasto-monto">-$${(g.monto||0).toLocaleString("es-CO")}</span>
-        <button class="gasto-del" onclick="eliminarGasto(${i})">✕</button>
-      </span>
-    </div>`).join("");
-}
-
-function renderCuentasTab(){
-  let cont = document.getElementById("contaCuentasContenido");
-  if(!cont) return;
-  if(typeof cuentasMemoria === "undefined" || !Array.isArray(cuentasMemoria)){
-    cont.innerHTML = '<div style="padding:20px;color:#f87171;">Error: cuentas no disponibles</div>';
-    return;
-  }
-  let saldoTotal = cuentasMemoria.reduce((s,c) => s+(c.saldo||0), 0);
-  let tarjetas = cuentasMemoria.length === 0
-    ? '<div style="padding:20px;color:#64748b;text-align:center;">No hay cuentas. Crea una con + Nueva cuenta</div>'
-    : cuentasMemoria.map((c,ci) => {
-        let sc = c.saldo === 0 ? "cero" : (c.saldo < 0 ? "negativo" : "");
-        let btnEl = ci > 0
-          ? `<button class="btn-cuenta peligro" onclick="eliminarCuenta(${ci})" style="flex:0;padding:7px 10px;">🗑️</button>`
-          : "";
-        return `
-          <div class="cuenta-card" data-color="${c.color||'gray'}">
-            <div class="cuenta-header">
-              <div class="cuenta-header-row">
-                <span style="font-size:22px;">${tipoEmoji(c.tipo)}</span>
-                <span class="cuenta-tipo-badge">${c.tipo}</span>
-              </div>
-              <div class="cuenta-nombre">${c.nombre}</div>
-            </div>
-            <div class="cuenta-body">
-              <div class="cuenta-saldo-label">Saldo</div>
-              <div class="cuenta-saldo-val ${sc}">$${(c.saldo||0).toLocaleString("es-CO")}</div>
-              <div class="cuenta-acciones">
-                <button class="btn-cuenta" onclick="abrirEditarCuenta(${ci})">✏️ Editar</button>
-                <button class="btn-cuenta" onclick="abrirConciliar(${ci})">⚖️ Conciliar</button>
-                ${btnEl}
-              </div>
-            </div>
-          </div>`;
-      }).join("");
-  let hist = "";
-  if(typeof transferenciasMem !== "undefined" && transferenciasMem.length > 0){
-    let filas = transferenciasMem.slice().reverse().map(t =>
-      `<div class="transferencia-item">
-        <div class="transf-ruta">${t.origen} <span>→</span> ${t.destino}</div>
-        <div>
-          <div class="transf-monto">$${t.monto.toLocaleString("es-CO")}</div>
-          <div class="transf-fecha">${t.fecha}</div>
-        </div>
-      </div>`
-    ).join("");
-    hist = `<p class="section-title">Historial de Transferencias</p>
-      <div class="chart-card full-w" style="padding:0;overflow:hidden;">
-        <div class="transferencias-list">${filas}</div>
-      </div>`;
-  }
-  cont.innerHTML = `
-    <div class="cuentas-page-header">
-      <div>
-        <div class="cuentas-page-title">🏦 Cuentas</div>
-        <div class="cuentas-page-subtitle">Administra tus cuentas bancarias</div>
-      </div>
-      <div class="cuentas-header-btns">
-        <button class="btn-transferir" onclick="abrirModalTransferir()">⇄ Transferir</button>
-        <button class="btn-nueva-cuenta" onclick="abrirModalNuevaCuenta()">+ Nueva cuenta</button>
-      </div>
-    </div>
-    <div class="saldo-total-banner">
-      <div>
-        <div class="saldo-total-label">Saldo total en todas las cuentas</div>
-        <div class="saldo-total-val">$${saldoTotal.toLocaleString("es-CO")}</div>
-      </div>
-    </div>
-    <div class="cuentas-grid">${tarjetas}</div>
-    ${hist}`;
 }
 
 function renderConta(tab){
-  if(!document.getElementById("contaKPIs")) return;
-  actualizarContaKPIs();
-  actualizarGastosList();
-  if(tab === "cuentas") renderCuentasTab();
+  _dibujarConta(tab||"resumen", window._ingresosCache||0);
 }
 
-function agregarFilaGasto(){
-  let cont = document.getElementById("gastosFilas");
-  if(!cont) return;
-  let fila = document.createElement("div");
-  fila.className = "gasto-fila";
-  fila.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;";
-  fila.innerHTML = `
-    <input type="text" class="gf-desc" placeholder="Descripción" style="flex:2;min-width:120px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:13px;font-family:var(--font-body);">
-    <select class="gf-cat" style="flex:1;min-width:120px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:13px;font-family:var(--font-body);">
-      <option value="Arriendo">🏠 Arriendo</option>
-      <option value="Transporte">🚗 Transporte</option>
-      <option value="Servicios">💡 Servicios</option>
-      <option value="Materia Prima">🌾 Materia Prima</option>
-      <option value="Empleados">👷 Empleados</option>
-      <option value="Gas">🔥 Gas</option>
-      <option value="Empaques">📦 Empaques</option>
-      <option value="Mantenimiento">🔧 Mantenimiento</option>
-      <option value="Publicidad">📣 Publicidad</option>
-      <option value="Impuestos">🏛️ Impuestos</option>
-      <option value="Otros">📌 Otros</option>
-    </select>
-    <input type="number" class="gf-monto" placeholder="Valor $" style="flex:1;min-width:100px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:13px;font-family:var(--font-body);">
-    <button onclick="quitarFilaGasto(this)" style="background:rgba(220,38,38,0.2);border:1px solid rgba(220,38,38,0.3);color:#f87171;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px;">✕</button>`;
-  cont.appendChild(fila);
+window._cajaCache = {
+  sesion: null,
+  movimientos: [],
+  ventasHoy: [],
+  resumen: {
+    ventas: 0,
+    ventasCount: 0,
+    ticketPromedio: 0,
+    ingresosExtra: 0,
+    egresos: 0,
+    esperado: 0,
+    contado: 0,
+    diferencia: 0,
+    transferencias: 0,
+    efectivo: 0,
+    otros: 0,
+    saldoFinal: 0
+  }
+};
+
+function cajaFechaHoy(){
+  return new Date().toISOString().split("T")[0];
 }
 
-function quitarFilaGasto(btn){
-  let filas = document.getElementById("gastosFilas").querySelectorAll(".gasto-fila");
-  if(filas.length <= 1){ btn.closest(".gasto-fila").querySelectorAll("input").forEach(i => i.value = ""); return; }
-  btn.closest(".gasto-fila").remove();
+function cajaUsuarioActual(){
+  return localStorage.getItem("usuarioActivo") || "Administrador";
 }
 
-function guardarTodosGastos(){
-  let filas = document.getElementById("gastosFilas").querySelectorAll(".gasto-fila");
-  let agregados = 0;
-  filas.forEach(fila => {
-    let desc  = fila.querySelector(".gf-desc").value.trim();
-    let cat   = fila.querySelector(".gf-cat").value;
-    let monto = Number(fila.querySelector(".gf-monto").value) || 0;
-    if(desc && monto > 0){
-      if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
-      gastosMemoria.push({descripcion:desc, categoria:cat, monto:monto});
-      agregados++;
-    }
+function cajaMoney(n){
+  return "$" + (Number(n)||0).toLocaleString("es-CO");
+}
+
+async function cajaBuscarSesionAbierta(){
+  var fecha = cajaFechaHoy();
+  var res = await db.from("cajas_sesiones")
+    .select("*")
+    .eq("fecha", fecha)
+    .order("created_at", {ascending:false})
+    .limit(1);
+
+  if(res.error) throw res.error;
+  return (res.data && res.data[0]) ? res.data[0] : null;
+}
+
+async function cajaVentasDelDia(){
+  var fecha = cajaFechaHoy();
+  var res = await db.from("pedidos")
+    .select("id,total,fecha,cliente,metodo_pago")
+    .eq("fecha", fecha);
+
+  if(res.error) throw res.error;
+  return res.data || [];
+}
+
+async function cajaMovimientosDelDia(cajaId){
+  if(!cajaId) return [];
+  var fecha = cajaFechaHoy();
+  var res = await db.from("cajas_movimientos")
+    .select("*")
+    .eq("caja_id", cajaId)
+    .eq("fecha", fecha)
+    .order("hora", {ascending:true});
+
+  if(res.error) throw res.error;
+  return res.data || [];
+}
+
+function cajaCalcularResumen(ventas, movimientos, sesion){
+  ventas = ventas || [];
+  movimientos = movimientos || [];
+  sesion = sesion || null;
+
+  var ventasTotal = 0;
+  var ventasCount = ventas.length;
+  var efectivo = 0;
+  var transferencias = 0;
+  var otros = 0;
+
+  ventas.forEach(function(v){
+    var total = Number(v.total)||0;
+    var mp = (v.metodo_pago||"efectivo").toLowerCase();
+    ventasTotal += total;
+    if(mp.indexOf("trans")>-1) transferencias += total;
+    else if(mp.indexOf("efec")>-1) efectivo += total;
+    else otros += total;
   });
-  if(agregados === 0){ alert("Completa al menos una fila con descripción y valor"); return; }
-  try{ sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria)); }catch(e){}
-  document.getElementById("gastosFilas").innerHTML = "";
-  agregarFilaGasto();
-  actualizarContaKPIs();
-  actualizarGastosList();
+
+  var ingresosExtra = 0;
+  var egresos = 0;
+
+  movimientos.forEach(function(m){
+    var valor = Number(m.valor)||0;
+    var tipo = (m.tipo||"").toLowerCase();
+    if(tipo==="ingreso") ingresosExtra += valor;
+    if(tipo==="egreso") egresos += valor;
+  });
+
+  var esperado = Number(sesion && sesion.apertura_monto || 0) + efectivo + ingresosExtra - egresos;
+  var contado = Number(sesion && sesion.cierre_monto_contado || 0);
+  var diferencia = contado ? (contado - esperado) : 0;
+  var ticketPromedio = ventasCount>0 ? (ventasTotal/ventasCount) : 0;
+
+  return {
+    ventas: ventasTotal,
+    ventasCount: ventasCount,
+    ticketPromedio: ticketPromedio,
+    ingresosExtra: ingresosExtra,
+    egresos: egresos,
+    esperado: esperado,
+    contado: contado,
+    diferencia: diferencia,
+    efectivo: efectivo,
+    transferencias: transferencias,
+    otros: otros,
+    saldoFinal: esperado
+  };
 }
 
-function agregarGasto(){ guardarTodosGastos(); }
+async function cajaCargarResumenDia(){
+  try{
+    var sesion = await cajaBuscarSesionAbierta();
+    var ventas = await cajaVentasDelDia();
+    var movimientos = await cajaMovimientosDelDia(sesion ? sesion.id : null);
+    var resumen = cajaCalcularResumen(ventas, movimientos, sesion);
+
+    window._cajaCache = {
+      sesion: sesion,
+      ventasHoy: ventas,
+      movimientos: movimientos,
+      resumen: resumen
+    };
+    return window._cajaCache;
+  }catch(e){
+    console.error("Error cargando caja:",e);
+    window._cajaCache = {
+      sesion: null,
+      ventasHoy: [],
+      movimientos: [],
+      resumen: {
+        ventas:0, ventasCount:0, ticketPromedio:0, ingresosExtra:0, egresos:0,
+        esperado:0, contado:0, diferencia:0, transferencias:0, efectivo:0, otros:0, saldoFinal:0
+      }
+    };
+    return window._cajaCache;
+  }
+}
+
+async function cajaAbrir(){
+  try{
+    var ya = await cajaBuscarSesionAbierta();
+    if(ya && ya.estado==="abierta"){
+      alert("La caja ya está abierta hoy.");
+      await cajaCargarResumenDia();
+      renderConta("caja");
+      return;
+    }
+
+    var monto = Number(document.getElementById("cajaAperturaMonto")?.value || 0);
+    var usuario = cajaUsuarioActual();
+    var fecha = cajaFechaHoy();
+
+    var ins = await db.from("cajas_sesiones").insert({
+      fecha: fecha,
+      estado: "abierta",
+      usuario_apertura: usuario,
+      apertura_monto: monto
+    }).select().single();
+
+    if(ins.error) throw ins.error;
+
+    await db.from("cajas_movimientos").insert({
+      caja_id: ins.data.id,
+      fecha: fecha,
+      tipo: "apertura",
+      subtipo: "fondo",
+      categoria: "apertura",
+      descripcion: "Apertura de caja",
+      metodo_pago: "efectivo",
+      valor: monto,
+      saldo_acumulado: monto,
+      usuario: usuario,
+      origen: "caja"
+    });
+
+    await db.from("cajas_logs").insert({
+      caja_id: ins.data.id,
+      accion: "apertura",
+      detalle: "Caja abierta con fondo inicial",
+      usuario: usuario
+    });
+
+    await cajaCargarResumenDia();
+    renderConta("caja");
+  }catch(e){
+    console.error(e);
+    alert("No se pudo abrir la caja");
+  }
+}
+
+async function cajaRegistrarIngreso(){
+  try{
+    var sesion = window._cajaCache.sesion || await cajaBuscarSesionAbierta();
+    if(!sesion || sesion.estado!=="abierta"){
+      alert("Primero debes abrir la caja.");
+      return;
+    }
+
+    var tipo = document.getElementById("cajaIngresoTipo").value.trim();
+    var descripcion = document.getElementById("cajaIngresoDesc").value.trim();
+    var valor = Number(document.getElementById("cajaIngresoValor").value || 0);
+    var usuario = cajaUsuarioActual();
+
+    if(!tipo || !descripcion || valor<=0){
+      alert("Completa tipo, descripción y valor.");
+      return;
+    }
+
+    var saldoBase = Number(sesion.apertura_monto||0);
+    (window._cajaCache.movimientos||[]).forEach(function(m){
+      if(m.saldo_acumulado!==null && m.saldo_acumulado!==undefined){
+        saldoBase = Number(m.saldo_acumulado||saldoBase);
+      }
+    });
+
+    var nuevoSaldo = saldoBase + valor;
+
+    var ins = await db.from("cajas_movimientos").insert({
+      caja_id: sesion.id,
+      fecha: cajaFechaHoy(),
+      tipo: "ingreso",
+      subtipo: "manual",
+      categoria: tipo,
+      descripcion: descripcion,
+      metodo_pago: "efectivo",
+      valor: valor,
+      saldo_acumulado: nuevoSaldo,
+      usuario: usuario,
+      origen: "manual"
+    }).select().single();
+
+    if(ins.error) throw ins.error;
+
+    await db.from("cajas_logs").insert({
+      caja_id: sesion.id,
+      movimiento_id: ins.data.id,
+      accion: "ingreso",
+      detalle: descripcion + " / " + tipo,
+      usuario: usuario
+    });
+
+    document.getElementById("cajaIngresoTipo").value="";
+    document.getElementById("cajaIngresoDesc").value="";
+    document.getElementById("cajaIngresoValor").value="";
+
+    await cajaCargarResumenDia();
+    renderConta("caja");
+  }catch(e){
+    console.error(e);
+    alert("No se pudo registrar el ingreso");
+  }
+}
+
+async function cajaRegistrarEgreso(){
+  try{
+    var sesion = window._cajaCache.sesion || await cajaBuscarSesionAbierta();
+    if(!sesion || sesion.estado!=="abierta"){
+      alert("Primero debes abrir la caja.");
+      return;
+    }
+
+    var categoria = document.getElementById("cajaEgresoCat").value;
+    var descripcion = document.getElementById("cajaEgresoDesc").value.trim();
+    var valor = Number(document.getElementById("cajaEgresoValor").value || 0);
+    var metodo = document.getElementById("cajaEgresoMetodo").value;
+    var usuario = cajaUsuarioActual();
+
+    if(!descripcion || valor<=0){
+      alert("Completa descripción y valor.");
+      return;
+    }
+
+    var saldoBase = Number(sesion.apertura_monto||0);
+    (window._cajaCache.movimientos||[]).forEach(function(m){
+      if(m.saldo_acumulado!==null && m.saldo_acumulado!==undefined){
+        saldoBase = Number(m.saldo_acumulado||saldoBase);
+      }
+    });
+
+    var nuevoSaldo = saldoBase - valor;
+
+    var ins = await db.from("cajas_movimientos").insert({
+      caja_id: sesion.id,
+      fecha: cajaFechaHoy(),
+      tipo: "egreso",
+      subtipo: categoria.toLowerCase(),
+      categoria: categoria,
+      descripcion: descripcion,
+      metodo_pago: metodo,
+      valor: valor,
+      saldo_acumulado: nuevoSaldo,
+      usuario: usuario,
+      origen: "contabilidad"
+    }).select().single();
+
+    if(ins.error) throw ins.error;
+
+    gastosMemoria.push({
+      descripcion: descripcion,
+      categoria: categoria,
+      monto: valor
+    });
+
+    try{
+      sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria));
+    }catch(err){}
+
+    await db.from("cajas_logs").insert({
+      caja_id: sesion.id,
+      movimiento_id: ins.data.id,
+      accion: "egreso",
+      detalle: descripcion + " / " + categoria,
+      usuario: usuario
+    });
+
+    document.getElementById("cajaEgresoDesc").value="";
+    document.getElementById("cajaEgresoValor").value="";
+
+    await cajaCargarResumenDia();
+    renderConta("caja");
+  }catch(e){
+    console.error(e);
+    alert("No se pudo registrar el egreso");
+  }
+}
+
+async function cajaCerrar(){
+  try{
+    var sesion = window._cajaCache.sesion || await cajaBuscarSesionAbierta();
+    if(!sesion || sesion.estado!=="abierta"){
+      alert("No hay caja abierta.");
+      return;
+    }
+
+    var contado = Number(document.getElementById("cajaContadoReal").value || 0);
+    var usuario = cajaUsuarioActual();
+    var resumen = window._cajaCache.resumen || {};
+    var esperado = Number(resumen.esperado || 0);
+    var diferencia = contado - esperado;
+
+    var upd = await db.from("cajas_sesiones").update({
+      estado: "cerrada",
+      usuario_cierre: usuario,
+      cierre_fecha: new Date().toISOString(),
+      cierre_monto_contado: contado,
+      cierre_monto_esperado: esperado,
+      diferencia: diferencia,
+      total_ventas: Number(resumen.ventas || 0),
+      total_ingresos_extra: Number(resumen.ingresosExtra || 0),
+      total_egresos: Number(resumen.egresos || 0),
+      ticket_promedio: Number(resumen.ticketPromedio || 0),
+      numero_ventas: Number(resumen.ventasCount || 0)
+    }).eq("id", sesion.id);
+
+    if(upd.error) throw upd.error;
+
+    await db.from("cajas_movimientos").insert({
+      caja_id: sesion.id,
+      fecha: cajaFechaHoy(),
+      tipo: "cierre",
+      subtipo: "arqueo",
+      categoria: "cierre",
+      descripcion: "Cierre de caja",
+      metodo_pago: "efectivo",
+      valor: contado,
+      saldo_acumulado: contado,
+      usuario: usuario,
+      origen: "caja"
+    });
+
+    await db.from("cajas_logs").insert({
+      caja_id: sesion.id,
+      accion: "cierre",
+      detalle: "Caja cerrada. Diferencia: " + diferencia,
+      usuario: usuario
+    });
+
+    await cajaCargarResumenDia();
+    renderConta("caja");
+  }catch(e){
+    console.error(e);
+    alert("No se pudo cerrar la caja");
+  }
+}
+
+async function cajaVerHistorial(){
+  try{
+    var res = await db.from("cajas_sesiones")
+      .select("*")
+      .order("fecha", {ascending:false})
+      .limit(30);
+
+    if(res.error) throw res.error;
+
+    var html = '<h3>📅 Historial de Caja</h3>';
+    if(!res.data || !res.data.length){
+      html += '<div style="padding:20px;color:#94a3b8;">No hay historial disponible.</div>';
+    }else{
+      html += '<div class="transferencias-list">';
+      res.data.forEach(function(r){
+        html += '<div class="transferencia-item">';
+        html += '<div><div class="transf-ruta"><strong>'+r.fecha+'</strong> <span>'+(r.usuario_apertura||"—")+'</span></div>';
+        html += '<div class="transf-fecha">Ventas: '+cajaMoney(r.total_ventas||0)+'</div></div>';
+        html += '<div><div class="transf-monto">'+cajaMoney(r.diferencia||0)+'</div>';
+        html += '<div class="transf-fecha">'+(r.estado||"").toUpperCase()+'</div></div>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    mostrarMC('<div style="max-width:760px;width:95vw;">'+html+'<div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC()">Cerrar</button></div></div>');
+  }catch(e){
+    console.error(e);
+    alert("No se pudo cargar el historial");
+  }
+}
+
+async function cajaExportarCSV(){
+  try{
+    var sesion = window._cajaCache.sesion || await cajaBuscarSesionAbierta();
+    var movimientos = window._cajaCache.movimientos || [];
+    var resumen = window._cajaCache.resumen || {};
+    var filas = [
+      ["fecha","tipo","categoria","descripcion","metodo_pago","valor","saldo_acumulado","usuario"]
+    ];
+
+    movimientos.forEach(function(m){
+      filas.push([
+        m.fecha||"",
+        m.tipo||"",
+        m.categoria||"",
+        (m.descripcion||"").replace(/,/g," "),
+        m.metodo_pago||"",
+        Number(m.valor||0),
+        Number(m.saldo_acumulado||0),
+        m.usuario||""
+      ]);
+    });
+
+    filas.push([]);
+    filas.push(["RESUMEN"]);
+    filas.push(["ventas", Number(resumen.ventas||0)]);
+    filas.push(["numero_ventas", Number(resumen.ventasCount||0)]);
+    filas.push(["ticket_promedio", Number(resumen.ticketPromedio||0)]);
+    filas.push(["ingresos_extra", Number(resumen.ingresosExtra||0)]);
+    filas.push(["egresos", Number(resumen.egresos||0)]);
+    filas.push(["esperado", Number(resumen.esperado||0)]);
+    filas.push(["diferencia", Number(resumen.diferencia||0)]);
+
+    var csv = filas.map(function(f){
+      return f.map(function(v){
+        return '"'+String(v===undefined?'':v).replace(/"/g,'""')+'"';
+      }).join(",");
+    }).join("\n");
+
+    var blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "caja_"+(sesion ? sesion.fecha : cajaFechaHoy())+".csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }catch(e){
+    console.error(e);
+    alert("No se pudo exportar el CSV");
+  }
+}
+
+function _dibujarConta(tabActiva, ingresos){
+  var body=document.getElementById("contaBody");
+  if(!body){return;}
+
+  var totalGastos=gastosMemoria.reduce(function(s,g){return s+(Number(g.monto)||0);},0);
+  var utilidad=ingresos-totalGastos;
+  var margen=ingresos>0?((utilidad/ingresos)*100).toFixed(1):"0.0";
+  var saldoTotal=cuentasMemoria.reduce(function(s,c){return s+(Number(c.saldo)||0);},0);
+
+  var gastosHtml="";
+  if(gastosMemoria.length===0){
+    gastosHtml='<div style="padding:20px;text-align:center;color:#64748b;">Sin gastos registrados</div>';
+  }else{
+    for(var gi=0;gi<gastosMemoria.length;gi++){
+      var g=gastosMemoria[gi];
+      gastosHtml+='<div class="gasto-item"><span>'+g.descripcion+' <span class="gasto-cat">['+g.categoria+']</span></span><span style="display:flex;align-items:center;gap:4px;"><span class="gasto-monto">-$'+(Number(g.monto)||0).toLocaleString("es-CO")+'</span><button class="gasto-del" onclick="eliminarGasto('+gi+')">✕</button></span></div>';
+    }
+  }
+
+  var utilClass=utilidad<0?" negative":"";
+
+  var tabsHtml =
+    '<div class="filter-tabs">'+
+      '<button class="ftab '+(tabActiva==="resumen"?"active":"")+'" onclick="renderConta(\'resumen\')">📊 Resumen</button>'+
+      '<button class="ftab '+(tabActiva==="cuentas"?"active":"")+'" onclick="renderConta(\'cuentas\')">🏦 Cuentas</button>'+
+      '<button class="ftab '+(tabActiva==="caja"?"active":"")+'" onclick="cajaCargarResumenDia().then(function(){renderConta(\'caja\');})">💵 Caja</button>'+
+    '</div>';
+
+  var htmlR =
+    '<p class="section-title">Resumen del mes</p>'+
+    '<div class="conta-kpi-grid">'+
+      '<div class="kpi-card green"><div class="kpi-label">Ingresos</div><div class="kpi-value" style="font-size:1.3rem;">$'+(Number(ingresos)||0).toLocaleString("es-CO")+'</div><div class="kpi-delta neutral">Ventas del mes</div></div>'+
+      '<div class="kpi-card"><div class="kpi-label">Gastos</div><div class="kpi-value" style="font-size:1.3rem;color:#f87171;">$'+totalGastos.toLocaleString("es-CO")+'</div><div class="kpi-delta neutral">'+gastosMemoria.length+' registro(s)</div></div>'+
+      '<div class="kpi-card '+(utilidad>=0?"green":"")+'"><div class="kpi-label">Utilidad</div><div class="kpi-value'+utilClass+'" style="font-size:1.3rem;">$'+utilidad.toLocaleString("es-CO")+'</div><div class="kpi-delta neutral">Margen '+margen+'%</div></div>'+
+      '<div class="kpi-card blue"><div class="kpi-label">Saldo cuentas</div><div class="kpi-value" style="font-size:1.3rem;">$'+saldoTotal.toLocaleString("es-CO")+'</div><div class="kpi-delta neutral">Caja + bancos</div></div>'+
+    '</div>'+
+    '<div class="gasto-form">'+
+      '<h3>Registrar gasto</h3>'+
+      '<div class="gasto-row">'+
+        '<input id="gastoDesc" placeholder="Descripción del gasto">'+
+        '<select id="gastoCat"><option>Costo</option><option>Gasto</option></select>'+
+        '<input id="gastoMonto" type="number" placeholder="Valor">'+
+        '<button class="btn-add-gasto" onclick="agregarGasto()">+ Agregar</button>'+
+      '</div>'+
+    '</div>'+
+    '<p class="section-title">Gastos registrados</p>'+
+    '<div class="gastos-list">'+gastosHtml+'</div>'+
+    '<div class="utilidad-box">'+
+      '<div class="utilidad-label">Resultado</div>'+
+      '<div class="utilidad-val'+utilClass+'">$'+utilidad.toLocaleString("es-CO")+'</div>'+
+      '<div class="utilidad-margen">Margen actual: '+margen+'%</div>'+
+    '</div>';
+
+  var transferHtml="";
+  if(transferenciasMem.length===0){
+    transferHtml='<div class="empty-state"><p>Sin transferencias registradas.</p></div>';
+  }else{
+    transferHtml='<div class="transferencias-list">';
+    for(var ti=0;ti<transferenciasMem.length;ti++){
+      var tr=transferenciasMem[ti];
+      transferHtml+='<div class="transferencia-item"><div><div class="transf-ruta">'+tr.origen+' <span>→</span> '+tr.destino+'</div><div class="transf-fecha">'+tr.fecha+'</div></div><div class="transf-monto">$'+(Number(tr.monto)||0).toLocaleString("es-CO")+'</div></div>';
+    }
+    transferHtml+='</div>';
+  }
+
+  var cuentasCards = cuentasMemoria.map(function(c,i){
+    var saldoCls = (c.saldo<0 ? ' negativo' : (c.saldo===0 ? ' cero' : ''));
+    var btnEliminar = i>0 ? '<button class="btn-cuenta peligro" onclick="eliminarCuenta('+i+')">🗑️</button>' : '';
+    return ''+
+    '<div class="cuenta-card" data-color="'+(c.color||'teal')+'">'+
+      '<div class="cuenta-header">'+
+        '<div class="cuenta-header-row">'+
+          '<div class="cuenta-tipo-badge">'+(c.tipo||'CUENTA')+'</div>'+
+          '<div style="font-size:20px;">'+tipoEmoji(c.tipo)+'</div>'+
+        '</div>'+
+        '<div class="cuenta-nombre">'+c.nombre+'</div>'+
+      '</div>'+
+      '<div class="cuenta-body">'+
+        '<div class="cuenta-saldo-label">Saldo</div>'+
+        '<div class="cuenta-saldo-val'+saldoCls+'">$'+(Number(c.saldo)||0).toLocaleString("es-CO")+'</div>'+
+        '<div class="cuenta-acciones">'+
+          '<button class="btn-cuenta" onclick="abrirEditarCuenta('+i+')">✏️ Editar</button>'+
+          '<button class="btn-cuenta" onclick="abrirConciliar('+i+')">⚖️ Conciliar</button>'+
+          btnEliminar+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  }).join("");
+
+  var htmlC =
+    '<div class="cuentas-page-header">'+
+      '<div><div class="cuentas-page-title">🏦 Cuentas</div><div class="cuentas-page-subtitle">Administra tus cuentas bancarias</div></div>'+
+      '<div class="cuentas-header-btns">'+
+        '<button class="btn-transferir" onclick="abrirModalTransferir()">⇄ Transferir</button>'+
+        '<button class="btn-nueva-cuenta" onclick="abrirModalNuevaCuenta()">+ Nueva cuenta</button>'+
+      '</div>'+
+    '</div>'+
+    '<div class="saldo-total-banner"><div><div class="saldo-total-label">Saldo total en todas las cuentas</div><div class="saldo-total-val">$'+saldoTotal.toLocaleString("es-CO")+'</div></div></div>'+
+    '<div class="cuentas-grid">'+cuentasCards+'</div>'+
+    '<p class="section-title">Transferencias</p>'+
+    transferHtml;
+
+  var caja = window._cajaCache || {};
+  var sesion = caja.sesion || null;
+  var resumen = caja.resumen || {ventas:0,ventasCount:0,ticketPromedio:0,ingresosExtra:0,egresos:0,esperado:0,diferencia:0,efectivo:0,transferencias:0,otros:0,saldoFinal:0};
+  var movimientos = caja.movimientos || [];
+  var cajaAbierta = !!(sesion && sesion.estado==="abierta");
+
+  var movimientosHtml = "";
+  if(movimientos.length===0){
+    movimientosHtml = '<div class="empty-state"><p>Sin movimientos de caja para hoy.</p></div>';
+  }else{
+    movimientosHtml = '<div class="transferencias-list">';
+    movimientos.forEach(function(m){
+      var color = (m.tipo==="egreso") ? '#f87171' : ((m.tipo==="ingreso"||m.tipo==="apertura") ? '#4ade80' : '#e2e8f0');
+      movimientosHtml += '<div class="transferencia-item">'+
+        '<div>'+
+          '<div class="transf-ruta">'+(m.tipo||'movimiento').toUpperCase()+' <span>'+(m.descripcion||'')+'</span></div>'+
+          '<div class="transf-fecha">'+(m.hora ? new Date(m.hora).toLocaleTimeString("es-CO",{hour:"2-digit",minute:"2-digit"}) : '')+' · '+(m.metodo_pago||'')+'</div>'+
+        '</div>'+
+        '<div>'+
+          '<div class="transf-monto" style="color:'+color+';">'+cajaMoney(m.valor||0)+'</div>'+
+          '<div class="transf-fecha">Saldo: '+cajaMoney(m.saldo_acumulado||0)+'</div>'+
+        '</div>'+
+      '</div>';
+    });
+    movimientosHtml += '</div>';
+  }
+
+  var alertaHtml = '';
+  if(Number(resumen.diferencia||0)!==0){
+    alertaHtml += '<div class="gasto-form" style="border-color:rgba(217,119,6,0.45);background:rgba(217,119,6,0.10);"><h3>⚠️ Diferencia en arqueo</h3><div style="color:#fbbf24;">La diferencia actual es de '+cajaMoney(resumen.diferencia||0)+'.</div></div>';
+  }
+  if(Number(resumen.egresos||0) > Number(resumen.ventas||0)*0.45 && Number(resumen.ventas||0)>0){
+    alertaHtml += '<div class="gasto-form" style="border-color:rgba(239,68,68,0.35);background:rgba(220,38,38,0.10);"><h3>🚨 Gastos elevados</h3><div style="color:#fca5a5;">Tus egresos superan el 45% de las ventas del día.</div></div>';
+  }
+  if(Number(resumen.saldoFinal||0) < 0){
+    alertaHtml += '<div class="gasto-form" style="border-color:rgba(239,68,68,0.35);background:rgba(220,38,38,0.10);"><h3>🚨 Caja negativa</h3><div style="color:#fca5a5;">El saldo final esperado está en negativo.</div></div>';
+  }
+
+  var htmlCaja =
+    '<div class="cuentas-page-header">'+
+      '<div><div class="cuentas-page-title">💵 Caja</div><div class="cuentas-page-subtitle">Control diario de apertura, movimientos y arqueo</div></div>'+
+      '<div class="cuentas-header-btns">'+
+        '<button class="btn-transferir" onclick="cajaCargarResumenDia().then(function(){renderConta(\'caja\');})">↻ Actualizar</button>'+
+        '<button class="btn-transferir" onclick="cajaVerHistorial()">📅 Historial</button>'+
+        '<button class="btn-nueva-cuenta" onclick="cajaExportarCSV()">⬇ Exportar CSV</button>'+
+      '</div>'+
+    '</div>'+
+
+    '<div class="conta-kpi-grid">'+
+      '<div class="kpi-card green"><div class="kpi-label">Ventas del día</div><div class="kpi-value" style="font-size:1.25rem;">'+cajaMoney(resumen.ventas||0)+'</div><div class="kpi-delta neutral">'+(resumen.ventasCount||0)+' venta(s)</div></div>'+
+      '<div class="kpi-card blue"><div class="kpi-label">Ticket promedio</div><div class="kpi-value" style="font-size:1.25rem;">'+cajaMoney(resumen.ticketPromedio||0)+'</div><div class="kpi-delta neutral">Promedio por pedido</div></div>'+
+      '<div class="kpi-card"><div class="kpi-label">% gastos / ventas</div><div class="kpi-value" style="font-size:1.25rem;">'+((Number(resumen.ventas||0)>0)?(((Number(resumen.egresos||0)/Number(resumen.ventas||0))*100).toFixed(1)):"0.0")+'%</div><div class="kpi-delta neutral">Indicador diario</div></div>'+
+      '<div class="kpi-card purple"><div class="kpi-label">Saldo final</div><div class="kpi-value" style="font-size:1.25rem;">'+cajaMoney(resumen.saldoFinal||0)+'</div><div class="kpi-delta neutral">'+(cajaAbierta?'Caja abierta':'Caja cerrada o sin abrir')+'</div></div>'+
+    '</div>'+
+
+    alertaHtml +
+
+    '<div class="charts-grid">'+
+      '<div class="chart-card">'+
+        '<div class="chart-title">🟢 Apertura de caja</div>'+
+        '<div class="gasto-row">'+
+          '<input id="cajaAperturaMonto" type="number" placeholder="Monto inicial / fondo de caja" '+(cajaAbierta?'disabled':'')+'>'+
+          '<input value="'+cajaUsuarioActual()+'" disabled>'+
+          '<button class="btn-add-gasto" onclick="cajaAbrir()" '+(cajaAbierta?'disabled style="opacity:.5;cursor:not-allowed;"':'')+'>Abrir caja</button>'+
+        '</div>'+
+        '<div style="font-size:12px;color:#94a3b8;margin-top:8px;">Estado: <strong style="color:#fff;">'+(sesion ? sesion.estado.toUpperCase() : 'SIN APERTURA')+'</strong></div>'+
+      '</div>'+
+
+      '<div class="chart-card">'+
+        '<div class="chart-title">🔵 Ventas automáticas del día</div>'+
+        '<div class="top-list">'+
+          '<div class="top-item"><div class="top-name">Efectivo</div><div class="top-val">'+cajaMoney(resumen.efectivo||0)+'</div></div>'+
+          '<div class="top-item"><div class="top-name">Transferencia</div><div class="top-val">'+cajaMoney(resumen.transferencias||0)+'</div></div>'+
+          '<div class="top-item"><div class="top-name">Otros</div><div class="top-val">'+cajaMoney(resumen.otros||0)+'</div></div>'+
+        '</div>'+
+      '</div>'+
+    '</div>'+
+
+    '<div class="charts-grid">'+
+      '<div class="chart-card">'+
+        '<div class="chart-title">🟡 Ingresos adicionales</div>'+
+        '<div class="gasto-row">'+
+          '<input id="cajaIngresoTipo" placeholder="Tipo de ingreso">'+
+          '<input id="cajaIngresoDesc" placeholder="Descripción">'+
+          '<input id="cajaIngresoValor" type="number" placeholder="Valor">'+
+          '<button class="btn-add-gasto" onclick="cajaRegistrarIngreso()">Registrar ingreso</button>'+
+        '</div>'+
+      '</div>'+
+
+      '<div class="chart-card">'+
+        '<div class="chart-title">🔴 Egresos de caja</div>'+
+        '<div class="gasto-row">'+
+          '<select id="cajaEgresoCat"><option>Costo</option><option>Gasto</option></select>'+
+          '<input id="cajaEgresoDesc" placeholder="Descripción">'+
+          '<input id="cajaEgresoValor" type="number" placeholder="Valor">'+
+          '<select id="cajaEgresoMetodo"><option>Efectivo</option><option>Transferencia</option><option>Otro</option></select>'+
+          '<button class="btn-add-gasto" onclick="cajaRegistrarEgreso()">Registrar egreso</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>'+
+
+    '<p class="section-title">Resumen del día</p>'+
+    '<div class="conta-kpi-grid">'+
+      '<div class="kpi-card green"><div class="kpi-label">Total ingresos</div><div class="kpi-value" style="font-size:1.2rem;">'+cajaMoney((Number(resumen.ventas||0)+Number(resumen.ingresosExtra||0)))+'</div><div class="kpi-delta neutral">Ventas + ingresos extra</div></div>'+
+      '<div class="kpi-card"><div class="kpi-label">Total egresos</div><div class="kpi-value" style="font-size:1.2rem;color:#f87171;">'+cajaMoney(resumen.egresos||0)+'</div><div class="kpi-delta neutral">Costos y gastos</div></div>'+
+      '<div class="kpi-card '+((Number(resumen.ventas||0)-Number(resumen.egresos||0))>=0?'green':'')+'"><div class="kpi-label">Utilidad del día</div><div class="kpi-value" style="font-size:1.2rem;">'+cajaMoney((Number(resumen.ventas||0)-Number(resumen.egresos||0)))+'</div><div class="kpi-delta neutral">Sin contar apertura</div></div>'+
+      '<div class="kpi-card blue"><div class="kpi-label">Esperado en caja</div><div class="kpi-value" style="font-size:1.2rem;">'+cajaMoney(resumen.esperado||0)+'</div><div class="kpi-delta neutral">Base para arqueo</div></div>'+
+    '</div>'+
+
+    '<div class="gasto-form">'+
+      '<h3>⚖️ Arqueo y cierre</h3>'+
+      '<div class="gasto-row">'+
+        '<input value="'+cajaMoney(resumen.esperado||0)+'" disabled>'+
+        '<input id="cajaContadoReal" type="number" placeholder="Dinero contado real">'+
+        '<input value="'+cajaMoney(resumen.diferencia||0)+'" disabled>'+
+        '<button class="btn-add-gasto" onclick="cajaCerrar()">Cerrar caja</button>'+
+      '</div>'+
+      '<div style="font-size:12px;color:#94a3b8;margin-top:8px;">Esperado · Contado real · Diferencia</div>'+
+    '</div>'+
+
+    '<p class="section-title">Movimientos de caja</p>'+
+    movimientosHtml;
+
+  var contenido = htmlR;
+  if(tabActiva==="cuentas") contenido=htmlC;
+  if(tabActiva==="caja") contenido=htmlCaja;
+
+  body.innerHTML = tabsHtml + contenido;
+}
+
+function agregarGasto(){
+  let desc=document.getElementById("gastoDesc").value.trim();
+  let cat=document.getElementById("gastoCat").value;
+  let monto=Number(document.getElementById("gastoMonto").value)||0;
+  if(!desc||monto<=0){alert("Completa descripción y valor");return;}
+  gastosMemoria.push({descripcion:desc,categoria:cat,monto});
+  try{ sessionStorage.setItem("gastos",JSON.stringify(gastosMemoria)); }catch(e){}
+  renderConta("resumen");
+}
 
 function eliminarGasto(i){
   gastosMemoria.splice(i,1);
-  try{ sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria)); }catch(e){}
-  actualizarContaKPIs();
-  actualizarGastosList();
+  try{ sessionStorage.setItem("gastos",JSON.stringify(gastosMemoria)); }catch(e){}
+  renderConta("resumen");
 }
-
-
 
 
 // Close panel clicking outside
