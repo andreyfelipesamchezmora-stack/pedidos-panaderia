@@ -681,9 +681,7 @@ color:white;
 margin-bottom:10px;
 color-scheme: dark;
 ">
-<button onclick="nuevoCliente()">➕ Agregar Cliente</button>
-<div class="side-actions">
-  <button class="side-action-btn" type="button" id="btnEstadisticas">
+<button class="side-action-btn" type="button" id="btnEstadisticas">
   <i class="fa-solid fa-chart-line"></i>
   <span>Estadísticas</span>
 </button>
@@ -821,8 +819,8 @@ COBRAR: $0
         <p id="erpPanelSubtitle">Análisis dinámico conectado a Supabase.</p>
       </div>
       <button class="erp-close" type="button" onclick="cerrarPanelERP()" aria-label="Cerrar panel">
-        <i class="fa-solid fa-xmark"></i>
-      </button>
+  <i class="fa-solid fa-xmark"></i>
+</button>
     </div>
 
     <div class="erp-body" id="erpPanelBody">
@@ -2775,6 +2773,39 @@ document.addEventListener("keydown", function(e){
     cerrarPanelERP();
   }
 });
+window.addEventListener("load", function () {
+  const btnEstadisticas = document.getElementById("btnEstadisticas");
+  const btnContabilidad = document.getElementById("btnContabilidad");
+  const erpOverlay = document.getElementById("erpOverlay");
+  const erpBody = document.getElementById("erpPanelBody");
+  const erpTitle = document.getElementById("erpPanelTitle");
+  const erpSubtitle = document.getElementById("erpPanelSubtitle");
+
+  if (btnEstadisticas) {
+    btnEstadisticas.onclick = function () {
+      alert("clic estadísticas");
+      if (erpTitle) erpTitle.innerText = "Estadísticas";
+      if (erpSubtitle) erpSubtitle.innerText = "Panel de prueba";
+      if (erpBody) erpBody.innerHTML = "<div class='empty-state'>Sí está funcionando el botón Estadísticas</div>";
+      if (erpOverlay) erpOverlay.classList.add("show");
+    };
+  }
+
+  if (btnContabilidad) {
+    btnContabilidad.onclick = function () {
+      alert("clic contabilidad");
+      if (erpTitle) erpTitle.innerText = "Contabilidad";
+      if (erpSubtitle) erpSubtitle.innerText = "Panel de prueba";
+      if (erpBody) erpBody.innerHTML = "<div class='empty-state'>Sí está funcionando el botón Contabilidad</div>";
+      if (erpOverlay) erpOverlay.classList.add("show");
+    };
+  }
+});
+
+function cerrarPanelERP(){
+  const erpOverlay = document.getElementById("erpOverlay");
+  if (erpOverlay) erpOverlay.classList.remove("show");
+}
 </script>
 </body>
 </html>
