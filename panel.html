@@ -1487,21 +1487,24 @@ function renderConta(tab){
   }
 }
 
-
 function contaTab(tab){
-  let tabResumen = document.getElementById("contaTabResumen");
-  let tabCuentas = document.getElementById("contaTabCuentas");
+  let tabR = document.getElementById("contaTabResumen");
+  let tabC = document.getElementById("contaTabCuentas");
   let btnR = document.getElementById("ctabResumen");
   let btnC = document.getElementById("ctabCuentas");
+  if(!tabR || !tabC) return;
 
   btnR.classList.toggle("active", tab === "resumen");
   btnC.classList.toggle("active", tab === "cuentas");
-  tabResumen.style.display = tab === "resumen" ? "block" : "none";
-  tabCuentas.style.display = tab === "cuentas" ? "block" : "none";
+  tabR.style.display = tab === "resumen" ? "block" : "none";
+  tabC.style.display = tab === "cuentas" ? "block" : "none";
 
-  if(tab === "cuentas") _renderCuentasTab();
+  if(tab === "cuentas"){
+    setTimeout(function(){
+      _renderCuentasTab();
+    }, 50);
+  }
 }
-
 
 function _actualizarContaKPIs(){
   let ingresos = window._ingresosCache || 0;
@@ -1540,38 +1543,47 @@ function _actualizarGastosList(){
 
 function _renderCuentasTab(){
   let cont = document.getElementById("contaCuentasContenido");
-  if(!cont) return;
+  if(!cont){
+    console.error("❌ contaCuentasContenido NO existe");
+    return;
+  }
+  if(typeof cuentasMemoria === "undefined" || !Array.isArray(cuentasMemoria)){
+    cont.innerHTML = '<div style="padding:20px;color:#f87171;">Error: cuentasMemoria no cargada</div>';
+    return;
+  }
 
-  let saldoTotal = cuentasMemoria.reduce((s,c) => s + c.saldo, 0);
+  let saldoTotal = cuentasMemoria.reduce((s,c) => s + (c.saldo||0), 0);
 
-  let tarjetas = cuentasMemoria.map((c, ci) => {
-    let sc = c.saldo === 0 ? "cero" : (c.saldo < 0 ? "negativo" : "");
-    let btnEliminar = ci > 0
-      ? `<button class="btn-cuenta peligro" onclick="eliminarCuenta(${ci})" style="flex:0;padding:7px 10px;">🗑️</button>`
-      : "";
-    return `
-      <div class="cuenta-card" data-color="${c.color || 'gray'}">
-        <div class="cuenta-header">
-          <div class="cuenta-header-row">
-            <span style="font-size:22px;">${tipoEmoji(c.tipo)}</span>
-            <span class="cuenta-tipo-badge">${c.tipo}</span>
-          </div>
-          <div class="cuenta-nombre">${c.nombre}</div>
-        </div>
-        <div class="cuenta-body">
-          <div class="cuenta-saldo-label">Saldo</div>
-          <div class="cuenta-saldo-val ${sc}">$${c.saldo.toLocaleString("es-CO")}</div>
-          <div class="cuenta-acciones">
-            <button class="btn-cuenta" onclick="abrirEditarCuenta(${ci})">✏️ Editar</button>
-            <button class="btn-cuenta" onclick="abrirConciliar(${ci})">⚖️ Conciliar</button>
-            ${btnEliminar}
-          </div>
-        </div>
-      </div>`;
-  }).join("");
+  let tarjetas = cuentasMemoria.length === 0
+    ? '<div style="padding:20px;color:#64748b;text-align:center;">No hay cuentas registradas</div>'
+    : cuentasMemoria.map((c,ci) => {
+        let sc = c.saldo === 0 ? "cero" : (c.saldo < 0 ? "negativo" : "");
+        let btnEl = ci > 0
+          ? `<button class="btn-cuenta peligro" onclick="eliminarCuenta(${ci})" style="flex:0;padding:7px 10px;">🗑️</button>`
+          : "";
+        return `
+          <div class="cuenta-card" data-color="${c.color||'gray'}">
+            <div class="cuenta-header">
+              <div class="cuenta-header-row">
+                <span style="font-size:22px;">${tipoEmoji(c.tipo)}</span>
+                <span class="cuenta-tipo-badge">${c.tipo}</span>
+              </div>
+              <div class="cuenta-nombre">${c.nombre}</div>
+            </div>
+            <div class="cuenta-body">
+              <div class="cuenta-saldo-label">Saldo</div>
+              <div class="cuenta-saldo-val ${sc}">$${(c.saldo||0).toLocaleString("es-CO")}</div>
+              <div class="cuenta-acciones">
+                <button class="btn-cuenta" onclick="abrirEditarCuenta(${ci})">✏️ Editar</button>
+                <button class="btn-cuenta" onclick="abrirConciliar(${ci})">⚖️ Conciliar</button>
+                ${btnEl}
+              </div>
+            </div>
+          </div>`;
+      }).join("");
 
   let hist = "";
-  if(transferenciasMem.length > 0){
+  if(typeof transferenciasMem !== "undefined" && transferenciasMem.length > 0){
     let filas = transferenciasMem.slice().reverse().map(t =>
       `<div class="transferencia-item">
         <div class="transf-ruta">${t.origen} <span>→</span> ${t.destino}</div>
@@ -1581,8 +1593,7 @@ function _renderCuentasTab(){
         </div>
       </div>`
     ).join("");
-    hist = `
-      <p class="section-title">Historial de Transferencias</p>
+    hist = `<p class="section-title">Historial de Transferencias</p>
       <div class="chart-card full-w" style="padding:0;overflow:hidden;">
         <div class="transferencias-list">${filas}</div>
       </div>`;
