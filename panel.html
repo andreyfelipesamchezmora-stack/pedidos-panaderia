@@ -769,7 +769,10 @@ let actualId = null;
 let numeroTicket = Number(localStorage.getItem("ticketNumero")) || 1;
 
 // Gastos en memoria
-let gastosMemoria = JSON.parse(sessionStorage.getItem("gastos") || "[]");
+let gastosMemoria = [];
+try { gastosMemoria = JSON.parse(sessionStorage.getItem("gastos") || "[]") || []; } catch(e){ gastosMemoria = []; }
+if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
+window._ingresosCache = 0;
 
 // =========== IMAGENES Y PRODUCTOS (ORIGINAL) ===========
 const imagenes = {
@@ -1431,19 +1434,33 @@ function mostrarRango(){
 // =========== MÓDULO CONTABILIDAD ===========
 
 async function abrirConta(){
-  let panel=document.getElementById("panelConta");
-  panel.style.display="flex";
+  let panel = document.getElementById("panelConta");
+  panel.style.display = "flex";
   panel.classList.add("open");
-  _dibujarConta("resumen", 0);
+
+  // Mostrar skeleton mientras carga
+  document.getElementById("contaBody").innerHTML = `
+    <div class="loading-skeleton">
+      <div class="skel skel-h"></div>
+      <div class="skel skel-c"></div>
+      <div class="skel skel-l"></div>
+      <div class="skel skel-l"></div>
+    </div>`;
+
   try {
-    var fechaHoy=new Date().toISOString().split("T")[0];
-    var mesInicio=fechaHoy.slice(0,7)+"-01";
-    var res=await db.from("pedidos").select("total").gte("fecha",mesInicio).lte("fecha",fechaHoy);
-    if(res&&res.data){
-      window._ingresosCache=res.data.reduce(function(s,r){return s+(Number(r.total)||0);},0);
-      if(document.getElementById("contaBody")) _dibujarConta("resumen",window._ingresosCache);
+    let fechaHoy = new Date().toISOString().split("T")[0];
+    let mesInicio = fechaHoy.slice(0,7) + "-01";
+    let res = await db.from("pedidos").select("total").gte("fecha", mesInicio).lte("fecha", fechaHoy);
+    if(res && res.data){
+      window._ingresosCache = res.data.reduce((s,r) => s + (Number(r.total)||0), 0);
+    } else {
+      window._ingresosCache = 0;
     }
-  } catch(e){}
+  } catch(e){
+    window._ingresosCache = 0;
+  }
+
+  _dibujarConta("resumen", window._ingresosCache);
 }
 
 function renderConta(tab){ _dibujarConta(tab||"resumen", window._ingresosCache||0); }
@@ -1474,20 +1491,23 @@ function _dibujarConta(tabActiva, ingresos){
 }
 
 function agregarGasto(){
-  let desc=document.getElementById("gastoDesc").value.trim();
-  let cat=document.getElementById("gastoCat").value;
-  let monto=Number(document.getElementById("gastoMonto").value)||0;
-  if(!desc||monto<=0){alert("Completa descripción y valor");return;}
-  gastosMemoria.push({descripcion:desc,categoria:cat,monto});
-  try{ sessionStorage.setItem("gastos",JSON.stringify(gastosMemoria)); }catch(e){}
-  renderConta();
+  let desc = document.getElementById("gastoDesc").value.trim();
+  let cat = document.getElementById("gastoCat").value;
+  let monto = Number(document.getElementById("gastoMonto").value)||0;
+  if(!desc || monto<=0){ alert("Completa descripción y valor"); return; }
+  if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
+  gastosMemoria.push({descripcion:desc, categoria:cat, monto:monto});
+  try{ sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria)); }catch(e){}
+  _dibujarConta("resumen", window._ingresosCache||0);
 }
+
 
 function eliminarGasto(i){
   gastosMemoria.splice(i,1);
-  try{ sessionStorage.setItem("gastos",JSON.stringify(gastosMemoria)); }catch(e){}
-  renderConta();
+  try{ sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria)); }catch(e){}
+  _dibujarConta("resumen", window._ingresosCache||0);
 }
+
 
 // Close panel clicking outside
 document.getElementById("panelStats").addEventListener("click",function(e){
