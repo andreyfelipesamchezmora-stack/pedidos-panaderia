@@ -1432,7 +1432,25 @@ function mostrarRango(){
 }
 
 // =========== MÓDULO CONTABILIDAD ===========
+// ===== VARIABLES MÓDULO CUENTAS =====
+let cuentasMemoria = [
+  {nombre:"CUENTA BANCOLOMBIA", tipo:"CUENTA CORRIENTE", color:"teal", saldo:0},
+  {nombre:"Efectivo", tipo:"EFECTIVO", color:"orange", saldo:0}
+];
 
+let transferenciasMem = [];
+
+function tipoEmoji(tipo){
+  const m = {
+    "CUENTA CORRIENTE":"🏛️",
+    "CUENTA DE AHORRO":"🐖",
+    "NEQUI":"📱",
+    "DAVIPLATA":"📱",
+    "EFECTIVO":"💵",
+    "OTRO":"💳"
+  };
+  return m[tipo] || "💳";
+}
 // ===== CONTABILIDAD =====
 let _contaIniciado = false;
 
