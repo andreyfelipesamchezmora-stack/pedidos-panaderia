@@ -1517,6 +1517,8 @@ window._cajaCache = {
 };
 
 function cajaFechaHoy(){
+  var f = document.getElementById("fecha");
+  if(f && f.value) return f.value;
   return new Date().toISOString().split("T")[0];
 }
 
@@ -1543,22 +1545,13 @@ async function cajaBuscarSesionAbierta(){
 async function cajaVentasDelDia(){
   var fecha = cajaFechaHoy();
   var res = await db.from("pedidos")
-    .select("id,total,fecha,cliente,metodo_pago,created_at")
-    .eq("fecha", fecha)
-    .order("created_at", { ascending: false });
+    .select("*")
+    .eq("fecha", fecha);
 
   if(res.error) throw res.error;
 
   var rows = res.data || [];
-  var unicos = {};
-  rows.forEach(function(r){
-    var key = (r.cliente||"") + "|" + (r.fecha||"");
-    if(!unicos[key]){
-      unicos[key] = r;
-    }
-  });
-
-  return Object.keys(unicos).map(function(k){ return unicos[k]; });
+  return depurarPedidosUnicos(rows);
 }
 
 async function cajaMovimientosDelDia(cajaId){
