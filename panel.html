@@ -1458,44 +1458,8 @@ function tipoEmoji(tipo){
   return m[tipo] || "💳";
 }
 // ===== CONTABILIDAD =====
-let _contaIniciado = false;
-
-async function abrirConta(){
-  let panel=document.getElementById("panelConta");
-  panel.style.display="flex";
-  panel.classList.add("open");
-  _dibujarConta("resumen", window._ingresosCache||0);
-
-  try{
-    var fechaHoy=new Date().toISOString().split("T")[0];
-    var mesInicio=fechaHoy.slice(0,7)+"-01";
-
-    var resMes=await db.from("pedidos")
-      .select("total")
-      .gte("fecha",mesInicio)
-      .lte("fecha",fechaHoy);
-
-    if(resMes && resMes.data){
-      window._ingresosCache=resMes.data.reduce(function(s,r){
-        return s+(Number(r.total)||0);
-      },0);
-    }else{
-      window._ingresosCache=0;
-    }
-
-    await cajaCargarResumenDia();
-    if(document.getElementById("contaBody")){
-      _dibujarConta("resumen", window._ingresosCache||0);
-    }
-  }catch(e){
-    console.error("Error abriendo contabilidad:",e);
-  }
-}
-
-function renderConta(tab){
-  _dibujarConta(tab||"resumen", window._ingresosCache||0);
-}
-
+let contaIniciado = false;
+window._ingresosCache = 0;
 window._cajaCache = {
   sesion: null,
   movimientos: [],
@@ -1515,6 +1479,23 @@ window._cajaCache = {
     saldoFinal: 0
   }
 };
+
+function depurarPedidosUnicos(lista){
+  if(!Array.isArray(lista)) return [];
+  var mapa = {};
+  lista.forEach(function(p){
+    var key = (p.cliente || "") + "|" + (p.fecha || "");
+    var actual = mapa[key];
+    if(!actual){
+      mapa[key] = p;
+      return;
+    }
+    var a = new Date(actual.created_at || actual.updated_at || 0).getTime();
+    var b = new Date(p.created_at || p.updated_at || 0).getTime();
+    if(b >= a) mapa[key] = p;
+  });
+  return Object.keys(mapa).map(function(k){ return mapa[k]; });
+}
 
 function cajaFechaHoy(){
   var f = document.getElementById("fecha");
@@ -1549,9 +1530,7 @@ async function cajaVentasDelDia(){
     .eq("fecha", fecha);
 
   if(res.error) throw res.error;
-
-  var rows = res.data || [];
-  return depurarPedidosUnicos(rows);
+  return depurarPedidosUnicos(res.data || []);
 }
 
 async function cajaMovimientosDelDia(cajaId){
@@ -1633,7 +1612,7 @@ async function cajaCargarResumenDia(){
     };
     return window._cajaCache;
   }catch(e){
-    console.error("Error cargando caja:",e);
+    console.error("Error cargando caja:", e);
     window._cajaCache = {
       sesion: null,
       ventasHoy: [],
@@ -1645,6 +1624,36 @@ async function cajaCargarResumenDia(){
     };
     return window._cajaCache;
   }
+}
+
+async function cargarIngresosMes(){
+  try{
+    let fechaHoy = cajaFechaHoy();
+    let mesInicio = fechaHoy.slice(0,7) + "-01";
+    let res = await db.from("pedidos").select("*").gte("fecha", mesInicio).lte("fecha", fechaHoy);
+    let limpios = depurarPedidosUnicos((res && res.data) ? res.data : []);
+    window._ingresosCache = limpios.reduce(function(s,r){
+      return s + (Number(r.total)||0);
+    },0);
+  }catch(e){
+    console.error("Error ingresos mes:",e);
+    window._ingresosCache = 0;
+  }
+}
+
+async function abrirConta(){
+  let panel = document.getElementById("panelConta");
+  panel.style.display = "flex";
+  panel.classList.add("open");
+  _dibujarConta("resumen", window._ingresosCache||0);
+
+  await cargarIngresosMes();
+  await cajaCargarResumenDia();
+  _dibujarConta("resumen", window._ingresosCache||0);
+}
+
+function renderConta(tab){
+  _dibujarConta(tab||"resumen", window._ingresosCache||0);
 }
 
 async function cajaAbrir(){
@@ -1670,13 +1679,13 @@ async function cajaAbrir(){
 
     if(ins.error){
       console.error("Error insertando caja_sesiones:", ins.error);
-      alert("No se pudo abrir la caja. Revisa políticas RLS o columnas obligatorias.");
+      alert("No se pudo abrir la caja");
       return;
     }
 
     var sesion = await cajaBuscarSesionAbierta();
     if(!sesion || !sesion.id){
-      alert("La caja se intentó abrir, pero no se pudo recuperar la sesión creada.");
+      alert("No se pudo recuperar la sesión de caja");
       return;
     }
 
@@ -1695,25 +1704,20 @@ async function cajaAbrir(){
     });
 
     if(mov.error){
-      console.error("Error insertando movimiento de apertura:", mov.error);
-      alert("La sesión se creó pero falló el movimiento de apertura.");
+      console.error("Error insertando movimiento:", mov.error);
+      alert("Se abrió la sesión pero falló el movimiento de apertura");
       return;
     }
 
-    var log = await db.from("cajas_logs").insert({
+    await db.from("cajas_logs").insert({
       caja_id: sesion.id,
       accion: "apertura",
       detalle: "Caja abierta con fondo inicial",
       usuario: usuario
     });
 
-    if(log.error){
-      console.error("Error insertando log de apertura:", log.error);
-    }
-
     await cajaCargarResumenDia();
     renderConta("caja");
-    alert("Caja abierta correctamente");
   }catch(e){
     console.error("Error general al abrir caja:", e);
     alert("No se pudo abrir la caja");
@@ -1759,13 +1763,12 @@ async function cajaRegistrarIngreso(){
       saldo_acumulado: nuevoSaldo,
       usuario: usuario,
       origen: "manual"
-    }).select().single();
+    });
 
     if(ins.error) throw ins.error;
 
     await db.from("cajas_logs").insert({
       caja_id: sesion.id,
-      movimiento_id: ins.data.id,
       accion: "ingreso",
       detalle: descripcion + " / " + tipo,
       usuario: usuario
@@ -1823,10 +1826,11 @@ async function cajaRegistrarEgreso(){
       saldo_acumulado: nuevoSaldo,
       usuario: usuario,
       origen: "contabilidad"
-    }).select().single();
+    });
 
     if(ins.error) throw ins.error;
 
+    if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
     gastosMemoria.push({
       descripcion: descripcion,
       categoria: categoria,
@@ -1839,7 +1843,6 @@ async function cajaRegistrarEgreso(){
 
     await db.from("cajas_logs").insert({
       caja_id: sesion.id,
-      movimiento_id: ins.data.id,
       accion: "egreso",
       detalle: descripcion + " / " + categoria,
       usuario: usuario
@@ -1849,6 +1852,7 @@ async function cajaRegistrarEgreso(){
     document.getElementById("cajaEgresoValor").value="";
 
     await cajaCargarResumenDia();
+    await cargarIngresosMes();
     renderConta("caja");
   }catch(e){
     console.error(e);
@@ -1952,9 +1956,7 @@ async function cajaExportarCSV(){
     var sesion = window._cajaCache.sesion || await cajaBuscarSesionAbierta();
     var movimientos = window._cajaCache.movimientos || [];
     var resumen = window._cajaCache.resumen || {};
-    var filas = [
-      ["fecha","tipo","categoria","descripcion","metodo_pago","valor","saldo_acumulado","usuario"]
-    ];
+    var filas = [["fecha","tipo","categoria","descripcion","metodo_pago","valor","saldo_acumulado","usuario"]];
 
     movimientos.forEach(function(m){
       filas.push([
@@ -2004,13 +2006,13 @@ function _dibujarConta(tabActiva, ingresos){
   var body=document.getElementById("contaBody");
   if(!body){return;}
 
-  var totalGastos=gastosMemoria.reduce(function(s,g){return s+(Number(g.monto)||0);},0);
+  var totalGastos=(Array.isArray(gastosMemoria)?gastosMemoria:[]).reduce(function(s,g){return s+(Number(g.monto)||0);},0);
   var utilidad=ingresos-totalGastos;
   var margen=ingresos>0?((utilidad/ingresos)*100).toFixed(1):"0.0";
-  var saldoTotal=cuentasMemoria.reduce(function(s,c){return s+(Number(c.saldo)||0);},0);
+  var saldoTotal=(Array.isArray(cuentasMemoria)?cuentasMemoria:[]).reduce(function(s,c){return s+(Number(c.saldo)||0);},0);
 
   var gastosHtml="";
-  if(gastosMemoria.length===0){
+  if(!Array.isArray(gastosMemoria) || gastosMemoria.length===0){
     gastosHtml='<div style="padding:20px;text-align:center;color:#64748b;">Sin gastos registrados</div>';
   }else{
     for(var gi=0;gi<gastosMemoria.length;gi++){
@@ -2032,7 +2034,7 @@ function _dibujarConta(tabActiva, ingresos){
     '<p class="section-title">Resumen del mes</p>'+
     '<div class="conta-kpi-grid">'+
       '<div class="kpi-card green"><div class="kpi-label">Ingresos</div><div class="kpi-value" style="font-size:1.3rem;">$'+(Number(ingresos)||0).toLocaleString("es-CO")+'</div><div class="kpi-delta neutral">Ventas del mes</div></div>'+
-      '<div class="kpi-card"><div class="kpi-label">Gastos</div><div class="kpi-value" style="font-size:1.3rem;color:#f87171;">$'+totalGastos.toLocaleString("es-CO")+'</div><div class="kpi-delta neutral">'+gastosMemoria.length+' registro(s)</div></div>'+
+      '<div class="kpi-card"><div class="kpi-label">Gastos</div><div class="kpi-value" style="font-size:1.3rem;color:#f87171;">$'+totalGastos.toLocaleString("es-CO")+'</div><div class="kpi-delta neutral">'+(Array.isArray(gastosMemoria)?gastosMemoria.length:0)+' registro(s)</div></div>'+
       '<div class="kpi-card '+(utilidad>=0?"green":"")+'"><div class="kpi-label">Utilidad</div><div class="kpi-value'+utilClass+'" style="font-size:1.3rem;">$'+utilidad.toLocaleString("es-CO")+'</div><div class="kpi-delta neutral">Margen '+margen+'%</div></div>'+
       '<div class="kpi-card blue"><div class="kpi-label">Saldo cuentas</div><div class="kpi-value" style="font-size:1.3rem;">$'+saldoTotal.toLocaleString("es-CO")+'</div><div class="kpi-delta neutral">Caja + bancos</div></div>'+
     '</div>'+
@@ -2054,7 +2056,7 @@ function _dibujarConta(tabActiva, ingresos){
     '</div>';
 
   var transferHtml="";
-  if(transferenciasMem.length===0){
+  if(!Array.isArray(transferenciasMem) || transferenciasMem.length===0){
     transferHtml='<div class="empty-state"><p>Sin transferencias registradas.</p></div>';
   }else{
     transferHtml='<div class="transferencias-list">';
@@ -2065,7 +2067,7 @@ function _dibujarConta(tabActiva, ingresos){
     transferHtml+='</div>';
   }
 
-  var cuentasCards = cuentasMemoria.map(function(c,i){
+  var cuentasCards = (Array.isArray(cuentasMemoria)?cuentasMemoria:[]).map(function(c,i){
     var saldoCls = (c.saldo<0 ? ' negativo' : (c.saldo===0 ? ' cero' : ''));
     var btnEliminar = i>0 ? '<button class="btn-cuenta peligro" onclick="eliminarCuenta('+i+')">🗑️</button>' : '';
     return ''+
@@ -2129,17 +2131,6 @@ function _dibujarConta(tabActiva, ingresos){
     movimientosHtml += '</div>';
   }
 
-  var alertaHtml = '';
-  if(Number(resumen.diferencia||0)!==0){
-    alertaHtml += '<div class="gasto-form" style="border-color:rgba(217,119,6,0.45);background:rgba(217,119,6,0.10);"><h3>⚠️ Diferencia en arqueo</h3><div style="color:#fbbf24;">La diferencia actual es de '+cajaMoney(resumen.diferencia||0)+'.</div></div>';
-  }
-  if(Number(resumen.egresos||0) > Number(resumen.ventas||0)*0.45 && Number(resumen.ventas||0)>0){
-    alertaHtml += '<div class="gasto-form" style="border-color:rgba(239,68,68,0.35);background:rgba(220,38,38,0.10);"><h3>🚨 Gastos elevados</h3><div style="color:#fca5a5;">Tus egresos superan el 45% de las ventas del día.</div></div>';
-  }
-  if(Number(resumen.saldoFinal||0) < 0){
-    alertaHtml += '<div class="gasto-form" style="border-color:rgba(239,68,68,0.35);background:rgba(220,38,38,0.10);"><h3>🚨 Caja negativa</h3><div style="color:#fca5a5;">El saldo final esperado está en negativo.</div></div>';
-  }
-
   var htmlCaja =
     '<div class="cuentas-page-header">'+
       '<div><div class="cuentas-page-title">💵 Caja</div><div class="cuentas-page-subtitle">Control diario de apertura, movimientos y arqueo</div></div>'+
@@ -2156,8 +2147,6 @@ function _dibujarConta(tabActiva, ingresos){
       '<div class="kpi-card"><div class="kpi-label">% gastos / ventas</div><div class="kpi-value" style="font-size:1.25rem;">'+((Number(resumen.ventas||0)>0)?(((Number(resumen.egresos||0)/Number(resumen.ventas||0))*100).toFixed(1)):"0.0")+'%</div><div class="kpi-delta neutral">Indicador diario</div></div>'+
       '<div class="kpi-card purple"><div class="kpi-label">Saldo final</div><div class="kpi-value" style="font-size:1.25rem;">'+cajaMoney(resumen.saldoFinal||0)+'</div><div class="kpi-delta neutral">'+(cajaAbierta?'Caja abierta':'Caja cerrada o sin abrir')+'</div></div>'+
     '</div>'+
-
-    alertaHtml +
 
     '<div class="charts-grid">'+
       '<div class="chart-card">'+
@@ -2237,12 +2226,14 @@ function agregarGasto(){
   let cat=document.getElementById("gastoCat").value;
   let monto=Number(document.getElementById("gastoMonto").value)||0;
   if(!desc||monto<=0){alert("Completa descripción y valor");return;}
+  if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
   gastosMemoria.push({descripcion:desc,categoria:cat,monto});
   try{ sessionStorage.setItem("gastos",JSON.stringify(gastosMemoria)); }catch(e){}
   renderConta("resumen");
 }
 
 function eliminarGasto(i){
+  if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
   gastosMemoria.splice(i,1);
   try{ sessionStorage.setItem("gastos",JSON.stringify(gastosMemoria)); }catch(e){}
   renderConta("resumen");
