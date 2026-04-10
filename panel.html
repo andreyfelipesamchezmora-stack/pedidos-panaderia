@@ -2654,73 +2654,26 @@ document.addEventListener("keydown", function(e){
         }
     }
 });
-function openERPPanel(tipo){
-  const overlay = document.getElementById("erpOverlay");
-  const title = document.getElementById("erpPanelTitle");
-  const subtitle = document.getElementById("erpPanelSubtitle");
-  const badge = document.getElementById("erpPanelBadge");
-  const body = document.getElementById("erpPanelBody");
+/* ===== PANEL ERP SIMPLE Y FUNCIONAL ===== */
 
-  if(!overlay || !title || !subtitle || !badge || !body){
-    alert("Falta el panel ERP en el HTML");
-    return;
-  }
-
-  if(tipo === "estadisticas"){
-    title.innerText = "Estadísticas";
-    subtitle.innerText = "Vista inicial del módulo estadístico.";
-    badge.innerHTML = '<i class="fa-solid fa-chart-line"></i> Estadísticas';
-    body.innerHTML = `
-      <div class="empty-state">
-        <i class="fa-solid fa-chart-column" style="font-size:26px;margin-bottom:10px;"></i>
-        <div>El panel de estadísticas ya está conectado visualmente.</div>
-      </div>
-    `;
-  } else {
-    title.innerText = "Contabilidad";
-    subtitle.innerText = "Vista inicial del módulo contable.";
-    badge.innerHTML = '<i class="fa-solid fa-wallet"></i> Contabilidad';
-    body.innerHTML = `
-      <div class="empty-state">
-        <i class="fa-solid fa-wallet" style="font-size:26px;margin-bottom:10px;"></i>
-        <div>El panel de contabilidad ya está conectado visualmente.</div>
-      </div>
-    `;
-  }
-
-  overlay.classList.add("show");
-}
-
-function closeERPPanel(){
-  const overlay = document.getElementById("erpOverlay");
-  if(overlay){
-    overlay.classList.remove("show");
-  }
-}
-
-function handleOverlayClose(event){
-  if(event.target && event.target.id === "erpOverlay"){
-    closeERPPanel();
-  }
-}
+const btnEstadisticas = document.getElementById("btnEstadisticas");
+const btnContabilidad = document.getElementById("btnContabilidad");
 const erpOverlay = document.getElementById("erpOverlay");
 const erpTitle = document.getElementById("erpPanelTitle");
 const erpSubtitle = document.getElementById("erpPanelSubtitle");
 const erpBadge = document.getElementById("erpPanelBadge");
 const erpBody = document.getElementById("erpPanelBody");
-const btnEstadisticas = document.getElementById("btnEstadisticas");
-const btnContabilidad = document.getElementById("btnContabilidad");
 
 function abrirPanelERP(tipo){
   if(!erpOverlay || !erpTitle || !erpSubtitle || !erpBadge || !erpBody){
-    alert("No se encontró el panel ERP");
+    alert("No se encontró el panel ERP en el HTML");
     return;
   }
 
   if(tipo === "estadisticas"){
     erpTitle.textContent = "Estadísticas";
     erpSubtitle.textContent = "Vista inicial del módulo estadístico";
-    erpBadge.innerHTML = '<i class="fa-solid fa-chart-line"></i> Estadísticas';
+    erpBadge.innerHTML = `<i class="fa-solid fa-chart-line"></i> Estadísticas`;
     erpBody.innerHTML = `
       <div class="empty-state">
         <i class="fa-solid fa-chart-column" style="font-size:26px;margin-bottom:10px;"></i>
@@ -2730,7 +2683,7 @@ function abrirPanelERP(tipo){
   } else {
     erpTitle.textContent = "Contabilidad";
     erpSubtitle.textContent = "Vista inicial del módulo contable";
-    erpBadge.innerHTML = '<i class="fa-solid fa-wallet"></i> Contabilidad';
+    erpBadge.innerHTML = `<i class="fa-solid fa-wallet"></i> Contabilidad`;
     erpBody.innerHTML = `
       <div class="empty-state">
         <i class="fa-solid fa-wallet" style="font-size:26px;margin-bottom:10px;"></i>
@@ -2746,7 +2699,13 @@ function abrirPanelERP(tipo){
 function cerrarPanelERP(){
   if(erpOverlay){
     erpOverlay.classList.remove("show");
-    document.body.style.overflow = "";
+  }
+  document.body.style.overflow = "";
+}
+
+function handleOverlayClose(event){
+  if(event.target === erpOverlay){
+    cerrarPanelERP();
   }
 }
 
@@ -2759,14 +2718,6 @@ if(btnEstadisticas){
 if(btnContabilidad){
   btnContabilidad.addEventListener("click", function(){
     abrirPanelERP("contabilidad");
-  });
-}
-
-if(erpOverlay){
-  erpOverlay.addEventListener("click", function(e){
-    if(e.target === erpOverlay){
-      cerrarPanelERP();
-    }
   });
 }
 
