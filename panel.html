@@ -1543,11 +1543,22 @@ async function cajaBuscarSesionAbierta(){
 async function cajaVentasDelDia(){
   var fecha = cajaFechaHoy();
   var res = await db.from("pedidos")
-    .select("id,total,fecha,cliente,metodo_pago")
-    .eq("fecha", fecha);
+    .select("id,total,fecha,cliente,metodo_pago,created_at")
+    .eq("fecha", fecha)
+    .order("created_at", { ascending: false });
 
   if(res.error) throw res.error;
-  return res.data || [];
+
+  var rows = res.data || [];
+  var unicos = {};
+  rows.forEach(function(r){
+    var key = (r.cliente||"") + "|" + (r.fecha||"");
+    if(!unicos[key]){
+      unicos[key] = r;
+    }
+  });
+
+  return Object.keys(unicos).map(function(k){ return unicos[k]; });
 }
 
 async function cajaMovimientosDelDia(cajaId){
@@ -1662,12 +1673,22 @@ async function cajaAbrir(){
       estado: "abierta",
       usuario_apertura: usuario,
       apertura_monto: monto
-    }).select().single();
+    });
 
-    if(ins.error) throw ins.error;
+    if(ins.error){
+      console.error("Error insertando caja_sesiones:", ins.error);
+      alert("No se pudo abrir la caja. Revisa políticas RLS o columnas obligatorias.");
+      return;
+    }
 
-    await db.from("cajas_movimientos").insert({
-      caja_id: ins.data.id,
+    var sesion = await cajaBuscarSesionAbierta();
+    if(!sesion || !sesion.id){
+      alert("La caja se intentó abrir, pero no se pudo recuperar la sesión creada.");
+      return;
+    }
+
+    var mov = await db.from("cajas_movimientos").insert({
+      caja_id: sesion.id,
       fecha: fecha,
       tipo: "apertura",
       subtipo: "fondo",
@@ -1680,17 +1701,28 @@ async function cajaAbrir(){
       origen: "caja"
     });
 
-    await db.from("cajas_logs").insert({
-      caja_id: ins.data.id,
+    if(mov.error){
+      console.error("Error insertando movimiento de apertura:", mov.error);
+      alert("La sesión se creó pero falló el movimiento de apertura.");
+      return;
+    }
+
+    var log = await db.from("cajas_logs").insert({
+      caja_id: sesion.id,
       accion: "apertura",
       detalle: "Caja abierta con fondo inicial",
       usuario: usuario
     });
 
+    if(log.error){
+      console.error("Error insertando log de apertura:", log.error);
+    }
+
     await cajaCargarResumenDia();
     renderConta("caja");
+    alert("Caja abierta correctamente");
   }catch(e){
-    console.error(e);
+    console.error("Error general al abrir caja:", e);
     alert("No se pudo abrir la caja");
   }
 }
