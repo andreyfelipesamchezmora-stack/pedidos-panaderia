@@ -13,30 +13,44 @@
 <title>Panel PRO Panadería</title>
 
 <style>
-body{margin:0;font-family:Arial;background:#f4f4f4;}
-.container{display:flex;height:100vh;}
-
-.sidebar{
-    width:250px;
-    background:#111;
-    color:white;
-    padding:10px;
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  background:#f4f4f4;
 }
 
-.main{flex:1;padding:15px;overflow:auto;}
+.container{
+  display:flex;
+  height:100vh;
+}
+
+.sidebar{
+  width:250px;
+  background:#111;
+  color:white;
+  padding:10px;
+  flex-shrink:0;
+}
+
+.main{
+  flex:1;
+  padding:15px;
+  overflow:auto;
+  background:#f4f4f4;
+}
 
 .grid{
-display:grid;
-grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
-gap:10px;
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+  gap:10px;
 }
 
 .card{
-background:white;
-padding:10px;
-border-radius:10px;
-position:relative;
-cursor:pointer;
+  background:white;
+  padding:10px;
+  border-radius:10px;
+  position:relative;
+  cursor:pointer;
 }
 
 .card.nuevo{
