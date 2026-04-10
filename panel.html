@@ -1154,34 +1154,6 @@ function showERPError(message){
     <div>${message}</div>
   </div>`;
 }
-
-/* ========= Overlay ========= */
-
-function openERPPanel(moduleName){
-  erpCurrentModule = moduleName;
-  const overlay = document.getElementById("erpOverlay");
-  overlay.classList.add("show");
-  document.body.style.overflow = "hidden";
-  renderERPModule();
-}
-
-function closeERPPanel(){
-  const overlay = document.getElementById("erpOverlay");
-  overlay.classList.remove("show");
-  document.body.style.overflow = "";
-  destroyERPCharts();
-}
-
-function handleOverlayClose(event){
-  if(event.target.id === "erpOverlay"){
-    closeERPPanel();
-  }
-}
-
-document.addEventListener("keydown", (e)=>{
-  if(e.key === "Escape"){
-    closeERPPanel();
-  }
 });
 
 /* ========= Render principal ========= */
@@ -2718,6 +2690,51 @@ window.onclick = function(e){
     cerrarPanelERP();
   }
 };
+function abrirPanelERP(tipo){
+  const overlay = document.getElementById("erpOverlay");
+  const title = document.getElementById("erpPanelTitle");
+  const subtitle = document.getElementById("erpPanelSubtitle");
+  const badge = document.getElementById("erpPanelBadge");
+  const body = document.getElementById("erpPanelBody");
+
+  if(!overlay || !title || !subtitle || !badge || !body){
+    alert("Falta el panel ERP en el HTML");
+    return;
+  }
+
+  if(tipo === "estadisticas"){
+    title.textContent = "Estadísticas";
+    subtitle.textContent = "Panel funcionando";
+    badge.innerHTML = '<i class="fa-solid fa-chart-line"></i> Estadísticas';
+    body.innerHTML = `
+      <div style="padding:20px;color:white;">
+        <h3 style="margin-top:0;">Estadísticas</h3>
+        <p>El panel ya abre correctamente.</p>
+      </div>
+    `;
+  } else {
+    title.textContent = "Contabilidad";
+    subtitle.textContent = "Panel funcionando";
+    badge.innerHTML = '<i class="fa-solid fa-wallet"></i> Contabilidad';
+    body.innerHTML = `
+      <div style="padding:20px;color:white;">
+        <h3 style="margin-top:0;">Contabilidad</h3>
+        <p>El panel ya abre correctamente.</p>
+      </div>
+    `;
+  }
+
+  overlay.classList.add("show");
+  document.body.style.overflow = "hidden";
+}
+
+function cerrarPanelERP(){
+  const overlay = document.getElementById("erpOverlay");
+  if(overlay){
+    overlay.classList.remove("show");
+  }
+  document.body.style.overflow = "";
+}
 </script>
 </body>
 </html>
