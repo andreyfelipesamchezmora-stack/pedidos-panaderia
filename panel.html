@@ -1497,16 +1497,11 @@ async function abrirConta(){
 }
 
 function contaTab(tab){
-  let tabR = document.getElementById("contaTabResumen");
-  let tabC = document.getElementById("contaTabCuentas");
-  let btnR = document.getElementById("ctabResumen");
-  let btnC = document.getElementById("ctabCuentas");
-  if(!tabR || !tabC) return;
-  tabR.style.display = tab === "resumen" ? "block" : "none";
-  tabC.style.display = tab === "cuentas" ? "block" : "none";
-  btnR.classList.toggle("active", tab === "resumen");
-  btnC.classList.toggle("active", tab === "cuentas");
-  if(tab === "cuentas") renderCuentasTab();
+  document.getElementById("ctabResumen").classList.toggle("active", tab==="resumen");
+  document.getElementById("ctabCuentas").classList.toggle("active", tab==="cuentas");
+  document.getElementById("contaTabResumen").style.display = tab==="resumen" ? "block" : "none";
+  document.getElementById("contaTabCuentas").style.display = tab==="cuentas" ? "block" : "none";
+  if(tab==="cuentas") renderCuentasTab();
 }
 
 function actualizarContaKPIs(){
