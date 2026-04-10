@@ -2657,12 +2657,6 @@ document.addEventListener("keydown", function(e){
 /* ===== ERP MINIMO QUE SI ABRE ===== */
 
 function abrirPanelERP(tipo){
-  try {
-    openERPPanel(tipo);
-  } catch(e){
-    console.error("Error abriendo ERP:", e);
-  }
-}
   const overlay = document.getElementById("erpOverlay");
   const title = document.getElementById("erpPanelTitle");
   const subtitle = document.getElementById("erpPanelSubtitle");
