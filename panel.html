@@ -2654,6 +2654,55 @@ document.addEventListener("keydown", function(e){
         }
     }
 });
+function openERPPanel(tipo){
+  const overlay = document.getElementById("erpOverlay");
+  const title = document.getElementById("erpPanelTitle");
+  const subtitle = document.getElementById("erpPanelSubtitle");
+  const badge = document.getElementById("erpPanelBadge");
+  const body = document.getElementById("erpPanelBody");
+
+  if(!overlay || !title || !subtitle || !badge || !body){
+    alert("Falta el panel ERP en el HTML");
+    return;
+  }
+
+  if(tipo === "estadisticas"){
+    title.innerText = "Estadísticas";
+    subtitle.innerText = "Vista inicial del módulo estadístico.";
+    badge.innerHTML = '<i class="fa-solid fa-chart-line"></i> Estadísticas';
+    body.innerHTML = `
+      <div class="empty-state">
+        <i class="fa-solid fa-chart-column" style="font-size:26px;margin-bottom:10px;"></i>
+        <div>El panel de estadísticas ya está conectado visualmente.</div>
+      </div>
+    `;
+  } else {
+    title.innerText = "Contabilidad";
+    subtitle.innerText = "Vista inicial del módulo contable.";
+    badge.innerHTML = '<i class="fa-solid fa-wallet"></i> Contabilidad';
+    body.innerHTML = `
+      <div class="empty-state">
+        <i class="fa-solid fa-wallet" style="font-size:26px;margin-bottom:10px;"></i>
+        <div>El panel de contabilidad ya está conectado visualmente.</div>
+      </div>
+    `;
+  }
+
+  overlay.classList.add("show");
+}
+
+function closeERPPanel(){
+  const overlay = document.getElementById("erpOverlay");
+  if(overlay){
+    overlay.classList.remove("show");
+  }
+}
+
+function handleOverlayClose(event){
+  if(event.target && event.target.id === "erpOverlay"){
+    closeERPPanel();
+  }
+}
 </script>
 </body>
 </html>
