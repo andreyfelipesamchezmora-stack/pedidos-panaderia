@@ -1434,207 +1434,44 @@ async function abrirConta(){
   let panel=document.getElementById("panelConta");
   panel.style.display="flex";
   panel.classList.add("open");
-  await renderConta("resumen");
-}
-
-async function renderConta(tabActiva){
-  tabActiva = tabActiva || "resumen";
-  var body = document.getElementById("contaBody");
-  if(!body){ console.error("contaBody no encontrado"); return; }
-
-  // Mostrar loading inmediato
-  body.innerHTML = '<div style="padding:40px;text-align:center;color:#94a3b8;font-size:14px;">Cargando...</div>';
-
-  var ingresos = 0;
+  _dibujarConta("resumen", 0);
   try {
-    var fechaHoy = new Date().toISOString().split("T")[0];
-    var mesInicio = fechaHoy.slice(0,7)+"-01";
-    var res = await db.from("pedidos").select("total").gte("fecha",mesInicio).lte("fecha",fechaHoy);
-    var data = (res && res.data) ? res.data : [];
-    ingresos = data.reduce(function(s,r){ return s+(Number(r.total)||0); },0);
-  } catch(e){
-    console.warn("Error cargando pedidos:", e);
-    ingresos = 0;
-  }
-
-  var totalGastos = gastosMemoria.reduce(function(s,g){ return s+g.monto; },0);
-  var utilidad = ingresos - totalGastos;
-  var margen = ingresos>0 ? ((utilidad/ingresos)*100).toFixed(1) : "0.0";
-  var saldoTotal = cuentasMemoria.reduce(function(s,c){ return s+c.saldo; },0);
-  var porCat = {};
-  gastosMemoria.forEach(function(g){ if(!porCat[g.categoria]) porCat[g.categoria]=0; porCat[g.categoria]+=g.monto; });
-
-  // ---- HTML RESUMEN ----
-  var gastosListHtml = "";
-  if(gastosMemoria.length===0){
-    gastosListHtml = '<div style="padding:20px;text-align:center;color:#64748b;font-size:13px;">Sin gastos registrados aún</div>';
-  } else {
-    for(var gi=0; gi<gastosMemoria.length; gi++){
-      var g = gastosMemoria[gi];
-      gastosListHtml += '<div class="gasto-item">'
-        +'<span>'+g.descripcion+' <span class="gasto-cat">['+g.categoria+']</span></span>'
-        +'<span style="display:flex;align-items:center;gap:4px;">'
-        +'<span class="gasto-monto">-$'+g.monto.toLocaleString("es-CO")+'</span>'
-        +'<button class="gasto-del" onclick="eliminarGasto('+gi+')">✕</button>'
-        +'</span></div>';
+    var fechaHoy=new Date().toISOString().split("T")[0];
+    var mesInicio=fechaHoy.slice(0,7)+"-01";
+    var res=await db.from("pedidos").select("total").gte("fecha",mesInicio).lte("fecha",fechaHoy);
+    if(res&&res.data){
+      window._ingresosCache=res.data.reduce(function(s,r){return s+(Number(r.total)||0);},0);
+      if(document.getElementById("contaBody")) _dibujarConta("resumen",window._ingresosCache);
     }
-  }
-
-  var catHtml = "";
-  if(Object.keys(porCat).length>0){
-    catHtml = '<p class="section-title" style="margin-top:20px;">Gastos por categoría</p>'
-      +'<div class="chart-card full-w" style="margin-bottom:16px;">'
-      +'<div class="chart-title">Distribución de gastos</div>'
-      +'<div class="chart-wrap" style="height:200px;"><canvas id="chartConta"></canvas></div>'
-      +'</div>';
-  }
-
-  var utilClass = utilidad < 0 ? " negative" : "";
-  var utilColor = utilidad >= 0 ? "#4ade80" : "#f87171";
-
-  var htmlResumen = '<p class="section-title">Resumen del mes</p>'
-    +'<div class="conta-kpi-grid">'
-    +'<div class="kpi-card green">'
-    +'<div class="kpi-label">Ingresos</div>'
-    +'<div class="kpi-value" style="font-size:1.3rem;">$'+ingresos.toLocaleString("es-CO")+'</div>'
-    +'<div class="kpi-delta neutral">Ventas del mes</div>'
-    +'</div>'
-    +'<div class="kpi-card">'
-    +'<div class="kpi-label">Gastos</div>'
-    +'<div class="kpi-value" style="font-size:1.3rem;color:#f87171;">$'+totalGastos.toLocaleString("es-CO")+'</div>'
-    +'<div class="kpi-delta neutral">'+gastosMemoria.length+' registro(s)</div>'
-    +'</div>'
-    +'<div class="kpi-card'+(utilidad>=0?" green":"''")+'">'
-    +'<div class="kpi-label">Utilidad</div>'
-    +'<div class="kpi-value" style="font-size:1.3rem;color:'+utilColor+';">$'+utilidad.toLocaleString("es-CO")+'</div>'
-    +'<div class="kpi-delta '+(utilidad>=0?"up":"down")+'">Margen: '+margen+'%</div>'
-    +'</div>'
-    +'</div>'
-    +'<div class="utilidad-box">'
-    +'<div class="utilidad-label">Resultado Neto del Mes</div>'
-    +'<div class="utilidad-val'+utilClass+'">$'+utilidad.toLocaleString("es-CO")+'</div>'
-    +'<div class="utilidad-margen">Margen: '+margen+'% | Ingresos: $'+ingresos.toLocaleString("es-CO")+'</div>'
-    +'</div>'
-    + catHtml
-    +'<p class="section-title">Registrar Gasto</p>'
-    +'<div class="gasto-form"><h3>➕ Nuevo gasto</h3><div class="gasto-row">'
-    +'<input type="text" id="gastoDesc" placeholder="Descripción">'
-    +'<select id="gastoCat">'
-    +'<option value="Arriendo">Arriendo</option>'
-    +'<option value="Transporte">Transporte</option>'
-    +'<option value="Servicios">Servicios</option>'
-    +'<option value="Materia Prima">Materia Prima</option>'
-    +'<option value="Empleados">Empleados</option>'
-    +'<option value="Otros">Otros</option>'
-    +'</select>'
-    +'<input type="number" id="gastoMonto" placeholder="Valor $">'
-    +'<button class="btn-add-gasto" onclick="agregarGasto()">Agregar</button>'
-    +'</div></div>'
-    +'<p class="section-title">Gastos registrados</p>'
-    +'<div class="gastos-list">'+gastosListHtml+'</div>';
-
-  // ---- HTML CUENTAS ----
-  var tarjetas = "";
-  if(cuentasMemoria.length === 0){
-    tarjetas = '<div style="grid-column:1/-1;padding:30px;text-align:center;color:#64748b;">No hay cuentas. Crea una con "+ Nueva Cuenta".</div>';
-  } else {
-    for(var ci=0; ci<cuentasMemoria.length; ci++){
-      var c = cuentasMemoria[ci];
-      var sc = c.saldo===0?"cero":(c.saldo<0?"negativo":"");
-      var btnDel = ci>0 ? '<button class="btn-cuenta peligro" onclick="eliminarCuenta('+ci+')" style="flex:0;padding:7px 10px;">🗑️</button>' : "";
-      tarjetas += '<div class="cuenta-card" data-color="'+(c.color||"gray")+'">'
-        +'<div class="cuenta-header">'
-        +'<div class="cuenta-header-row">'
-        +'<span style="font-size:22px;">'+tipoEmoji(c.tipo)+'</span>'
-        +'<span class="cuenta-tipo-badge">'+c.tipo+'</span>'
-        +'</div>'
-        +'<div class="cuenta-nombre">'+c.nombre+'</div>'
-        +'</div>'
-        +'<div class="cuenta-body">'
-        +'<div class="cuenta-saldo-label">Saldo</div>'
-        +'<div class="cuenta-saldo-val '+sc+'">$ '+c.saldo.toLocaleString("es-CO")+'</div>'
-        +'<div class="cuenta-acciones">'
-        +'<button class="btn-cuenta" onclick="abrirEditarCuenta('+ci+')">✏️ Editor</button>'
-        +'<button class="btn-cuenta" onclick="abrirConciliar('+ci+')">⚖️ Conciliar</button>'
-        +btnDel
-        +'</div>'
-        +'</div>'
-        +'</div>';
-    }
-  }
-
-  var historial = "";
-  if(transferenciasMem.length > 0){
-    var filas = "";
-    var tList = transferenciasMem.slice().reverse();
-    for(var ti=0; ti<tList.length; ti++){
-      var t = tList[ti];
-      filas += '<div class="transferencia-item">'
-        +'<div class="transf-ruta">'+t.origen+' <span>→</span> '+t.destino+'</div>'
-        +'<div><div class="transf-monto">$'+t.monto.toLocaleString("es-CO")+'</div>'
-        +'<div class="transf-fecha">'+t.fecha+'</div></div>'
-        +'</div>';
-    }
-    historial = '<p class="section-title">Historial de Transferencias</p>'
-      +'<div class="chart-card full-w" style="padding:0;overflow:hidden;">'
-      +'<div class="transferencias-list">'+filas+'</div></div>';
-  }
-
-  var htmlCuentas = '<div class="cuentas-page-header">'
-    +'<div>'
-    +'<div class="cuentas-page-title">🏦 Cuentas</div>'
-    +'<div class="cuentas-page-subtitle">Administra tus cuentas bancarias</div>'
-    +'</div>'
-    +'<div class="cuentas-header-btns">'
-    +'<button class="btn-transferir" onclick="abrirModalTransferir()">⇄ Transferir</button>'
-    +'<button class="btn-nueva-cuenta" onclick="abrirModalNuevaCuenta()">+ Nueva Cuenta</button>'
-    +'</div>'
-    +'</div>'
-    +'<div class="saldo-total-banner">'
-    +'<div>'
-    +'<div class="saldo-total-label">Saldo total en todas las cuentas</div>'
-    +'<div class="saldo-total-val">$'+saldoTotal.toLocaleString("es-CO")+'</div>'
-    +'</div>'
-    +'</div>'
-    +'<div class="cuentas-grid">'+tarjetas+'</div>'
-    +historial;
-
-  // ---- TABS ----
-  var activeR = tabActiva==="resumen" ? " active" : "";
-  var activeC = tabActiva==="cuentas" ? " active" : "";
-  var dispR = tabActiva==="resumen" ? "block" : "none";
-  var dispC = tabActiva==="cuentas" ? "block" : "none";
-
-  var tabsHtml = '<div class="cuentas-tabs">'
-    +'<button class="ctab'+activeR+'" onclick="renderConta(\'resumen\')">📊 Resumen</button>'
-    +'<button class="ctab'+activeC+'" onclick="renderConta(\'cuentas\')">🏦 Cuentas</button>'
-    +'</div>'
-    +'<div style="display:'+dispR+'">'+htmlResumen+'</div>'
-    +'<div style="display:'+dispC+'">'+htmlCuentas+'</div>';
-
-  body.innerHTML = tabsHtml;
-
-  // Gráfica si hay gastos por categoría
-  if(Object.keys(porCat).length > 0){
-    setTimeout(function(){
-      var ctx = document.getElementById("chartConta");
-      if(chartConta){ chartConta.destroy(); chartConta=null; }
-      if(ctx){
-        var cats = Object.keys(porCat);
-        var vals = cats.map(function(k){ return porCat[k]; });
-        var colors = ["rgba(22,163,74,0.85)","rgba(37,99,235,0.85)","rgba(217,119,6,0.85)","rgba(124,58,237,0.85)","rgba(220,38,38,0.85)","rgba(148,163,184,0.85)"];
-        chartConta = new Chart(ctx,{
-          type:"doughnut",
-          data:{ labels:cats, datasets:[{ data:vals, backgroundColor:colors.slice(0,cats.length), borderWidth:0, hoverOffset:8 }] },
-          options:{ responsive:true, maintainAspectRatio:false,
-            plugins:{ legend:{ position:"right", labels:{ color:"#94a3b8", font:{size:11}, boxWidth:12, padding:12 }},
-              tooltip:{ callbacks:{ label:function(c){ return c.label+": $"+c.raw.toLocaleString("es-CO"); }}}}}
-        });
-      }
-    },100);
-  }
+  } catch(e){}
 }
 
+function renderConta(tab){ _dibujarConta(tab||"resumen", window._ingresosCache||0); }
+
+function _dibujarConta(tabActiva, ingresos){
+  var body=document.getElementById("contaBody");
+  if(!body){return;}
+  var totalGastos=gastosMemoria.reduce(function(s,g){return s+g.monto;},0);
+  var utilidad=ingresos-totalGastos;
+  var margen=ingresos>0?((utilidad/ingresos)*100).toFixed(1):"0.0";
+  var saldoTotal=cuentasMemoria.reduce(function(s,c){return s+c.saldo;},0);
+  var porCat={};
+  gastosMemoria.forEach(function(g){if(!porCat[g.categoria])porCat[g.categoria]=0;porCat[g.categoria]+=g.monto;});
+  var gastosHtml="";
+  if(gastosMemoria.length===0){gastosHtml='<div style="padding:20px;text-align:center;color:#64748b;">Sin gastos registrados</div>';}
+  else{for(var gi=0;gi<gastosMemoria.length;gi++){var g=gastosMemoria[gi];gastosHtml+='<div class="gasto-item"><span>'+g.descripcion+' <span class="gasto-cat">['+g.categoria+']</span></span><span style="display:flex;align-items:center;gap:4px;"><span class="gasto-monto">-$'+g.monto.toLocaleString("es-CO")+'</span><button class="gasto-del" onclick="eliminarGasto('+gi+')">✕</button></span></div>';}}
+  var utilColor=utilidad>=0?"#4ade80":"#f87171";
+  var utilClass=utilidad<0?" negative":"";
+  var htmlR='<p class="section-title">Resumen del mes</p><div class="conta-kpi-grid"><div class="kpi-card green"><div class="kpi-label">Ingresos</div><div class="kpi-value" style="font-size:1.3rem;">$'+ingresos.toLocaleString("es-CO")+'</div><div class="kpi-delta neutral">Ventas del mes</div></div><div class="kpi-card"><div class="kpi-label">Gastos</div><div class="kpi-value" style="font-size:1.3rem;color:#f87171;">$'+totalGastos.toLocaleString("es-CO")+'</div><div class="kpi-delta neutral">'+gastosMemoria.length+' registro(s)</div></div><div class="kpi-card'+(utilidad>=0?" green":"")+'" ><div class="kpi-label">Utilidad</div><div class="kpi-value" style="font-size:1.3rem;color:'+utilColor+';">$'+utilidad.toLocaleString("es-CO")+'</div><div class="kpi-delta '+(utilidad>=0?"up":"down")+'">Margen: '+margen+'%</div></div></div><div class="utilidad-box"><div class="utilidad-label">Resultado Neto del Mes</div><div class="utilidad-val'+utilClass+'">$'+utilidad.toLocaleString("es-CO")+'</div><div class="utilidad-margen">Margen: '+margen+'% | Ingresos: $'+ingresos.toLocaleString("es-CO")+'</div></div><p class="section-title">Registrar Gasto</p><div class="gasto-form"><h3>➕ Nuevo gasto</h3><div class="gasto-row"><input type="text" id="gastoDesc" placeholder="Descripción"><select id="gastoCat"><option value="Arriendo">Arriendo</option><option value="Transporte">Transporte</option><option value="Servicios">Servicios</option><option value="Materia Prima">Materia Prima</option><option value="Empleados">Empleados</option><option value="Otros">Otros</option></select><input type="number" id="gastoMonto" placeholder="Valor $"><button class="btn-add-gasto" onclick="agregarGasto()">Agregar</button></div></div><p class="section-title">Gastos registrados</p><div class="gastos-list">'+gastosHtml+'</div>';
+  var tarjetas="";
+  for(var ci=0;ci<cuentasMemoria.length;ci++){var c=cuentasMemoria[ci];var sc=c.saldo===0?"cero":(c.saldo<0?"negativo":"");var bd=ci>0?'<button class="btn-cuenta peligro" onclick="eliminarCuenta('+ci+')" style="flex:0;padding:7px 10px;">🗑️</button>':"";tarjetas+='<div class="cuenta-card" data-color="'+(c.color||"gray")+'"><div class="cuenta-header"><div class="cuenta-header-row"><span style="font-size:22px;">'+tipoEmoji(c.tipo)+'</span><span class="cuenta-tipo-badge">'+c.tipo+'</span></div><div class="cuenta-nombre">'+c.nombre+'</div></div><div class="cuenta-body"><div class="cuenta-saldo-label">Saldo</div><div class="cuenta-saldo-val '+sc+'">$ '+c.saldo.toLocaleString("es-CO")+'</div><div class="cuenta-acciones"><button class="btn-cuenta" onclick="abrirEditarCuenta('+ci+')">✏️ Editor</button><button class="btn-cuenta" onclick="abrirConciliar('+ci+')">⚖️ Conciliar</button>'+bd+'</div></div></div>';}
+  var hist="";
+  if(transferenciasMem.length>0){var ff="";var tl=transferenciasMem.slice().reverse();for(var ti=0;ti<tl.length;ti++){var t=tl[ti];ff+='<div class="transferencia-item"><div class="transf-ruta">'+t.origen+' <span>→</span> '+t.destino+'</div><div><div class="transf-monto">$'+t.monto.toLocaleString("es-CO")+'</div><div class="transf-fecha">'+t.fecha+'</div></div></div>';}hist='<p class="section-title">Historial de Transferencias</p><div class="chart-card full-w" style="padding:0;overflow:hidden;"><div class="transferencias-list">'+ff+'</div></div>';}
+  var htmlC='<div class="cuentas-page-header"><div><div class="cuentas-page-title">🏦 Cuentas</div><div class="cuentas-page-subtitle">Administra tus cuentas bancarias</div></div><div class="cuentas-header-btns"><button class="btn-transferir" onclick="abrirModalTransferir()">⇄ Transferir</button><button class="btn-nueva-cuenta" onclick="abrirModalNuevaCuenta()">+ Nueva Cuenta</button></div></div><div class="saldo-total-banner"><div><div class="saldo-total-label">Saldo total en todas las cuentas</div><div class="saldo-total-val">$'+saldoTotal.toLocaleString("es-CO")+'</div></div></div><div class="cuentas-grid">'+tarjetas+'</div>'+hist;
+  var aR=tabActiva==="resumen"?" active":"";var aC=tabActiva==="cuentas"?" active":"";
+  var dR=tabActiva==="resumen"?"block":"none";var dC=tabActiva==="cuentas"?"block":"none";
+  body.innerHTML='<div class="cuentas-tabs"><button class="ctab'+aR+'" onclick="_dibujarConta(\'resumen\',window._ingresosCache||0)">📊 Resumen</button><button class="ctab'+aC+'" onclick="_dibujarConta(\'cuentas\',window._ingresosCache||0)">🏦 Cuentas</button></div><div style="display:'+dR+'">'+htmlR+'</div><div style="display:'+dC+'">'+htmlC+'</div>';
+}
 
 function agregarGasto(){
   let desc=document.getElementById("gastoDesc").value.trim();
