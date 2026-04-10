@@ -1433,7 +1433,6 @@ function mostrarRango(){
 
 // =========== MÓDULO CONTABILIDAD ===========
 
-
 // ===== CONTABILIDAD =====
 let _contaIniciado = false;
 
@@ -1444,47 +1443,57 @@ async function abrirConta(){
 
   if(!_contaIniciado){
     _contaIniciado = true;
-    _renderContaEstructura();
+    document.getElementById("contaBody").innerHTML = `
+      <div id="contaLoading" style="display:flex;flex-direction:column;gap:12px;padding:32px 0;">
+        <div class="skel skel-h"></div>
+        <div class="skel skel-c"></div>
+        <div class="skel skel-l"></div>
+        <div class="skel skel-l"></div>
+      </div>
+      <div id="contaContenido" style="display:none;">
+        <div class="cuentas-tabs" style="margin-bottom:20px;">
+          <button class="ctab active" id="ctabResumen" onclick="contaTab('resumen')">📊 Resumen</button>
+          <button class="ctab" id="ctabCuentas" onclick="contaTab('cuentas')">🏦 Cuentas</button>
+        </div>
+        <div id="contaTabResumen" style="display:block;">
+          <div id="contaKPIs" class="conta-kpi-grid"></div>
+          <div id="contaUtilidadBox" class="utilidad-box" style="margin-bottom:20px;"></div>
+          <p class="section-title">Registrar Gastos</p>
+          <div class="gasto-form">
+            <h3>➕ Agregar gastos</h3>
+            <div id="gastosFilas"></div>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+              <button onclick="agregarFilaGasto()" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#94a3b8;padding:8px;cursor:pointer;font-size:13px;font-family:var(--font-body);">+ Añadir fila</button>
+              <button onclick="guardarTodosGastos()" class="btn-add-gasto" style="flex:2;">💾 Guardar gastos</button>
+            </div>
+          </div>
+          <p class="section-title">Gastos del mes</p>
+          <div id="contaGastosList" class="gastos-list"></div>
+        </div>
+        <div id="contaTabCuentas" style="display:none;">
+          <div id="contaCuentasContenido"></div>
+        </div>
+      </div>`;
+    agregarFilaGasto();
   }
 
-  document.getElementById("contaBody").querySelector(".conta-loading").style.display = "flex";
-  document.getElementById("contaBody").querySelector(".conta-contenido").style.display = "none";
+  let loading  = document.getElementById("contaLoading");
+  let contenido = document.getElementById("contaContenido");
+  if(loading)  loading.style.display  = "flex";
+  if(contenido) contenido.style.display = "none";
 
   try {
-    let fechaHoy = new Date().toISOString().split("T")[0];
+    let fechaHoy  = new Date().toISOString().split("T")[0];
     let mesInicio = fechaHoy.slice(0,7) + "-01";
     let res = await db.from("pedidos").select("total").gte("fecha", mesInicio).lte("fecha", fechaHoy);
     window._ingresosCache = (res && res.data) ? res.data.reduce((s,r) => s+(Number(r.total)||0), 0) : 0;
   } catch(e){ window._ingresosCache = 0; }
 
-  document.getElementById("contaBody").querySelector(".conta-loading").style.display = "none";
-  document.getElementById("contaBody").querySelector(".conta-contenido").style.display = "block";
-  _actualizarContaKPIs();
-  _actualizarGastosList();
-}
+  if(loading)  loading.style.display  = "none";
+  if(contenido) contenido.style.display = "block";
 
-function renderConta(tab){
-  // Si el panel no está inicializado, ignorar silenciosamente
-  let kpis = document.getElementById("contaKPIs");
-  if(!kpis) return;
-
-  _actualizarContaKPIs();
-  _actualizarGastosList();
-
-  // Si piden tab cuentas: activar ese tab y renderizarlo
-  if(tab === "cuentas"){
-    let tabResumen = document.getElementById("contaTabResumen");
-    let tabCuentas = document.getElementById("contaTabCuentas");
-    let btnR = document.getElementById("ctabResumen");
-    let btnC = document.getElementById("ctabCuentas");
-
-    if(tabResumen) tabResumen.style.display = "none";
-    if(tabCuentas) tabCuentas.style.display = "block";
-    if(btnR) btnR.classList.remove("active");
-    if(btnC) btnC.classList.add("active");
-
-    _renderCuentasTab();
-  }
+  actualizarContaKPIs();
+  actualizarGastosList();
 }
 
 function contaTab(tab){
@@ -1493,40 +1502,49 @@ function contaTab(tab){
   let btnR = document.getElementById("ctabResumen");
   let btnC = document.getElementById("ctabCuentas");
   if(!tabR || !tabC) return;
-
-  btnR.classList.toggle("active", tab === "resumen");
-  btnC.classList.toggle("active", tab === "cuentas");
   tabR.style.display = tab === "resumen" ? "block" : "none";
   tabC.style.display = tab === "cuentas" ? "block" : "none";
-
-  if(tab === "cuentas"){
-    setTimeout(function(){
-      _renderCuentasTab();
-    }, 50);
-  }
+  btnR.classList.toggle("active", tab === "resumen");
+  btnC.classList.toggle("active", tab === "cuentas");
+  if(tab === "cuentas") renderCuentasTab();
 }
 
-function _actualizarContaKPIs(){
-  let ingresos = window._ingresosCache || 0;
-  let totalGastos = gastosMemoria.reduce((s,g) => s+g.monto, 0);
-  let utilidad = ingresos - totalGastos;
-  let margen = ingresos > 0 ? ((utilidad/ingresos)*100).toFixed(1) : "0.0";
-  let utilColor = utilidad >= 0 ? "#4ade80" : "#f87171";
-
-  document.getElementById("contaKPIs").innerHTML = `
-    <div class="kpi-card green"><div class="kpi-label">Ingresos del mes</div><div class="kpi-value" style="font-size:1.3rem;">$${ingresos.toLocaleString("es-CO")}</div><div class="kpi-delta neutral">Ventas registradas</div></div>
-    <div class="kpi-card orange"><div class="kpi-label">Gastos</div><div class="kpi-value" style="font-size:1.3rem;color:#f87171;">-$${totalGastos.toLocaleString("es-CO")}</div><div class="kpi-delta neutral">${gastosMemoria.length} registro(s)</div></div>
-    <div class="kpi-card ${utilidad>=0?'green':''}"><div class="kpi-label">Utilidad neta</div><div class="kpi-value" style="font-size:1.3rem;color:${utilColor};">$${utilidad.toLocaleString("es-CO")}</div><div class="kpi-delta ${utilidad>=0?'up':'down'}">Margen: ${margen}%</div></div>`;
-
-  document.getElementById("contaUtilidadBox").innerHTML = `
+function actualizarContaKPIs(){
+  let kpi  = document.getElementById("contaKPIs");
+  let util = document.getElementById("contaUtilidadBox");
+  if(!kpi) return;
+  if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
+  let ingresos    = window._ingresosCache || 0;
+  let totalGastos = gastosMemoria.reduce((s,g) => s+(g.monto||0), 0);
+  let utilidad    = ingresos - totalGastos;
+  let margen      = ingresos > 0 ? ((utilidad/ingresos)*100).toFixed(1) : "0.0";
+  let utilColor   = utilidad >= 0 ? "#4ade80" : "#f87171";
+  kpi.innerHTML = `
+    <div class="kpi-card green">
+      <div class="kpi-label">Ingresos del mes</div>
+      <div class="kpi-value" style="font-size:1.3rem;">$${ingresos.toLocaleString("es-CO")}</div>
+      <div class="kpi-delta neutral">Ventas registradas</div>
+    </div>
+    <div class="kpi-card orange">
+      <div class="kpi-label">Gastos</div>
+      <div class="kpi-value" style="font-size:1.3rem;color:#f87171;">-$${totalGastos.toLocaleString("es-CO")}</div>
+      <div class="kpi-delta neutral">${gastosMemoria.length} registro(s)</div>
+    </div>
+    <div class="kpi-card ${utilidad>=0?'green':''}">
+      <div class="kpi-label">Utilidad neta</div>
+      <div class="kpi-value" style="font-size:1.3rem;color:${utilColor};">$${utilidad.toLocaleString("es-CO")}</div>
+      <div class="kpi-delta ${utilidad>=0?'up':'down'}">Margen: ${margen}%</div>
+    </div>`;
+  if(util) util.innerHTML = `
     <div class="utilidad-label">Resultado Neto del Mes</div>
     <div class="utilidad-val${utilidad<0?' negative':''}">$${utilidad.toLocaleString("es-CO")}</div>
     <div class="utilidad-margen">Margen: ${margen}% &nbsp;|&nbsp; Ingresos: $${ingresos.toLocaleString("es-CO")}</div>`;
 }
 
-function _actualizarGastosList(){
+function actualizarGastosList(){
   let lista = document.getElementById("contaGastosList");
   if(!lista) return;
+  if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
   if(gastosMemoria.length === 0){
     lista.innerHTML = '<div style="padding:20px;text-align:center;color:#64748b;">Sin gastos registrados este mes</div>';
     return;
@@ -1535,27 +1553,22 @@ function _actualizarGastosList(){
     <div class="gasto-item">
       <span>${g.descripcion} <span class="gasto-cat">[${g.categoria}]</span></span>
       <span style="display:flex;align-items:center;gap:4px;">
-        <span class="gasto-monto">-$${g.monto.toLocaleString("es-CO")}</span>
+        <span class="gasto-monto">-$${(g.monto||0).toLocaleString("es-CO")}</span>
         <button class="gasto-del" onclick="eliminarGasto(${i})">✕</button>
       </span>
     </div>`).join("");
 }
 
-function _renderCuentasTab(){
+function renderCuentasTab(){
   let cont = document.getElementById("contaCuentasContenido");
-  if(!cont){
-    console.error("❌ contaCuentasContenido NO existe");
-    return;
-  }
+  if(!cont) return;
   if(typeof cuentasMemoria === "undefined" || !Array.isArray(cuentasMemoria)){
-    cont.innerHTML = '<div style="padding:20px;color:#f87171;">Error: cuentasMemoria no cargada</div>';
+    cont.innerHTML = '<div style="padding:20px;color:#f87171;">Error: cuentas no disponibles</div>';
     return;
   }
-
-  let saldoTotal = cuentasMemoria.reduce((s,c) => s + (c.saldo||0), 0);
-
+  let saldoTotal = cuentasMemoria.reduce((s,c) => s+(c.saldo||0), 0);
   let tarjetas = cuentasMemoria.length === 0
-    ? '<div style="padding:20px;color:#64748b;text-align:center;">No hay cuentas registradas</div>'
+    ? '<div style="padding:20px;color:#64748b;text-align:center;">No hay cuentas. Crea una con + Nueva cuenta</div>'
     : cuentasMemoria.map((c,ci) => {
         let sc = c.saldo === 0 ? "cero" : (c.saldo < 0 ? "negativo" : "");
         let btnEl = ci > 0
@@ -1581,7 +1594,6 @@ function _renderCuentasTab(){
             </div>
           </div>`;
       }).join("");
-
   let hist = "";
   if(typeof transferenciasMem !== "undefined" && transferenciasMem.length > 0){
     let filas = transferenciasMem.slice().reverse().map(t =>
@@ -1598,7 +1610,6 @@ function _renderCuentasTab(){
         <div class="transferencias-list">${filas}</div>
       </div>`;
   }
-
   cont.innerHTML = `
     <div class="cuentas-page-header">
       <div>
@@ -1620,16 +1631,16 @@ function _renderCuentasTab(){
     ${hist}`;
 }
 
-// renderConta actualiza sin redibujar estructura
 function renderConta(tab){
   if(!document.getElementById("contaKPIs")) return;
-  _actualizarContaKPIs();
-  _actualizarGastosList();
-  if(tab==="cuentas") _renderCuentasTab();
+  actualizarContaKPIs();
+  actualizarGastosList();
+  if(tab === "cuentas") renderCuentasTab();
 }
 
-// Filas múltiples de gastos
 function agregarFilaGasto(){
+  let cont = document.getElementById("gastosFilas");
+  if(!cont) return;
   let fila = document.createElement("div");
   fila.className = "gasto-fila";
   fila.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px;";
@@ -1644,19 +1655,18 @@ function agregarFilaGasto(){
       <option value="Gas">🔥 Gas</option>
       <option value="Empaques">📦 Empaques</option>
       <option value="Mantenimiento">🔧 Mantenimiento</option>
+      <option value="Publicidad">📣 Publicidad</option>
+      <option value="Impuestos">🏛️ Impuestos</option>
       <option value="Otros">📌 Otros</option>
     </select>
     <input type="number" class="gf-monto" placeholder="Valor $" style="flex:1;min-width:100px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:13px;font-family:var(--font-body);">
     <button onclick="quitarFilaGasto(this)" style="background:rgba(220,38,38,0.2);border:1px solid rgba(220,38,38,0.3);color:#f87171;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px;">✕</button>`;
-  document.getElementById("gastosFilas").appendChild(fila);
+  cont.appendChild(fila);
 }
 
 function quitarFilaGasto(btn){
   let filas = document.getElementById("gastosFilas").querySelectorAll(".gasto-fila");
-  if(filas.length <= 1){ 
-    btn.closest(".gasto-fila").querySelectorAll("input").forEach(i=>i.value="");
-    return;
-  }
+  if(filas.length <= 1){ btn.closest(".gasto-fila").querySelectorAll("input").forEach(i => i.value = ""); return; }
   btn.closest(".gasto-fila").remove();
 }
 
@@ -1664,8 +1674,8 @@ function guardarTodosGastos(){
   let filas = document.getElementById("gastosFilas").querySelectorAll(".gasto-fila");
   let agregados = 0;
   filas.forEach(fila => {
-    let desc = fila.querySelector(".gf-desc").value.trim();
-    let cat = fila.querySelector(".gf-cat").value;
+    let desc  = fila.querySelector(".gf-desc").value.trim();
+    let cat   = fila.querySelector(".gf-cat").value;
     let monto = Number(fila.querySelector(".gf-monto").value) || 0;
     if(desc && monto > 0){
       if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
@@ -1675,24 +1685,21 @@ function guardarTodosGastos(){
   });
   if(agregados === 0){ alert("Completa al menos una fila con descripción y valor"); return; }
   try{ sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria)); }catch(e){}
-  // Limpiar filas y dejar solo una vacía
-  let cont = document.getElementById("gastosFilas");
-  cont.innerHTML = "";
+  document.getElementById("gastosFilas").innerHTML = "";
   agregarFilaGasto();
-  _actualizarContaKPIs();
-  _actualizarGastosList();
+  actualizarContaKPIs();
+  actualizarGastosList();
 }
 
-function agregarGasto(){
-  guardarTodosGastos();
-}
+function agregarGasto(){ guardarTodosGastos(); }
 
 function eliminarGasto(i){
   gastosMemoria.splice(i,1);
   try{ sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria)); }catch(e){}
-  _actualizarContaKPIs();
-  _actualizarGastosList();
+  actualizarContaKPIs();
+  actualizarGastosList();
 }
+
 
 
 
