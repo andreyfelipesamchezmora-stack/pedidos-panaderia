@@ -1202,236 +1202,283 @@ async function abrirStats(){
 }
 
 async function cargarStats(filtro){
-  let hoy=new Date();
-  let fechaHoy=hoy.toISOString().split("T")[0];
-  let fechaInicio,fechaFin=fechaHoy;
+  let hoy = new Date();
+  let fechaHoy = cajaFechaHoy();
+  let fechaInicio, fechaFin = fechaHoy;
 
-  if(filtro==="hoy") { fechaInicio=fechaHoy; }
-  else if(filtro==="semana"){
-    let d=new Date(hoy); d.setDate(d.getDate()-6);
-    fechaInicio=d.toISOString().split("T")[0];
-  } else if(filtro==="mes"){
-    fechaInicio=fechaHoy.slice(0,7)+"-01";
-  } else if(filtro==="custom"){
-    let d1=document.getElementById("filtroDesde")?.value;
-    let d2=document.getElementById("filtroHasta")?.value;
-    if(!d1||!d2){return;}
-    fechaInicio=d1; fechaFin=d2;
+  if(filtro==="hoy"){
+    fechaInicio = fechaHoy;
+  }else if(filtro==="semana"){
+    let d = new Date(fechaHoy+"T00:00:00");
+    d.setDate(d.getDate()-6);
+    fechaInicio = d.toISOString().split("T")[0];
+  }else if(filtro==="mes"){
+    fechaInicio = fechaHoy.slice(0,7) + "-01";
+  }else if(filtro==="custom"){
+    let d1 = document.getElementById("filtroDesde")?.value;
+    let d2 = document.getElementById("filtroHasta")?.value;
+    if(!d1 || !d2) return;
+    fechaInicio = d1;
+    fechaFin = d2;
+  }else{
+    fechaInicio = fechaHoy;
   }
 
-  // Fetch data
-  let {data,error}=await db.from("pedidos").select("*").gte("fecha",fechaInicio).lte("fecha",fechaFin);
-  if(error||!data){ data=[]; }
+  let { data, error } = await db.from("pedidos")
+    .select("*")
+    .gte("fecha", fechaInicio)
+    .lte("fecha", fechaFin);
 
-  // Ayer para comparar
-  let ayer=new Date(hoy); ayer.setDate(ayer.getDate()-1);
-  let fechaAyer=ayer.toISOString().split("T")[0];
-  let {data:dataAyer}=await db.from("pedidos").select("total").eq("fecha",fechaAyer);
-  let totalAyer=(dataAyer||[]).reduce((s,r)=>s+(Number(r.total)||0),0);
+  if(error || !data) data = [];
 
-  // KPIs
-  let totalVentas=data.reduce((s,r)=>s+(Number(r.total)||0),0);
-  let numPedidos=data.length;
-  let ticketProm=numPedidos>0?Math.round(totalVentas/numPedidos):0;
-  let diasUnicos=[...new Set(data.map(r=>r.fecha))].length||1;
-  let promedioVentasDia=Math.round(totalVentas/diasUnicos);
-  let diffHoy=totalAyer>0?Math.round((promedioVentasDia-totalAyer)/totalAyer*100):0;
+  data = depurarPedidosUnicos(data);
 
-  // Agrupar por fecha
-  let porFecha={};
-  data.forEach(r=>{
+  let ayer = new Date(fechaHoy+"T00:00:00");
+  ayer.setDate(ayer.getDate()-1);
+  let fechaAyer = ayer.toISOString().split("T")[0];
+
+  let { data: dataAyer, error: errorAyer } = await db.from("pedidos")
+    .select("*")
+    .eq("fecha", fechaAyer);
+
+  if(errorAyer || !dataAyer) dataAyer = [];
+  dataAyer = depurarPedidosUnicos(dataAyer);
+
+  let totalAyer = dataAyer.reduce(function(s,r){
+    return s + (Number(r.total)||0);
+  },0);
+
+  let totalVentas = data.reduce(function(s,r){
+    return s + (Number(r.total)||0);
+  },0);
+
+  let numPedidos = data.length;
+  let ticketProm = numPedidos>0 ? Math.round(totalVentas/numPedidos) : 0;
+
+  let diasUnicos = [...new Set(data.map(function(r){ return r.fecha; }))].length || 1;
+  let promedioVentasDia = Math.round(totalVentas / diasUnicos);
+  let diffHoy = totalAyer>0 ? Math.round(((promedioVentasDia-totalAyer)/totalAyer)*100) : 0;
+
+  let porFecha = {};
+  data.forEach(function(r){
     if(!porFecha[r.fecha]) porFecha[r.fecha]=0;
-    porFecha[r.fecha]+=(Number(r.total)||0);
+    porFecha[r.fecha]+=Number(r.total)||0;
   });
-  let fechasOrdenadas=Object.keys(porFecha).sort();
 
-  // Agrupar por día de semana
-  const dias=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
-  let porDia=[0,0,0,0,0,0,0];
-  let cntDia=[0,0,0,0,0,0,0];
-  data.forEach(r=>{
-    let d=new Date(r.fecha+"T00:00:00");
-    let dw=d.getDay();
-    porDia[dw]+=(Number(r.total)||0);
+  const dias = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+  let porDia = [0,0,0,0,0,0,0];
+  let cntDia = [0,0,0,0,0,0,0];
+
+  data.forEach(function(r){
+    let d = new Date(r.fecha+"T00:00:00");
+    let dw = d.getDay();
+    porDia[dw] += Number(r.total)||0;
     cntDia[dw]++;
   });
-  let promDia=porDia.map((v,i)=>cntDia[i]>0?Math.round(v/cntDia[i]):0);
 
-  // Top clientes
-  let porCliente={};
-  data.forEach(r=>{
-    if(!porCliente[r.cliente]) porCliente[r.cliente]=0;
-    porCliente[r.cliente]+=(Number(r.total)||0);
+  let promDia = porDia.map(function(v,i){
+    return cntDia[i]>0 ? Math.round(v/cntDia[i]) : 0;
   });
-  let topClientes=Object.entries(porCliente).sort((a,b)=>b[1]-a[1]).slice(0,8);
 
-  // Top productos
-  let porProducto={};
-  data.forEach(r=>{
-    if(r.productos&&Array.isArray(r.productos)){
-      r.productos.forEach(p=>{
+  let porCliente = {};
+  data.forEach(function(r){
+    if(!porCliente[r.cliente]) porCliente[r.cliente]=0;
+    porCliente[r.cliente]+=Number(r.total)||0;
+  });
+
+  let topClientes = Object.entries(porCliente)
+    .sort(function(a,b){ return b[1]-a[1]; })
+    .slice(0,8);
+
+  let porProducto = {};
+  data.forEach(function(r){
+    if(r.productos && Array.isArray(r.productos)){
+      r.productos.forEach(function(p){
         if(!porProducto[p.nombre]) porProducto[p.nombre]={cant:0,total:0};
-        porProducto[p.nombre].cant+=(p.cantidad||0);
+        porProducto[p.nombre].cant += Number(p.cantidad)||0;
+        porProducto[p.nombre].total += Number(p.dinero)||0;
       });
     }
   });
-  let topProductos=Object.entries(porProducto).sort((a,b)=>b[1].cant-a[1].cant).slice(0,6);
 
-  // Mejor y peor día
-  let mejorDia=fechasOrdenadas.reduce((a,b)=>(porFecha[a]||0)>(porFecha[b]||0)?a:b,"");
-  let peorDia=fechasOrdenadas.reduce((a,b)=>(porFecha[a]||0)<(porFecha[b]||0)?a:b,"");
-  let mejorCliente=topClientes[0]||["—",0];
+  let topProductos = Object.entries(porProducto)
+    .sort(function(a,b){ return b[1].cant-a[1].cant; })
+    .slice(0,6);
 
-  let deltaClass=diffHoy>0?"up":diffHoy<0?"down":"neutral";
-  let deltaIcon=diffHoy>0?"↑":diffHoy<0?"↓":"→";
+  let fechasOrdenadas = Object.keys(porFecha).sort();
+  let mejorDia = fechasOrdenadas.length ? fechasOrdenadas.reduce(function(a,b){
+    return porFecha[a] > porFecha[b] ? a : b;
+  }) : "";
 
-  // Render
-  document.getElementById("statsBody").innerHTML=`
+  let peorDia = fechasOrdenadas.length ? fechasOrdenadas.reduce(function(a,b){
+    return porFecha[a] < porFecha[b] ? a : b;
+  }) : "";
+
+  let mejorCliente = topClientes[0] || ["—",0];
+
+  let body = document.getElementById("statsBody");
+  if(!body) return;
+
+  let html = `
     <div class="filter-tabs">
-      <button class="ftab ${filtro==='hoy'?'active':''}" onclick="cargarStats('hoy')">Hoy</button>
-      <button class="ftab ${filtro==='semana'?'active':''}" onclick="cargarStats('semana')">7 días</button>
-      <button class="ftab ${filtro==='mes'?'active':''}" onclick="cargarStats('mes')">Este mes</button>
-      <button class="ftab ${filtro==='custom'?'active':''}" onclick="mostrarRango()">Rango</button>
+      <button class="ftab ${filtro==="hoy"?"active":""}" onclick="cargarStats('hoy')">Hoy</button>
+      <button class="ftab ${filtro==="semana"?"active":""}" onclick="cargarStats('semana')">7 días</button>
+      <button class="ftab ${filtro==="mes"?"active":""}" onclick="cargarStats('mes')">Este mes</button>
+      <button class="ftab ${filtro==="custom"?"active":""}" onclick="mostrarRangoStats()">Rango</button>
     </div>
-    <div id="rangoPersonalizado" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
-      <input type="date" id="filtroDesde" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#e2e8f0;padding:6px 10px;font-size:13px;">
-      <input type="date" id="filtroHasta" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;color:#e2e8f0;padding:6px 10px;font-size:13px;">
-      <button onclick="cargarStats('custom')" style="background:#16a34a;border:none;color:white;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:13px;">Aplicar</button>
+
+    <div id="rangoStatsBox" style="display:${filtro==="custom"?"flex":"none"};gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+      <input type="date" id="filtroDesde" value="${filtro==="custom" ? fechaInicio : ""}" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fff;padding:10px;">
+      <input type="date" id="filtroHasta" value="${filtro==="custom" ? fechaFin : ""}" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fff;padding:10px;">
+      <button class="btn-transferir" onclick="cargarStats('custom')">Aplicar</button>
     </div>
 
     <div class="kpi-grid">
       <div class="kpi-card green">
         <div class="kpi-label">Ventas del período</div>
-        <div class="kpi-value" style="font-size:clamp(1rem,2.5vw,1.6rem);">$${totalVentas.toLocaleString('es-CO')}</div>
-        <div class="kpi-delta ${deltaClass}">${deltaIcon} ${Math.abs(diffHoy)}% vs día ant.</div>
+        <div class="kpi-value">$${totalVentas.toLocaleString("es-CO")}</div>
+        <div class="kpi-delta ${diffHoy>=0?'up':'down'}">${diffHoy>=0?'↑':'↓'} ${Math.abs(diffHoy)}% vs día ant.</div>
       </div>
+
       <div class="kpi-card blue">
         <div class="kpi-label">N° de pedidos</div>
         <div class="kpi-value">${numPedidos}</div>
         <div class="kpi-delta neutral">${diasUnicos} día(s)</div>
       </div>
+
       <div class="kpi-card orange">
         <div class="kpi-label">Ticket promedio</div>
-        <div class="kpi-value" style="font-size:clamp(0.9rem,2vw,1.4rem);">$${ticketProm.toLocaleString('es-CO')}</div>
+        <div class="kpi-value">$${ticketProm.toLocaleString("es-CO")}</div>
         <div class="kpi-delta neutral">por pedido</div>
       </div>
+
       <div class="kpi-card purple">
         <div class="kpi-label">Mejor cliente</div>
-        <div class="kpi-value" style="font-size:clamp(0.7rem,1.5vw,1rem);line-height:1.2;">${mejorCliente[0]||'—'}</div>
-        <div class="kpi-delta neutral">$${(mejorCliente[1]||0).toLocaleString('es-CO')}</div>
+        <div class="kpi-value" style="font-size:1.15rem;">${mejorCliente[0]}</div>
+        <div class="kpi-delta neutral">$${Number(mejorCliente[1]||0).toLocaleString("es-CO")}</div>
       </div>
     </div>
 
     <p class="section-title">Ventas por día</p>
-    <div class="chart-card full-w">
-      <div class="chart-title">Tendencia de ventas diarias</div>
-      <div class="chart-wrap"><canvas id="chartVentas"></canvas></div>
+    <div class="charts-grid">
+      <div class="chart-card full-w">
+        <div class="chart-title">Tendencia de ventas diarias</div>
+        <div class="chart-wrap tall"><canvas id="chartVentasDia"></canvas></div>
+      </div>
     </div>
 
-    <div class="charts-grid" style="margin-top:16px;">
+    <div class="charts-grid">
       <div class="chart-card">
         <div class="chart-title">Promedio por día de semana</div>
-        <div class="chart-wrap"><canvas id="chartDia"></canvas></div>
+        <div class="chart-wrap"><canvas id="chartDiasSemana"></canvas></div>
       </div>
+
       <div class="chart-card">
         <div class="chart-title">Top 8 Clientes</div>
-        <div class="chart-wrap tall" id="topClientesWrap">
-          ${topClientes.length===0?`<div class="empty-state"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><p>Sin datos en este período</p></div>`:''}
-          ${topClientes.map((c,i)=>`
-          <div class="top-item">
-            <div class="top-rank ${i===0?'gold':''}">${i+1}</div>
-            <div class="top-name">${c[0].split(' ').slice(0,2).join(' ')}</div>
-            <div class="top-bar-wrap"><div class="top-bar" style="width:${topClientes[0][1]>0?Math.round(c[1]/topClientes[0][1]*100):0}%"></div></div>
-            <div class="top-val">$${c[1].toLocaleString('es-CO')}</div>
-          </div>`).join('')}
+        <div class="top-list">
+          ${topClientes.length ? topClientes.map(function(c,i){
+            let max = topClientes[0][1] || 1;
+            let pct = ((c[1]/max)*100).toFixed(1);
+            return `
+              <div class="top-item">
+                <div class="top-rank ${i===0?'gold':''}">${i+1}</div>
+                <div class="top-name">${c[0]}</div>
+                <div class="top-bar-wrap"><div class="top-bar" style="width:${pct}%"></div></div>
+                <div class="top-val">$${Number(c[1]).toLocaleString("es-CO")}</div>
+              </div>
+            `;
+          }).join("") : '<div class="empty-state"><p>Sin datos</p></div>'}
         </div>
       </div>
     </div>
 
-    ${topProductos.length>0?`
-    <p class="section-title">Productos más vendidos</p>
-    <div class="chart-card full-w">
-      <div class="chart-title">Cantidad por producto</div>
-      <div class="chart-wrap"><canvas id="chartProductos"></canvas></div>
-    </div>`:''}
-
-    <p class="section-title">Análisis del período</p>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+    <div class="charts-grid">
       <div class="chart-card">
-        <div class="kpi-label">🏆 Mejor día</div>
-        <div style="color:white;font-weight:700;margin-top:4px;">${mejorDia||'—'}</div>
-        <div style="color:var(--clr-panel-muted);font-size:12px;">${mejorDia?'$'+porFecha[mejorDia].toLocaleString('es-CO'):''}</div>
+        <div class="chart-title">Top productos por cantidad</div>
+        <div class="top-list">
+          ${topProductos.length ? topProductos.map(function(p,i){
+            let max = topProductos[0][1].cant || 1;
+            let pct = ((p[1].cant/max)*100).toFixed(1);
+            return `
+              <div class="top-item">
+                <div class="top-rank ${i===0?'gold':''}">${i+1}</div>
+                <div class="top-name">${p[0]}</div>
+                <div class="top-bar-wrap"><div class="top-bar" style="width:${pct}%"></div></div>
+                <div class="top-val">${p[1].cant}</div>
+              </div>
+            `;
+          }).join("") : '<div class="empty-state"><p>Sin productos</p></div>'}
+        </div>
       </div>
+
       <div class="chart-card">
-        <div class="kpi-label">📉 Día más bajo</div>
-        <div style="color:white;font-weight:700;margin-top:4px;">${peorDia||'—'}</div>
-        <div style="color:var(--clr-panel-muted);font-size:12px;">${peorDia?'$'+porFecha[peorDia].toLocaleString('es-CO'):''}</div>
+        <div class="chart-title">Insights rápidos</div>
+        <div class="top-list">
+          <div class="top-item"><div class="top-name">Mejor día</div><div class="top-val">${mejorDia || "—"}</div></div>
+          <div class="top-item"><div class="top-name">Peor día</div><div class="top-val">${peorDia || "—"}</div></div>
+          <div class="top-item"><div class="top-name">Promedio diario</div><div class="top-val">$${promedioVentasDia.toLocaleString("es-CO")}</div></div>
+          <div class="top-item"><div class="top-name">Clientes únicos</div><div class="top-val">${Object.keys(porCliente).length}</div></div>
+        </div>
       </div>
     </div>
   `;
 
-  // Chart: ventas por día
-  if(chartVentas){ chartVentas.destroy(); chartVentas=null; }
-  let ctx=document.getElementById("chartVentas");
-  if(ctx&&fechasOrdenadas.length>0){
-    chartVentas=new Chart(ctx,{
-      type:'line',
-      data:{
-        labels:fechasOrdenadas.map(f=>f.slice(5)),
-        datasets:[{
-          label:'Ventas',
-          data:fechasOrdenadas.map(f=>porFecha[f]),
-          borderColor:'#16a34a', backgroundColor:'rgba(22,163,74,0.10)',
-          borderWidth:2.5, tension:0.4, fill:true,
-          pointBackgroundColor:'#16a34a', pointRadius:4, pointHoverRadius:6
+  body.innerHTML = html;
+
+  let ctx1 = document.getElementById("chartVentasDia");
+  if(ctx1){
+    new Chart(ctx1, {
+      type: "line",
+      data: {
+        labels: fechasOrdenadas,
+        datasets: [{
+          label: "Ventas",
+          data: fechasOrdenadas.map(function(f){ return porFecha[f]; }),
+          borderColor: "#22c55e",
+          backgroundColor: "rgba(34,197,94,0.15)",
+          fill: true,
+          tension: 0.35,
+          pointRadius: 4,
+          pointBackgroundColor: "#22c55e"
         }]
       },
-      options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>'$'+ctx.raw.toLocaleString('es-CO')}}},
-        scales:{x:{ticks:{color:'#94a3b8',font:{size:11}},grid:{color:'rgba(255,255,255,0.05)'}},
-                y:{ticks:{color:'#94a3b8',font:{size:11},callback:v=>'$'+v.toLocaleString('es-CO')},grid:{color:'rgba(255,255,255,0.05)'}}}}
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display:false } },
+        scales: {
+          x: { ticks:{ color:"#94a3b8" }, grid:{ color:"rgba(255,255,255,0.05)" } },
+          y: { ticks:{ color:"#94a3b8" }, grid:{ color:"rgba(255,255,255,0.05)" } }
+        }
+      }
     });
   }
 
-  // Chart: por día de semana
-  if(chartDia){ chartDia.destroy(); chartDia=null; }
-  let ctx2=document.getElementById("chartDia");
+  let ctx2 = document.getElementById("chartDiasSemana");
   if(ctx2){
-    chartDia=new Chart(ctx2,{
-      type:'bar',
-      data:{
-        labels:dias,
-        datasets:[{label:'Promedio',data:promDia,
-          backgroundColor:['rgba(37,99,235,0.7)','rgba(22,163,74,0.7)','rgba(22,163,74,0.7)','rgba(22,163,74,0.7)','rgba(22,163,74,0.7)','rgba(22,163,74,0.7)','rgba(37,99,235,0.7)'],
-          borderRadius:6,borderSkipped:false}]
+    new Chart(ctx2, {
+      type: "bar",
+      data: {
+        labels: dias,
+        datasets: [{
+          label: "Promedio",
+          data: promDia,
+          backgroundColor: "#3b82f6",
+          borderRadius: 8
+        }]
       },
-      options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>'$'+ctx.raw.toLocaleString('es-CO')}}},
-        scales:{x:{ticks:{color:'#94a3b8',font:{size:11}},grid:{display:false}},
-                y:{ticks:{color:'#94a3b8',font:{size:11},callback:v=>'$'+v.toLocaleString('es-CO')},grid:{color:'rgba(255,255,255,0.05)'}}}}
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display:false } },
+        scales: {
+          x: { ticks:{ color:"#94a3b8" }, grid:{ display:false } },
+          y: { ticks:{ color:"#94a3b8" }, grid:{ color:"rgba(255,255,255,0.05)" } }
+        }
+      }
     });
-  }
-
-  // Chart: productos
-  if(topProductos.length>0){
-    let ctx3=document.getElementById("chartProductos");
-    if(ctx3){
-      new Chart(ctx3,{
-        type:'bar',
-        data:{
-          labels:topProductos.map(p=>p[0].split('(')[0].trim()),
-          datasets:[{label:'Unidades',data:topProductos.map(p=>p[1].cant),
-            backgroundColor:'rgba(124,58,237,0.7)',borderRadius:6,borderSkipped:false}]
-        },
-        options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-          plugins:{legend:{display:false}},
-          scales:{x:{ticks:{color:'#94a3b8',font:{size:11}},grid:{color:'rgba(255,255,255,0.05)'}},
-                  y:{ticks:{color:'#94a3b8',font:{size:11}},grid:{display:false}}}}
-      });
-    }
   }
 }
-
 function mostrarRango(){
   let r=document.getElementById("rangoPersonalizado");
   r.style.display=r.style.display==="flex"?"none":"flex";
