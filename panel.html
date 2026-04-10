@@ -683,12 +683,12 @@ color-scheme: dark;
 ">
 <button onclick="nuevoCliente()">➕ Agregar Cliente</button>
 <div class="side-actions">
-  <button class="side-action-btn" type="button" id="btnEstadisticas">
+ <button class="side-action-btn" type="button" id="btnEstadisticas" onclick="abrirPanelERP('estadisticas')">
   <i class="fa-solid fa-chart-line"></i>
   <span>Estadísticas</span>
 </button>
 
-<button class="side-action-btn" type="button" id="btnContabilidad">
+<button class="side-action-btn" type="button" id="btnContabilidad" onclick="abrirPanelERP('contabilidad')">
   <i class="fa-solid fa-wallet"></i>
   <span>Contabilidad</span>
 </button>
@@ -809,7 +809,7 @@ border-radius:10px;
 COBRAR: $0
 </div>
 </div>
-<div class="erp-overlay" id="erpOverlay" onclick="handleOverlayClose(event)">
+<div class="erp-overlay" id="erpOverlay">
   <aside class="erp-panel" role="dialog" aria-modal="true" aria-labelledby="erpPanelTitle">
     <div class="erp-header">
       <div class="erp-title-wrap">
@@ -821,8 +821,8 @@ COBRAR: $0
         <p id="erpPanelSubtitle">Análisis dinámico conectado a Supabase.</p>
       </div>
       <button class="erp-close" type="button" onclick="cerrarPanelERP()" aria-label="Cerrar panel">
-        <i class="fa-solid fa-xmark"></i>
-      </button>
+  <i class="fa-solid fa-xmark"></i>
+</button>
     </div>
 
     <div class="erp-body" id="erpPanelBody">
@@ -2654,85 +2654,70 @@ document.addEventListener("keydown", function(e){
         }
     }
 });
-/* ===== ERP BOTONES FUNCIONANDO ===== */
+/* ===== ERP MINIMO QUE SI ABRE ===== */
 
-(function () {
+function abrirPanelERP(tipo){
   const overlay = document.getElementById("erpOverlay");
   const title = document.getElementById("erpPanelTitle");
   const subtitle = document.getElementById("erpPanelSubtitle");
   const badge = document.getElementById("erpPanelBadge");
   const body = document.getElementById("erpPanelBody");
 
-  const btnEstadisticas = document.getElementById("btnEstadisticas");
-  const btnContabilidad = document.getElementById("btnContabilidad");
-
-  function abrirPanelERP(tipo) {
-    if (!overlay || !title || !subtitle || !badge || !body) {
-      console.error("No existe el panel ERP en el HTML");
-      return;
-    }
-
-    if (tipo === "estadisticas") {
-      title.textContent = "Estadísticas";
-      subtitle.textContent = "Panel abierto correctamente";
-      badge.innerHTML = `<i class="fa-solid fa-chart-line"></i> Estadísticas`;
-      body.innerHTML = `
-        <div class="empty-state">
-          <i class="fa-solid fa-chart-column" style="font-size:26px;margin-bottom:10px;"></i>
-          <div>Ya quedó abierto el módulo de estadísticas.</div>
-        </div>
-      `;
-    } else {
-      title.textContent = "Contabilidad";
-      subtitle.textContent = "Panel abierto correctamente";
-      badge.innerHTML = `<i class="fa-solid fa-wallet"></i> Contabilidad`;
-      body.innerHTML = `
-        <div class="empty-state">
-          <i class="fa-solid fa-wallet" style="font-size:26px;margin-bottom:10px;"></i>
-          <div>Ya quedó abierto el módulo de contabilidad.</div>
-        </div>
-      `;
-    }
-
-    overlay.classList.add("show");
-    document.body.style.overflow = "hidden";
+  if(!overlay || !title || !subtitle || !badge || !body){
+    alert("Falta el HTML del panel ERP");
+    return;
   }
 
-  function cerrarPanelERP() {
-    if (overlay) {
-      overlay.classList.remove("show");
-    }
-    document.body.style.overflow = "";
+  if(tipo === "estadisticas"){
+    title.textContent = "Estadísticas";
+    subtitle.textContent = "Panel funcionando";
+    badge.innerHTML = '<i class="fa-solid fa-chart-line"></i> Estadísticas';
+    body.innerHTML = `
+      <div style="padding:20px;color:white;">
+        <h3 style="margin-top:0;">Estadísticas</h3>
+        <p>El panel ya abre correctamente.</p>
+      </div>
+    `;
+  } else {
+    title.textContent = "Contabilidad";
+    subtitle.textContent = "Panel funcionando";
+    badge.innerHTML = '<i class="fa-solid fa-wallet"></i> Contabilidad';
+    body.innerHTML = `
+      <div style="padding:20px;color:white;">
+        <h3 style="margin-top:0;">Contabilidad</h3>
+        <p>El panel ya abre correctamente.</p>
+      </div>
+    `;
   }
 
-  window.cerrarPanelERP = cerrarPanelERP;
+  overlay.style.opacity = "1";
+  overlay.style.visibility = "visible";
+  overlay.classList.add("show");
+  document.body.style.overflow = "hidden";
+}
 
-  if (btnEstadisticas) {
-    btnEstadisticas.onclick = function () {
-      abrirPanelERP("estadisticas");
-    };
+function cerrarPanelERP(){
+  const overlay = document.getElementById("erpOverlay");
+  if(overlay){
+    overlay.style.opacity = "0";
+    overlay.style.visibility = "hidden";
+    overlay.classList.remove("show");
   }
+  document.body.style.overflow = "";
+}
 
-  if (btnContabilidad) {
-    btnContabilidad.onclick = function () {
-      abrirPanelERP("contabilidad");
-    };
+document.addEventListener("keydown", function(e){
+  if(e.key === "Escape"){
+    cerrarPanelERP();
   }
+});
 
-  if (overlay) {
-    overlay.onclick = function (e) {
-      if (e.target === overlay) {
-        cerrarPanelERP();
-      }
-    };
+window.onclick = function(e){
+  const overlay = document.getElementById("erpOverlay");
+  if(e.target === overlay){
+    cerrarPanelERP();
   }
-
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") {
-      cerrarPanelERP();
-    }
-  });
-})();
+};
 </script>
 </body>
 </html>
