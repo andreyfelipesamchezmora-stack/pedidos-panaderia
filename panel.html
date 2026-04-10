@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ===== VARIABLES MÓDULO CUENTAS =====
@@ -743,7 +744,15 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
 <div class="overlay-panel" id="panelConta">
   <div class="panel-drawer">
     <div class="panel-header">
-      ...
+      <h2>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+          <path d="M8 21h8"></path>
+          <path d="M12 17v4"></path>
+        </svg>
+        Contabilidad
+      </h2>
+      <button class="panel-close" onclick="cerrarPanel('panelConta')">Cerrar</button>
     </div>
     <div class="panel-body" id="contaBody">
       <!-- Se llena con JS -->
@@ -751,13 +760,12 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
   </div>
 </div>
 
-<!-- OVERLAY PERMANENTE PARA MODALES DE CUENTAS -->
+<!-- OVERLAY GLOBAL MODALES CUENTAS -->
 <div id="mcOverlayGlobal" onclick="if(event.target===this)cerrarMC()" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.72);z-index:9999;align-items:center;justify-content:center;">
   <div class="mc-box" id="mcBoxGlobal" onclick="event.stopPropagation()"></div>
 </div>
 
 <script>
-
 const db = supabase.createClient(
   "https://vswostjubcxjotpqnzhk.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzd29zdGp1YmN4am90cHFuemhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyOTAyNDksImV4cCI6MjA4Nzg2NjI0OX0.VIWMJWyubtKj7QCoOybia_Fv2S4sjxFelQz9x1tZKBo"
@@ -1149,7 +1157,10 @@ async function imprimirTicket(){
   let ventana=window.open("","_blank");
   if(!ventana){alert("Bloqueado por el navegador");return;}
   ventana.document.write(`<html><head><title>Ticket</title><style>body{margin:0;padding:0;font-family:monospace;}.ticket{width:280px;margin:0 auto;text-align:center;}.linea{border-top:1px dashed black;margin:6px 0;width:100%;}.producto{font-size:20px;font-weight:bold;text-align:center;line-height:1.1;margin:0;padding:2px 0;}.bendaje{font-size:14px;margin:0;padding:0;}</style></head><body onload="window.print();window.close();"><div class="ticket">${contenido}</div>
-
+<!-- OVERLAY PERMANENTE PARA MODALES DE CUENTAS -->
+<div id="mcOverlayGlobal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.72);z-index:9999;align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarMC();">
+  <div class="mc-box" id="mcBoxGlobal" onclick="event.stopPropagation()"></div>
+</div>
 
 </body></html>`);
   ventana.document.write("<script>window.print();<\/script>");
