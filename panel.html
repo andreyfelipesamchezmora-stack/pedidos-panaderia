@@ -825,16 +825,14 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
   </svg>
   Contabilidad
 </button>
-
-<button class="module-btn recaudo-btn" onclick="abrirRecaudo()">
+<button class="module-btn recaudo-btn" onclick="abrirRecaudo()" style="border-left:3px solid #f59e0b;">
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-    <path d="M3 7h18"></path>
-    <path d="M6 3h12v18H6z"></path>
-    <path d="M9 11h6"></path>
-    <path d="M9 15h6"></path>
+    <path d="M3 7h18"></path><path d="M6 3h12v18H6z"></path>
+    <path d="M9 11h6"></path><path d="M9 15h6"></path>
   </svg>
   Recaudo
 </button>
+  
 </div>
 
   <div class="video-sidebar">
@@ -1362,6 +1360,19 @@ async function imprimirTicket(){
   let ventana=window.open("","_blank");
   if(!ventana){alert("Bloqueado por el navegador");return;}
   ventana.document.write(`<html><head><title>Ticket</title><style>body{margin:0;padding:0;font-family:monospace;}.ticket{width:280px;margin:0 auto;text-align:center;}.linea{border-top:1px dashed black;margin:6px 0;width:100%;}.producto{font-size:20px;font-weight:bold;text-align:center;line-height:1.1;margin:0;padding:2px 0;}.bendaje{font-size:14px;margin:0;padding:0;}</style></head><body onload="window.print();window.close();"><div class="ticket">${contenido}</div>
+<!-- PANEL RECAUDO -->
+<div class="overlay-panel" id="panelRecaudo">
+  <div class="panel-drawer" style="width:min(1280px,98vw);">
+    <div class="panel-header">
+      <h2>🧾 Recaudo Diario</h2>
+      <button class="panel-close" onclick="cerrarPanel('panelRecaudo')">Cerrar</button>
+    </div>
+    <div class="panel-body" id="recaudoBody">
+      <div class="empty-state"><p>Cargando...</p></div>
+    </div>
+  </div>
+</div>
+
 <!-- OVERLAY PERMANENTE PARA MODALES DE CUENTAS -->
 <div id="mcOverlayGlobal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.72);z-index:9999;align-items:center;justify-content:center;" onclick="if(event.target===this)cerrarMC();">
   <div class="mc-box" id="mcBoxGlobal" onclick="event.stopPropagation()"></div>
@@ -2956,9 +2967,28 @@ document.getElementById("panelStats").addEventListener("click",function(e){
 document.getElementById("panelConta").addEventListener("click",function(e){
   if(e.target===this) cerrarPanel("panelConta");
 });
-document.getElementById("panelRecaudo").addEventListener("click", function(e){
-  if(e.target === this) cerrarPanel("panelRecaudo");
+document.getElementById("panelRecaudo").addEventListener("click",function(e){
+  if(e.target===this) cerrarPanel("panelRecaudo");
 });
+
+async function abrirRecaudo(){
+  let panel = document.getElementById("panelRecaudo");
+  if(!panel){ alert("Panel Recaudo no encontrado"); return; }
+  panel.style.display = "flex";
+  panel.classList.add("open");
+  document.getElementById("recaudoBody").innerHTML = `
+    <div class="loading-skeleton">
+      <div class="skel skel-h"></div>
+      <div class="skel skel-c"></div>
+      <div class="skel skel-c"></div>
+    </div>`;
+  if(typeof renderRecaudo === "function"){
+    await renderRecaudo();
+  } else {
+    document.getElementById("recaudoBody").innerHTML =
+      "<div class='empty-state'><p>✅ Panel abierto correctamente.<br>Falta pegar la función renderRecaudo().</p></div>";
+  }
+}
 </script>
 </body>
 </html>
