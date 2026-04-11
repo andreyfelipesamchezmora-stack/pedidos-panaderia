@@ -2907,9 +2907,13 @@ async function renderRecaudo(){
 </thead>
           <tbody>
             ${rows.map(function(r){
-              let safe = r.cliente.replace(/"/g, '&quot;');
-              return `
-                <tr>
+  let safe = r.cliente.replace(/"/g, '&quot;');
+  let bgColor = '';
+  if(r.recibido) bgColor = 'rgba(34,197,94,0.10)';
+  else if(r.recaudoDomi > 0) bgColor = 'rgba(245,158,11,0.10)';
+  return `
+
+                <tr style="background:${bgColor}; transition:background 0.2s;"> 
                   <td><span class="recaudo-badge ${r.tipo}">${recaudoTipoLabel(r.tipo)}</span></td>
                   <td style="font-weight:700;">${r.cliente}</td>
                   <td>${recaudoMoney(r.subtotal)}</td>
