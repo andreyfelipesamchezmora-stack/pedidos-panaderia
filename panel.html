@@ -10,7 +10,12 @@ let cuentasMemoria = [
   {nombre:"Efectivo", tipo:"EFECTIVO", color:"orange", saldo:0}
 ];
 let transferenciasMem = [];
-
+// ===== CONTROL GLOBAL DE PANELES =====
+function cerrarPanel(){
+  document.querySelectorAll(".overlay-panel").forEach(p=>{
+    p.classList.remove("open");
+  });
+}
 function tipoEmoji(tipo){
   const m={"CUENTA CORRIENTE":"🏛️","CUENTA DE AHORRO":"🐖","NEQUI":"📱","DAVIPLATA":"📱","EFECTIVO":"💵"};
   return m[tipo]||"💳";
@@ -906,7 +911,7 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
         </svg>
         Estadísticas de Ventas
       </h2>
-      <button class="panel-close" onclick="cerrarPanel('panelStats')">✕ Cerrar</button>
+      <button class="panel-close" onclick="cerrarPanel()">✖</button>
     </div>
     <div class="panel-body" id="statsBody">
       <!-- Se llena con JS -->
@@ -918,7 +923,7 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
   <div class="panel-drawer" style="width:min(1280px,98vw);">
     <div class="panel-header">
       <h2>🧾 Recaudo del Día</h2>
-      <button class="panel-close" onclick="cerrarPanel('panelRecaudo')">Cerrar</button>
+      <button class="panel-close" onclick="cerrarPanel()">✖</button>
     </div>
     <div class="panel-body" id="recaudoBody">
       <!-- Se llena con JS -->
@@ -949,13 +954,13 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
         </svg>
         Recaudo Diario
       </h2>
-      <button class="panel-close" onclick="cerrarPanel('panelRecaudo')">Cerrar</button>
+      <button class="panel-close" onclick="cerrarPanel()">✖</button>
     </div>
     <div class="panel-body" id="recaudoBody"></div>
   </div>
 </div>
       </h2>
-      <button class="panel-close" onclick="cerrarPanel('panelConta')">Cerrar</button>
+      <button class="panel-close" onclick="cerrarPanel()">✖</button>
     </div>
     <div class="panel-body" id="contaBody">
       <!-- Se llena con JS -->
@@ -966,7 +971,7 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
   <div class="panel-drawer" style="width:min(1280px, 98vw);">
     <div class="panel-header">
       <h2>Recaudo</h2>
-      <button class="panel-close" onclick="cerrarPanel('panelRecaudo')">Cerrar</button>
+      <button class="panel-close" onclick="cerrarPanel()">✖</button>
     </div>
     <div class="panel-body" id="recaudoBody">
       <div class="empty-state">
@@ -1110,6 +1115,7 @@ async function cargar(){
   } catch(e){ data = []; }
 
   let total = 0;
+  actualizarCuenta("Efectivo", total, "ingreso");
   let grid = document.getElementById("grid");
   grid.innerHTML = "";
   if(!clientes || clientes.length === 0){
@@ -1377,7 +1383,7 @@ async function imprimirTicket(){
   <div class="panel-drawer" style="width:min(1280px,98vw);">
     <div class="panel-header">
       <h2>🧾 Recaudo Diario</h2>
-      <button class="panel-close" onclick="cerrarPanel('panelRecaudo')">Cerrar</button>
+      <button class="panel-close" onclick="cerrarPanel()">✖</button>
     </div>
     <div class="panel-body" id="recaudoBody">
       <div class="empty-state"><p>Cargando...</p></div>
@@ -1444,6 +1450,7 @@ function abrirRecaudo() {
   html += `<div class="kpi-grid">`;
 
   let totalDia = 0;
+  actualizarCuenta("Efectivo", total, "ingreso");
   clientes.forEach(c => {
     const card = [...document.querySelectorAll('.card')]
       .find(el => el.querySelector('h4')?.innerText === c.nombre);
@@ -1782,7 +1789,19 @@ let cuentasMemoria = [
 ];
 
 let transferenciasMem = [];
+// ===== INTEGRACIÓN CUENTAS CON CAJA =====
+function actualizarCuenta(nombreCuenta, monto, tipo){
+  let cuenta = cuentasMemoria.find(c => c.nombre === nombreCuenta);
+  if(!cuenta) return;
 
+  if(tipo === "ingreso"){
+    cuenta.saldo += monto;
+  } else if(tipo === "gasto"){
+    cuenta.saldo -= monto;
+  }
+
+  renderConta("cuentas");
+}
 function tipoEmoji(tipo){
   const m = {
     "CUENTA CORRIENTE":"🏛️",
@@ -2432,7 +2451,7 @@ function _dibujarConta(tabActiva, ingresos){
       '<h3>Registrar gasto</h3>'+
       '<div class="gasto-row">'+
         '<input id="gastoDesc" placeholder="Descripción del gasto">'+
-        '<select id="gastoCat"><option>Costo</option><option>Gasto</option></select>'+
+        '<select id="gastoCuenta"></select>'+
         '<input id="gastoMonto" type="number" placeholder="Valor">'+
         '<button class="btn-add-gasto" onclick="agregarGasto()">+ Agregar</button>'+
       '</div>'+
@@ -2621,7 +2640,9 @@ function agregarGasto(){
   try{ sessionStorage.setItem("gastos",JSON.stringify(gastosMemoria)); }catch(e){}
   renderConta("resumen");
 }
-
+let cuenta = document.getElementById("gastoCuenta")?.value || "Efectivo";
+actualizarCuenta(cuenta, monto, "gasto");
+  
 function eliminarGasto(i){
   if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
   gastosMemoria.splice(i,1);
@@ -2775,15 +2796,20 @@ function recaudoGuardarFila(nombre){
     recibido: !!(q("rec_rec_" + nombre) && q("rec_rec_" + nombre).checked),
     nequi: parseNum(q("rec_nequi_" + nombre)),
     bancolombia: parseNum(q("rec_banco_" + nombre)),
-    deudaCliente: parseNum(q("rec_dc_" + nombre)),
-    deudaMia: parseNum(q("rec_dm_" + nombre)),
-    deudasPagadas: parseNum(q("rec_dp_" + nombre)),
-    faltantes: parseNum(q("rec_fal_" + nombre)),
-    salidas: parseNum(q("rec_sal_" + nombre)),
-    observacion: (q("rec_obs_" + nombre) && q("rec_obs_" + nombre).value || "").trim()
-  };
+let ultimoEstado = window._recaudoUltimo || {};
 
-  recaudoGuardarEstado(estado);
+if(ultimoEstado[nombre]?.nequi !== nequiValor){
+  actualizarCuenta("NEQUI", nequiValor, "ingreso");
+}
+
+if(ultimoEstado[nombre]?.banco !== bancoValor){
+  actualizarCuenta("CUENTA BANCOLOMBIA", bancoValor, "ingreso");
+}
+
+window._recaudoUltimo = {
+  ...window._recaudoUltimo,
+  [nombre]: { nequi: nequiValor, banco: bancoValor }
+};
 }
 
 async function abrirRecaudo(){
@@ -2916,8 +2942,15 @@ async function renderRecaudo(){
                   <td style="text-align:center;">
                     <input id="rec_rec_${safe}" class="recaudo-check" type="checkbox" ${r.recibido?'checked':''} onchange="recaudoGuardarFila('${safe}');renderRecaudo();">
                   </td>
-                  <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="number" value="${r.nequi}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
-                  <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="number" value="${r.bancolombia}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                 <div>
+  <label>
+    <input type="checkbox" id="nequiCheck"> Nequi
+  </label>
+
+  <label>
+    <input type="checkbox" id="bancoCheck"> Bancolombia
+  </label>
+</div>
                   <td><input id="rec_dc_${safe}" class="recaudo-money-input" type="number" value="${r.deudaCliente}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
                   <td><input id="rec_dm_${safe}" class="recaudo-money-input" type="number" value="${r.deudaMia}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
                   <td><input id="rec_dp_${safe}" class="recaudo-money-input" type="number" value="${r.deudasPagadas}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
@@ -3060,11 +3093,6 @@ async function abrirRecaudo(){
     document.getElementById("recaudoBody").innerHTML =
       "<div class='empty-state'><p>✅ Panel abierto correctamente.<br>Falta pegar la función renderRecaudo().</p></div>";
   }
-}
-function cerrarPanel(){
-  document.querySelectorAll(".overlay-panel").forEach(p=>{
-    p.classList.remove("open");
-  });
 }
 </script>
 </body>
