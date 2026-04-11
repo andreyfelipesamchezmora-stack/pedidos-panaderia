@@ -2804,12 +2804,13 @@ async function abrirRecaudo(){
   }
 }
 function fmtRecaudo(input) {
-  let pos = input.selectionStart;
   let raw = input.value.replace(/\./g, '').replace(/[^0-9]/g, '');
-  if (raw === '') { input.value = ''; input.dataset.raw = '0'; return; }
-  input.dataset.raw = raw;
-  input.value = Number(raw).toLocaleString('es-CO');
+  input.dataset.raw = raw || '0';
+  if (raw !== '') {
+    input.value = Number(raw).toLocaleString('es-CO');
+  }
 }
+
 function getRawRecaudo(input) {
   if (!input) return 0;
   return Number((input.dataset.raw || input.value || '0').replace(/\./g, '')) || 0;
@@ -2912,17 +2913,17 @@ async function renderRecaudo(){
                   <td><span class="recaudo-badge ${r.tipo}">${recaudoTipoLabel(r.tipo)}</span></td>
                   <td style="font-weight:700;">${r.cliente}</td>
                   <td>${recaudoMoney(r.subtotal)}</td>
-                  <td><input id="rec_domi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.recaudoDomi}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_domi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.recaudoDomi}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
                   <td style="text-align:center;">
                     <input id="rec_rec_${safe}" class="recaudo-check" type="checkbox" ${r.recibido?'checked':''} onchange="recaudoGuardarFila('${safe}');renderRecaudo();">
                   </td>
-                  <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"  value="${r.nequi}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
-                  <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.bancolombia}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
-                  <td><input id="rec_dc_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudaCliente}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
-                  <td><input id="rec_dm_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudaMia}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
-                  <td><input id="rec_dp_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudasPagadas}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
-                  <td><input id="rec_fal_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.faltantes}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
-                  <td><input id="rec_sal_${safe}" class="recaudo-money-input" type="text "inputmode="numeric" value="${r.salidas}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"  value="${r.nequi}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.bancolombia}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_dc_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudaCliente}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_dm_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudaMia}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_dp_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudasPagadas}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_fal_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.faltantes}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_sal_${safe}" class="recaudo-money-input" type="text "inputmode="numeric" value="${r.salidas}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
                   <td><div class="recaudo-resumen ${r.resumen.clase}">${r.resumen.texto}</div></td>
                   <td style="font-weight:800;">${recaudoMoney(r.efectivoNeto)}</td>
                   <td><input id="rec_obs_${safe}" class="recaudo-text-input" value="${(r.observacion||'').replace(/"/g,'&quot;')}" oninput="recaudoGuardarFila('${safe}')"></td>
