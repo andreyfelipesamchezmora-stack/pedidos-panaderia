@@ -3061,6 +3061,11 @@ async function abrirRecaudo(){
       "<div class='empty-state'><p>✅ Panel abierto correctamente.<br>Falta pegar la función renderRecaudo().</p></div>";
   }
 }
+function cerrarPanel(){
+  document.querySelectorAll(".overlay-panel").forEach(p=>{
+    p.classList.remove("open");
+  });
+}
 </script>
 </body>
 </html>
