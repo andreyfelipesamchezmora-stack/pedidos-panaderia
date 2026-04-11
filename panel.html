@@ -2913,10 +2913,12 @@ async function renderRecaudo(){
                   <td><span class="recaudo-badge ${r.tipo}">${recaudoTipoLabel(r.tipo)}</span></td>
                   <td style="font-weight:700;">${r.cliente}</td>
                   <td>${recaudoMoney(r.subtotal)}</td>
-                  <td><input id="rec_domi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.recaudoDomi}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
                   <td style="text-align:center;">
-                    <input id="rec_rec_${safe}" class="recaudo-check" type="checkbox" ${r.recibido?'checked':''} onchange="recaudoGuardarFila('${safe}');renderRecaudo();">
-                  </td>
+  <input id="rec_domi_${safe}" class="recaudo-check" type="checkbox"
+    ${r.recaudoDomi > 0 ? 'checked' : ''}
+    onchange="recaudoMarcarDomi('${safe}', ${r.subtotal});renderRecaudo();">
+</td>
+
                   <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"  value="${r.nequi}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
                   <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.bancolombia}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
                   <td><input id="rec_dc_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudaCliente}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
@@ -2969,6 +2971,13 @@ async function renderRecaudo(){
     console.error("Error en recaudo:", e);
     body.innerHTML = `<div class="empty-state"><p>No se pudo cargar el módulo de recaudo.</p></div>`;
   }
+}
+function recaudoMarcarDomi(nombre, subtotal) {
+  let estado = recaudoLeerEstado();
+  if (!estado[nombre]) estado[nombre] = {};
+  let checked = document.getElementById('rec_domi_' + nombre)?.checked;
+  estado[nombre].recaudoDomi = checked ? subtotal : 0;
+  recaudoGuardarEstado(estado);
 }
 
 function recaudoExportarExcel(){
