@@ -777,6 +777,32 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
 .recaudo-rec-btn.si{
   background:#16a34a;
 }
+/* CARTERA */
+.cartera-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:20px; }
+.cartera-table-wrap { background:var(--clr-panel-surface); border:1px solid var(--clr-panel-border); border-radius:16px; overflow:auto; margin-bottom:20px; }
+.cartera-table { width:100%; min-width:900px; border-collapse:collapse; font-size:13px; }
+.cartera-table th, .cartera-table td { border-bottom:1px solid rgba(255,255,255,0.06); padding:10px 12px; text-align:left; vertical-align:middle; }
+.cartera-table th { position:sticky; top:0; background:#162033; color:#cbd5e1; font-size:11px; text-transform:uppercase; letter-spacing:.05em; z-index:2; }
+.cartera-table tr:hover td { background:rgba(255,255,255,0.02); cursor:pointer; }
+.semaforo-verde  { background:rgba(34,197,94,.15);  color:#4ade80; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; }
+.semaforo-amarillo { background:rgba(234,179,8,.15); color:#fbbf24; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; }
+.semaforo-rojo   { background:rgba(220,38,38,.15);  color:#f87171; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; }
+.cartera-filtros { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; align-items:center; }
+.cartera-filtros input, .cartera-filtros select { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:8px; color:#e2e8f0; padding:7px 12px; font-size:13px; font-family:var(--font-body); }
+.cartera-modal-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:9000; display:flex; align-items:center; justify-content:center; }
+.cartera-modal-box { background:#1e293b; border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:24px; width:min(780px,95vw); max-height:88vh; overflow-y:auto; }
+.cartera-modal-box h3 { font-size:16px; font-weight:800; color:white; margin-bottom:16px; }
+.movimiento-item { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.06); font-size:13px; }
+.movimiento-item:last-child { border-bottom:none; }
+.mov-pedido { color:#60a5fa; }
+.mov-pago   { color:#4ade80; }
+.ranking-badge { padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; }
+.ranking-bueno    { background:rgba(34,197,94,.15);  color:#4ade80; }
+.ranking-ocasional{ background:rgba(234,179,8,.15);  color:#fbbf24; }
+.ranking-critico  { background:rgba(220,38,38,.15);  color:#f87171; }
+.edad-bar { height:8px; border-radius:4px; background:rgba(255,255,255,0.08); overflow:hidden; margin-top:4px; }
+.edad-bar-fill { height:100%; border-radius:4px; }
+
 </style>
 </head>
 
@@ -824,7 +850,14 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
   </svg>
   Recaudo
 </button>
-  
+<button class="module-btn cartera-btn" onclick="abrirModuloLateral('cartera')" style="border-left:3px solid #e11d48">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
+    <path d="M12 6v6l4 2"/>
+  </svg>
+  Cartera
+</button>
+
 </div>
 
   <div class="video-sidebar">
@@ -967,6 +1000,19 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
     </div>
   </div>
 </div>
+<!-- PANEL CARTERA -->
+<div class="overlay-panel" id="panelCartera">
+  <div class="panel-drawer" style="width:min(1300px,98vw);">
+    <div class="panel-header">
+      <h2>💳 Recuperación de Cartera</h2>
+      <button class="panel-close" onclick="cerrarPanel('panelCartera')">Cerrar</button>
+    </div>
+    <div class="panel-body" id="carteraBody">
+      <div class="empty-state"><p>Cargando cartera...</p></div>
+    </div>
+  </div>
+</div>
+
 <!-- OVERLAY GLOBAL MODALES CUENTAS -->
 <div id="mcOverlayGlobal" onclick="if(event.target===this)cerrarMC()" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.72);z-index:9999;align-items:center;justify-content:center;">
   <div class="mc-box" id="mcBoxGlobal" onclick="event.stopPropagation()"></div>
@@ -2018,6 +2064,13 @@ async function abrirModuloLateral(modulo){
     panelStats.classList.add("open");
     if(typeof cargarStats === "function") await cargarStats("hoy");
   }
+ if(modulo === "cartera"){
+  let panelCartera = document.getElementById("panelCartera");
+  if(!panelCartera) return;
+  panelCartera.style.display = "flex";
+  panelCartera.classList.add("open");
+  await renderCartera();
+}
 }
 async function abrirConta(){
   let panel = document.getElementById("panelConta");
@@ -3079,6 +3132,225 @@ async function abrirRecaudo(){
       "<div class='empty-state'><p>✅ Panel abierto correctamente.<br>Falta pegar la función renderRecaudo().</p></div>";
   }
 }
+// ============ MÓDULO CARTERA ============
+
+async function carteraCargarDatos() {
+  let hoy = new Date();
+  let { data: pedidos } = await db.from('pedidos').select('*');
+  let estadosGuardados = JSON.parse(localStorage.getItem('recaudoEstado') || '{}');
+
+  // Agrupar pedidos por cliente
+  let mapa = {};
+  (pedidos || []).forEach(p => {
+    let nom = p.cliente;
+    if (!mapa[nom]) mapa[nom] = { pedidos: [], totalPedidos: 0, totalPagado: 0 };
+    mapa[nom].pedidos.push(p);
+    mapa[nom].totalPedidos += Number(p.total) || 0;
+  });
+
+  // Restar pagos del módulo recaudo
+  Object.keys(estadosGuardados).forEach(nombre => {
+    let est = estadosGuardados[nombre];
+    let pagado = (Number(est.recaudoDomi)||0) + (Number(est.nequi)||0) + (Number(est.bancolombia)||0) + (Number(est.deudasPagadas)||0);
+    if (mapa[nombre]) mapa[nombre].totalPagado += pagado;
+  });
+
+  // Construir lista de deudores
+  let lista = Object.keys(mapa).map(nombre => {
+    let d = mapa[nombre];
+    let deuda = d.totalPedidos - d.totalPagado;
+    if (deuda <= 0) return null;
+
+    // Fecha pedido más antiguo pendiente
+    let fechas = d.pedidos.map(p => new Date(p.fecha)).filter(f => !isNaN(f));
+    let masAntiguo = fechas.length ? new Date(Math.min(...fechas)) : hoy;
+    let diasMora = Math.floor((hoy - masAntiguo) / 86400000);
+
+    // Último pago
+    let est = estadosGuardados[nombre] || {};
+    let ultimoPago = est.fechaPago || '—';
+
+    // Ranking
+    let ranking = diasMora <= 30 ? 'bueno' : diasMora <= 60 ? 'ocasional' : 'critico';
+    let estado  = diasMora <= 30 ? 'Normal' : diasMora <= 60 ? 'Riesgo' : 'Crítico';
+    let semaforo= diasMora <= 30 ? 'verde'  : diasMora <= 60 ? 'amarillo': 'rojo';
+
+    return { nombre, deuda, diasMora, ultimoPago, ranking, estado, semaforo, pedidos: d.pedidos, totalPedidos: d.totalPedidos, totalPagado: d.totalPagado };
+  }).filter(Boolean);
+
+  lista.sort((a,b) => b.deuda - a.deuda);
+  return lista;
+}
+
+async function renderCartera(filtroMora='todos', filtroNombre='') {
+  let body = document.getElementById('carteraBody');
+  body.innerHTML = `<div class="loading-skeleton"><div class="skel skel-h"></div><div class="skel skel-c"></div></div>`;
+
+  let lista = await carteraCargarDatos();
+
+  // Filtros
+  if (filtroMora === '0-30')  lista = lista.filter(c => c.diasMora <= 30);
+  if (filtroMora === '31-60') lista = lista.filter(c => c.diasMora > 30 && c.diasMora <= 60);
+  if (filtroMora === '61+')   lista = lista.filter(c => c.diasMora > 60);
+  if (filtroNombre) lista = lista.filter(c => c.nombre.toLowerCase().includes(filtroNombre.toLowerCase()));
+
+  // KPIs
+  let totalCartera  = lista.reduce((s,c) => s+c.deuda, 0);
+  let carteraVencida= lista.filter(c=>c.diasMora>30).reduce((s,c)=>s+c.deuda,0);
+  let cartVencer    = lista.filter(c=>c.diasMora<=30).reduce((s,c)=>s+c.deuda,0);
+  let totalPedidosTodos = lista.reduce((s,c)=>s+c.totalPedidos,0);
+  let pctRecuperacion = totalPedidosTodos > 0 ? Math.round(((totalPedidosTodos - totalCartera)/totalPedidosTodos)*100) : 0;
+
+  // Edades de cartera
+  let e0  = lista.filter(c=>c.diasMora<=30).reduce((s,c)=>s+c.deuda,0);
+  let e31 = lista.filter(c=>c.diasMora>30&&c.diasMora<=60).reduce((s,c)=>s+c.deuda,0);
+  let e61 = lista.filter(c=>c.diasMora>60&&c.diasMora<=90).reduce((s,c)=>s+c.deuda,0);
+  let e91 = lista.filter(c=>c.diasMora>90).reduce((s,c)=>s+c.deuda,0);
+  let eMax= Math.max(e0,e31,e61,e91,1);
+
+  body.innerHTML = `
+    <div class="cartera-kpis">
+      <div class="kpi-card green"><div class="kpi-label">Cartera total</div><div class="kpi-value" style="font-size:1.2rem">${recaudoMoney(totalCartera)}</div></div>
+      <div class="kpi-card red" style="--c:#e11d48"><div class="kpi-label">Cartera vencida</div><div class="kpi-value" style="font-size:1.2rem;color:#f87171">${recaudoMoney(carteraVencida)}</div></div>
+      <div class="kpi-card orange"><div class="kpi-label">Por vencer</div><div class="kpi-value" style="font-size:1.2rem">${recaudoMoney(cartVencer)}</div></div>
+      <div class="kpi-card blue"><div class="kpi-label">% Recuperación</div><div class="kpi-value" style="font-size:1.2rem">${pctRecuperacion}%</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+      <div class="chart-card">
+        <div class="chart-title">📊 Clasificación por edades</div>
+        ${[['0–30 días',e0,'#4ade80'],['31–60 días',e31,'#fbbf24'],['61–90 días',e61,'#f97316'],['90+ días',e91,'#f87171']].map(([lbl,val,color])=>`
+          <div style="margin-bottom:10px;">
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:#cbd5e1;margin-bottom:3px;">
+              <span>${lbl}</span><span style="font-weight:700">${recaudoMoney(val)}</span>
+            </div>
+            <div class="edad-bar"><div class="edad-bar-fill" style="width:${Math.round((val/eMax)*100)}%;background:${color}"></div></div>
+          </div>`).join('')}
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">🏆 Top 5 deudores</div>
+        <div class="top-list">
+          ${lista.slice(0,5).map((c,i)=>`
+            <div class="top-item">
+              <div class="top-rank ${i===0?'gold':''}">${i+1}</div>
+              <div class="top-name">${c.nombre}</div>
+              <div class="top-val">${recaudoMoney(c.deuda)}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <div class="cartera-filtros">
+      <input type="text" placeholder="🔍 Buscar cliente..." oninput="renderCartera(document.getElementById('filtroMora').value, this.value)" style="min-width:200px">
+      <select id="filtroMora" onchange="renderCartera(this.value, '')">
+        <option value="todos">Todos los días</option>
+        <option value="0-30">0–30 días</option>
+        <option value="31-60">31–60 días</option>
+        <option value="61+">Más de 60 días</option>
+      </select>
+    </div>
+
+    <div class="cartera-table-wrap">
+      <table class="cartera-table">
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Deuda total</th>
+            <th>Días mora</th>
+            <th>Último pago</th>
+            <th>Estado</th>
+            <th>Ranking</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${lista.map(c=>`
+            <tr onclick="carteraVerPerfil('${c.nombre.replace(/'/g,"\\'")}')">
+              <td style="font-weight:700">${c.nombre}</td>
+              <td style="font-weight:800;color:white">${recaudoMoney(c.deuda)}</td>
+              <td>${c.diasMora} días</td>
+              <td style="color:#94a3b8">${c.ultimoPago}</td>
+              <td><span class="semaforo-${c.semaforo}">${c.estado}</span></td>
+              <td><span class="ranking-badge ranking-${c.ranking}">${c.ranking==='bueno'?'✅ Buen pagador':c.ranking==='ocasional'?'⚠️ Ocasional':'🔴 Crítico'}</span></td>
+              <td><button class="btn-transferir" style="padding:5px 12px;font-size:12px" onclick="event.stopPropagation();carteraVerPerfil('${c.nombre.replace(/'/g,"\\'")}')">Ver perfil</button></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function carteraVerPerfil(nombre) {
+  let lista = await carteraCargarDatos();
+  let cliente = lista.find(c => c.nombre === nombre);
+  if (!cliente) return;
+
+  let est = JSON.parse(localStorage.getItem('recaudoEstado') || '{}')[nombre] || {};
+  let pagos = [
+    { tipo:'Nequi', valor: Number(est.nequi)||0 },
+    { tipo:'Bancolombia', valor: Number(est.bancolombia)||0 },
+    { tipo:'Domicilio', valor: Number(est.recaudoDomi)||0 },
+    { tipo:'Deudas pagas', valor: Number(est.deudasPagadas)||0 },
+  ].filter(p => p.valor > 0);
+
+  let totalPagado = pagos.reduce((s,p)=>s+p.valor,0);
+  let saldoAcum = 0;
+
+  let movimientos = [
+    ...cliente.pedidos.map(p=>({ fecha:p.fecha, tipo:'Pedido', valor:Number(p.total)||0, signo:1 })),
+    ...pagos.map(p=>({ fecha:'Hoy', tipo:'Pago - '+p.tipo, valor:p.valor, signo:-1 }))
+  ].sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
+
+  let overlay = document.createElement('div');
+  overlay.className = 'cartera-modal-overlay';
+  overlay.id = 'carteraModalOverlay';
+  overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
+
+  overlay.innerHTML = `
+    <div class="cartera-modal-box">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h3>👤 ${nombre}</h3>
+        <button class="panel-close" onclick="document.getElementById('carteraModalOverlay').remove()">Cerrar</button>
+      </div>
+
+      <div class="cartera-kpis" style="margin-bottom:16px">
+        <div class="kpi-card green"><div class="kpi-label">Total pedidos</div><div class="kpi-value" style="font-size:1.1rem">${recaudoMoney(cliente.totalPedidos)}</div></div>
+        <div class="kpi-card blue"><div class="kpi-label">Total pagado</div><div class="kpi-value" style="font-size:1.1rem">${recaudoMoney(totalPagado)}</div></div>
+        <div class="kpi-card orange"><div class="kpi-label">Saldo pendiente</div><div class="kpi-value" style="font-size:1.1rem">${recaudoMoney(cliente.deuda)}</div></div>
+        <div class="kpi-card ${cliente.semaforo==='verde'?'green':cliente.semaforo==='amarillo'?'orange':''}">
+          <div class="kpi-label">Días mora</div>
+          <div class="kpi-value" style="font-size:1.1rem;color:${cliente.semaforo==='rojo'?'#f87171':cliente.semaforo==='amarillo'?'#fbbf24':'#4ade80'}">${cliente.diasMora}</div>
+        </div>
+      </div>
+
+      <div class="section-title">📜 Historial de movimientos</div>
+      <div>
+        ${movimientos.map(m=>{
+          saldoAcum += m.signo * m.valor;
+          return `<div class="movimiento-item">
+            <div>
+              <div class="${m.signo>0?'mov-pedido':'mov-pago'}" style="font-weight:600">${m.tipo}</div>
+              <div style="color:#94a3b8;font-size:11px">${m.fecha}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-weight:700;color:${m.signo>0?'#60a5fa':'#4ade80'}">${m.signo>0?'+':'-'}${recaudoMoney(m.valor)}</div>
+              <div style="font-size:11px;color:#94a3b8">Saldo: ${recaudoMoney(Math.max(saldoAcum,0))}</div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+
+      <div style="margin-top:16px;text-align:right">
+        <button class="btn-nueva-cuenta" onclick="document.getElementById('carteraModalOverlay').remove();abrirModuloLateral('recaudo')">
+          💳 Registrar pago en Recaudo
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+}
+
 </script>
 </body>
 </html>
