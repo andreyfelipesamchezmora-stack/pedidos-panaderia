@@ -802,32 +802,40 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
   <button onclick="nuevoCliente()">➕ Agregar Cliente</button>
 
   <!-- MODULE BUTTONS -->
-  <div class="module-btns">
-    <button class="module-btn stats-btn" onclick="abrirStats()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
-        <line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/>
-      </svg>
-      Estadísticas
-    </button>
-    <button class="module-btn conta-btn" onclick="abrirConta()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <rect x="2" y="3" width="20" height="14" rx="2"/>
-        <path d="M8 21h8M12 17v4"/>
-        <path d="M6 8h.01M9 8h6M6 11h.01M9 11h3"/>
-      </svg>
-      Contabilidad
-    </button>
-    <button class="module-btn recaudo-btn" onclick="abrirRecaudo()">
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-    <path d="M3 7h18"></path>
-    <path d="M6 3h12v18H6z"></path>
-    <path d="M9 11h6"></path>
-    <path d="M9 15h6"></path>
-  </svg>
-  Recaudo
-</button>
-  </div>
+<div class="module-btns">
+  <button class="module-btn stats-btn" onclick="abrirStats()">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <line x1="18" y1="20" x2="18" y2="10"></line>
+      <line x1="12" y1="20" x2="12" y2="4"></line>
+      <line x1="6" y1="20" x2="6" y2="14"></line>
+      <line x1="2" y1="20" x2="22" y2="20"></line>
+    </svg>
+    Estadísticas
+  </button>
+
+  <button class="module-btn conta-btn" onclick="abrirConta()">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+      <path d="M8 21h8"></path>
+      <path d="M12 17v4"></path>
+      <path d="M6 8h.01"></path>
+      <path d="M9 8h6"></path>
+      <path d="M6 11h.01"></path>
+      <path d="M9 11h3"></path>
+    </svg>
+    Contabilidad
+  </button>
+
+  <button class="module-btn recaudo-btn" onclick="abrirRecaudo()">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M3 7h18"></path>
+      <path d="M6 3h12v18H6z"></path>
+      <path d="M9 11h6"></path>
+      <path d="M9 15h6"></path>
+    </svg>
+    Recaudo
+  </button>
+</div>
 
   <div class="video-sidebar">
     <video autoplay muted loop style="width:100%;height:auto;object-fit:contain;display:block;">
@@ -1879,15 +1887,18 @@ async function cargarIngresosMes(){
 
 async function abrirConta(){
   let panel = document.getElementById("panelConta");
+  if(!panel) return;
+
   panel.style.display = "flex";
   panel.classList.add("open");
-  _dibujarConta("resumen", window._ingresosCache||0);
 
-  await cargarIngresosMes();
-  await cajaCargarResumenDia();
-  _dibujarConta("resumen", window._ingresosCache||0);
+  if(typeof cargarIngresosMes === "function") await cargarIngresosMes();
+  if(typeof cajaCargarResumenDia === "function") await cajaCargarResumenDia();
+
+  if(typeof renderConta === "function"){
+    renderConta("resumen");
+  }
 }
-
 function renderConta(tab){
   _dibujarConta(tab||"resumen", window._ingresosCache||0);
 }
@@ -2634,16 +2645,25 @@ function recaudoGuardarFila(nombre){
 
 async function abrirRecaudo(){
   let panel = document.getElementById("panelRecaudo");
+  if(!panel) return;
+
   panel.style.display = "flex";
   panel.classList.add("open");
-  document.getElementById("recaudoBody").innerHTML = `
-    <div class="loading-skeleton">
-      <div class="skel skel-h"></div>
-      <div class="skel skel-c"></div>
-      <div class="skel skel-c"></div>
-    </div>
-  `;
-  await renderRecaudo();
+
+  let body = document.getElementById("recaudoBody");
+  if(body){
+    body.innerHTML = `
+      <div class="loading-skeleton">
+        <div class="skel skel-h"></div>
+        <div class="skel skel-c"></div>
+        <div class="skel skel-c"></div>
+      </div>
+    `;
+  }
+
+  if(typeof renderRecaudo === "function"){
+    await renderRecaudo();
+  }
 }
 
 async function renderRecaudo(){
