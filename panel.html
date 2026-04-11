@@ -913,6 +913,18 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
     </div>
   </div>
 </div>
+<!-- PANEL RECAUDO -->
+<div class="overlay-panel" id="panelRecaudo">
+  <div class="panel-drawer" style="width:min(1280px,98vw);">
+    <div class="panel-header">
+      <h2>🧾 Recaudo del Día</h2>
+      <button class="panel-close" onclick="cerrarPanel('panelRecaudo')">Cerrar</button>
+    </div>
+    <div class="panel-body" id="recaudoBody">
+      <!-- Se llena con JS -->
+    </div>
+  </div>
+</div>
 
 <!-- PANEL CONTABILIDAD -->
 <div class="overlay-panel" id="panelConta">
@@ -1417,6 +1429,66 @@ async function abrirStats(){
       <div class="skel skel-c"></div>
     </div>`;
   await cargarStats("hoy");
+}
+function abrirRecaudo() {
+  const panel = document.getElementById('panelRecaudo');
+  if (!panel) { alert('Panel Recaudo no encontrado'); return; }
+  panel.classList.add('open');
+
+  const body = document.getElementById('recaudoBody');
+  const hoy = document.getElementById('fecha').value;
+
+  // Totales por cliente del día
+  const grid = document.querySelectorAll('.card');
+  let html = `<div class="section-title">📅 Recaudo - ${hoy}</div>`;
+  html += `<div class="kpi-grid">`;
+
+  let totalDia = 0;
+  clientes.forEach(c => {
+    const card = [...document.querySelectorAll('.card')]
+      .find(el => el.querySelector('h4')?.innerText === c.nombre);
+    const pEl = card?.querySelector('p');
+    const val = pEl ? Number(pEl.innerText.replace(/\./g,'').replace(/[^0-9]/g,'')) : 0;
+    totalDia += val;
+  });
+
+  html += `
+    <div class="kpi-card green">
+      <div class="kpi-label">Total del día</div>
+      <div class="kpi-value">$${totalDia.toLocaleString('es-CO')}</div>
+    </div>
+  </div>`;
+
+  // Tabla de clientes con pedido
+  html += `<div class="section-title">Clientes con pedido</div>
+  <table style="width:100%;border-collapse:collapse;font-size:13px;">
+    <thead>
+      <tr style="color:#94a3b8;text-align:left;border-bottom:1px solid rgba(255,255,255,0.1)">
+        <th style="padding:8px">Cliente</th>
+        <th style="padding:8px;text-align:right">Total</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+  clientes.forEach(c => {
+    const card = [...document.querySelectorAll('.card')]
+      .find(el => el.querySelector('h4')?.innerText === c.nombre);
+    const pEl = card?.querySelector('p');
+    const val = pEl ? Number(pEl.innerText.replace(/\./g,'').replace(/[^0-9]/g,'')) : 0;
+    if (val > 0) {
+      html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.06)">
+        <td style="padding:8px;color:#e2e8f0">${c.nombre}</td>
+        <td style="padding:8px;text-align:right;font-weight:700;color:white">$${val.toLocaleString('es-CO')}</td>
+      </tr>`;
+    }
+  });
+
+  html += `</tbody></table>`;
+  body.innerHTML = html;
+}
+
+function cerrarPanel(id) {
+  document.getElementById(id)?.classList.remove('open');
 }
 
 async function cargarStats(filtro){
