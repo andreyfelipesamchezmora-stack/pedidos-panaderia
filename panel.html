@@ -1401,9 +1401,11 @@ document.addEventListener("keydown",function(e){
 
 // =========== PANEL HELPERS ===========
 
-function cerrarPanel(id){
-  document.getElementById(id).classList.remove("open");
-  document.getElementById(id).style.display="none";
+function cerrarPanel(id) {
+  let panel = document.getElementById(id);
+  if (!panel) return;
+  panel.classList.remove("open");
+  panel.style.display = "none";
 }
 
 // Chart instances
