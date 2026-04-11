@@ -676,18 +676,10 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
 .recaudo-badge.recoge{ background:rgba(245,158,11,.15); color:#fbbf24; }
 .recaudo-badge.lejano{ background:rgba(168,85,247,.15); color:#c084fc; }
 
-.recaudo-money-input,
-.recaudo-text-input,
-.recaudo-select{
-  width:100%;
-  min-width:90px;
-  background:rgba(255,255,255,0.06);
-  border:1px solid rgba(255,255,255,0.12);
-  border-radius:8px;
-  color:#e2e8f0;
-  padding:8px 10px;
-  font-size:12px;
-  font-family:var(--font-body);
+.recaudo-money-input, .recaudo-text-input, .recaudo-select {
+  width: 100%;
+  min-width: 110px;
+  box-sizing: border-box;
 }
 .recaudo-check{
   width:18px;
@@ -2887,24 +2879,24 @@ async function renderRecaudo(){
       <div class="recaudo-table-wrap">
         <table class="recaudo-table">
           <thead>
-            <tr>
-              <th>Tipo</th>
-              <th>Cliente</th>
-              <th>Subtotal</th>
-              <th>Recaudo domi</th>
-              <th>Recibido</th>
-              <th>Nequi</th>
-              <th>Bancolombia</th>
-              <th>Deuda cliente</th>
-              <th>Yo le debo</th>
-              <th>Deudas pagas</th>
-              <th>Faltantes</th>
-              <th>Salidas</th>
-              <th>Resumen</th>
-              <th>Efectivo neto</th>
-              <th>Obs.</th>
-            </tr>
-          </thead>
+  <tr>
+    <th style="min-width:80px">Tipo</th>
+    <th style="min-width:160px">Cliente</th>
+    <th style="min-width:100px">Subtotal</th>
+    <th style="min-width:130px">Recaudo domi</th>
+    <th style="min-width:80px;text-align:center">Recibido</th>
+    <th style="min-width:120px">Nequi</th>
+    <th style="min-width:130px">Bancolombia</th>
+    <th style="min-width:120px">Deuda cliente</th>
+    <th style="min-width:110px">Yo le debo</th>
+    <th style="min-width:120px">Deudas pagas</th>
+    <th style="min-width:110px">Faltantes</th>
+    <th style="min-width:110px">Salidas</th>
+    <th style="min-width:120px">Resumen</th>
+    <th style="min-width:120px">Efectivo neto</th>
+    <th style="min-width:140px">Obs.</th>
+  </tr>
+</thead>
           <tbody>
             ${rows.map(function(r){
               let safe = r.cliente.replace(/"/g, '&quot;');
