@@ -2922,6 +2922,12 @@ async function renderRecaudo(){
     ${r.recaudoDomi > 0 ? 'checked' : ''}
     onchange="recaudoMarcarDomi('${safe}', ${r.subtotal});renderRecaudo();">
 </td>
+<td style="text-align:center;">
+  <input id="rec_rec_${safe}" class="recaudo-check" type="checkbox"
+    ${r.recibido ? 'checked' : ''}
+    onchange="recaudoGuardarFila('${safe}');renderRecaudo();">
+</td>
+
 
                   <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"  value="${r.nequi}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
                   <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.bancolombia}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
