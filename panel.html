@@ -906,7 +906,7 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
         </svg>
         Estadísticas de Ventas
       </h2>
-      <button class="panel-close" onclick="cerrarPanel()">✖</button>
+      <button class="panel-close" onclick="cerrarPanel('panelStats')">✕ Cerrar</button>
     </div>
     <div class="panel-body" id="statsBody">
       <!-- Se llena con JS -->
@@ -918,7 +918,7 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
   <div class="panel-drawer" style="width:min(1280px,98vw);">
     <div class="panel-header">
       <h2>🧾 Recaudo del Día</h2>
-      <button class="panel-close" onclick="cerrarPanel()">✖</button>
+      <button class="panel-close" onclick="cerrarPanel('panelRecaudo')">Cerrar</button>
     </div>
     <div class="panel-body" id="recaudoBody">
       <!-- Se llena con JS -->
@@ -949,13 +949,13 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
         </svg>
         Recaudo Diario
       </h2>
-      <button class="panel-close" onclick="cerrarPanel()">✖</button>
+      <button class="panel-close" onclick="cerrarPanel('panelRecaudo')">Cerrar</button>
     </div>
     <div class="panel-body" id="recaudoBody"></div>
   </div>
 </div>
       </h2>
-      <button class="panel-close" onclick="cerrarPanel()">✖</button>
+      <button class="panel-close" onclick="cerrarPanel('panelConta')">Cerrar</button>
     </div>
     <div class="panel-body" id="contaBody">
       <!-- Se llena con JS -->
@@ -966,7 +966,7 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
   <div class="panel-drawer" style="width:min(1280px, 98vw);">
     <div class="panel-header">
       <h2>Recaudo</h2>
-      <button class="panel-close" onclick="cerrarPanel()">✖</button>
+      <button class="panel-close" onclick="cerrarPanel('panelRecaudo')">Cerrar</button>
     </div>
     <div class="panel-body" id="recaudoBody">
       <div class="empty-state">
@@ -1377,7 +1377,7 @@ async function imprimirTicket(){
   <div class="panel-drawer" style="width:min(1280px,98vw);">
     <div class="panel-header">
       <h2>🧾 Recaudo Diario</h2>
-      <button class="panel-close" onclick="cerrarPanel()">✖</button>
+      <button class="panel-close" onclick="cerrarPanel('panelRecaudo')">Cerrar</button>
     </div>
     <div class="panel-body" id="recaudoBody">
       <div class="empty-state"><p>Cargando...</p></div>
@@ -2773,11 +2773,8 @@ function recaudoGuardarFila(nombre){
     ...base,
     recaudoDomi: parseNum(q("rec_domi_" + nombre)),
     recibido: !!(q("rec_rec_" + nombre) && q("rec_rec_" + nombre).checked),
-    let checkNequi = q("check_nequi_" + nombre)?.checked;
-let checkBanco = q("check_banco_" + nombre)?.checked;
-
-let nequiValor = checkNequi ? parseNum(q("rec_nequi_" + nombre)) : 0;
-let bancoValor = checkBanco ? parseNum(q("rec_banco_" + nombre)) : 0;
+    nequi: parseNum(q("rec_nequi_" + nombre)),
+    bancolombia: parseNum(q("rec_banco_" + nombre)),
     deudaCliente: parseNum(q("rec_dc_" + nombre)),
     deudaMia: parseNum(q("rec_dm_" + nombre)),
     deudasPagadas: parseNum(q("rec_dp_" + nombre)),
@@ -2785,27 +2782,7 @@ let bancoValor = checkBanco ? parseNum(q("rec_banco_" + nombre)) : 0;
     salidas: parseNum(q("rec_sal_" + nombre)),
     observacion: (q("rec_obs_" + nombre) && q("rec_obs_" + nombre).value || "").trim()
   };
-let nequiValor = parseNum(q("rec_nequi_" + nombre));
-let bancoValor = parseNum(q("rec_banco_" + nombre));
 
-window._controlRecaudo = window._controlRecaudo || {};
-
-if(window._controlRecaudo[nombre]?.nequi !== nequiValor){
-  actualizarCuenta("NEQUI", nequiValor, "ingreso");
-}
-
-if(window._controlRecaudo[nombre]?.banco !== bancoValor){
-  actualizarCuenta("CUENTA BANCOLOMBIA", bancoValor, "ingreso");
-}
-
-window._controlRecaudo[nombre] = {
-  nequi: nequiValor,
-  banco: bancoValor
-};
-
-if(bancoValor > 0){
-  actualizarCuenta("CUENTA BANCOLOMBIA", bancoValor, "ingreso");
-}
   recaudoGuardarEstado(estado);
 }
 
@@ -2935,29 +2912,20 @@ async function renderRecaudo(){
                   <td><span class="recaudo-badge ${r.tipo}">${recaudoTipoLabel(r.tipo)}</span></td>
                   <td style="font-weight:700;">${r.cliente}</td>
                   <td>${recaudoMoney(r.subtotal)}</td>
-                  <td><input id="rec_domi_${safe}" class="recaudo-money-input" type="number" value="${r.recaudoDomi}" onchange="recaudoGuardarFila('${safe}')"('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_domi_${safe}" class="recaudo-money-input" type="number" value="${r.recaudoDomi}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
                   <td style="text-align:center;">
                     <input id="rec_rec_${safe}" class="recaudo-check" type="checkbox" ${r.recibido?'checked':''} onchange="recaudoGuardarFila('${safe}');renderRecaudo();">
                   </td>
-                  <label>
-  <input type="checkbox" id="check_nequi_${safe}">
-  Nequi
-</label>
-<input type="text" inputmode="numeric" id="rec_nequi_${safe}" onchange="recaudoGuardarFila('${safe}')">
-
-<label>
-  <input type="checkbox" id="check_banco_${safe}">
-  Bancolombia
-</label>
-<input type="text" inputmode="numeric" id="rec_banco_${safe}" onchange="recaudoGuardarFila('${safe}')">
-                  <td><input id="rec_dc_${safe}" class="recaudo-money-input" type="number" value="${r.deudaCliente}" onchange="recaudoGuardarFila('${safe}')"('${safe}');renderRecaudo();"></td>
-                  <td><input id="rec_dm_${safe}" class="recaudo-money-input" type="number" value="${r.deudaMia}" onchange="recaudoGuardarFila('${safe}')"('${safe}');renderRecaudo();"></td>
-                  <td><input id="rec_dp_${safe}" class="recaudo-money-input" type="number" value="${r.deudasPagadas}" onchange="recaudoGuardarFila('${safe}')"('${safe}');renderRecaudo();"></td>
-                  <td><input id="rec_fal_${safe}" class="recaudo-money-input" type="number" value="${r.faltantes}" onchange="recaudoGuardarFila('${safe}')"('${safe}');renderRecaudo();"></td>
-                  <td><input id="rec_sal_${safe}" class="recaudo-money-input" type="number" value="${r.salidas}" onchange="recaudoGuardarFila('${safe}')"('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="number" value="${r.nequi}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="number" value="${r.bancolombia}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_dc_${safe}" class="recaudo-money-input" type="number" value="${r.deudaCliente}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_dm_${safe}" class="recaudo-money-input" type="number" value="${r.deudaMia}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_dp_${safe}" class="recaudo-money-input" type="number" value="${r.deudasPagadas}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_fal_${safe}" class="recaudo-money-input" type="number" value="${r.faltantes}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_sal_${safe}" class="recaudo-money-input" type="number" value="${r.salidas}" oninput="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
                   <td><div class="recaudo-resumen ${r.resumen.clase}">${r.resumen.texto}</div></td>
                   <td style="font-weight:800;">${recaudoMoney(r.efectivoNeto)}</td>
-                  <td><input id="rec_obs_${safe}" class="recaudo-text-input" value="${(r.observacion||'').replace(/"/g,'&quot;')}" onchange="recaudoGuardarFila('${safe}')"('${safe}')"></td>
+                  <td><input id="rec_obs_${safe}" class="recaudo-text-input" value="${(r.observacion||'').replace(/"/g,'&quot;')}" oninput="recaudoGuardarFila('${safe}')"></td>
                 </tr>
               `;
             }).join("")}
