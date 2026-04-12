@@ -3031,8 +3031,12 @@ async function renderRecaudo(){
 
                   <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"  value="${r.nequi}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
                   <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.bancolombia}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
-                  <td><input id="rec_dc_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudaCliente}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
-                  <td><input id="rec_dm_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudaMia}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_dc_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" }value="${r.deudaCliente > 0 ? r.deudaCliente.toLocaleString('es-CO') : ''}" 
+  data-raw="${r.deudaCliente}"
+  onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}');"
+></td>
+                  <td><input id="rec_dm_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudaMia > 0 ? r.deudaMia.toLocaleString('es-CO') : ''}" 
+  data-raw="${r.deudaMia}"onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}');"></td>
                   <td><input id="rec_dp_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudasPagadas}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
                   <td><input id="rec_fal_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.faltantes}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
                   <td><input id="rec_sal_${safe}" class="recaudo-money-input" type="text "inputmode="numeric" value="${r.salidas}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
