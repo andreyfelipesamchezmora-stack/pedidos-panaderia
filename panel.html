@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
 // ===== VARIABLES MÓDULO CUENTAS =====
 let cuentasMemoria = [
   {nombre:"CUENTA BANCOLOMBIA", tipo:"CUENTA CORRIENTE", color:"teal", saldo:0},
@@ -3097,78 +3099,133 @@ function recaudoMarcarDomi(nombre, subtotal) {
   recaudoGuardarEstado(estado);
 }
 
-function recaudoExportarExcel(){
-  try{
+function recaudoExportarExcel() {
+  try {
     let rows = (window._recaudoCache && window._recaudoCache.rows) ? window._recaudoCache.rows : [];
-    let r = (window._recaudoCache && window._recaudoCache.resumen) ? window._recaudoCache.resumen : {};
+    let r    = (window._recaudoCache && window._recaudoCache.resumen) ? window._recaudoCache.resumen : {};
+    let fecha = cajaFechaHoy();
 
-    let filas = [[
-      "TIPO","CLIENTE","SUBTOTAL","RECAUDO_DOMI","RECIBIDO","NEQUI","BANCOLOMBIA",
-      "DEUDA_CLIENTE","YO_LE_DEBO","DEUDAS_PAGAS","FALTANTES","SALIDAS","RESUMEN","EFECTIVO_NETO","OBSERVACION"
-    ]];
+    let wb = XLSX.utils.book_new();
 
-    rows.forEach(function(x){
-      filas.push([
+    // ── HOJA 1: DETALLE ──────────────────────────────────────
+    let detalle = [
+      ["", "", "", "", `RECAUDO DIARIO — ${fecha}`, "", "", "", "", "", "", "", "", "", ""],
+      [""],
+      [
+        "TIPO", "CLIENTE", "SUBTOTAL", "REC. DOMI", "RECIBIDO",
+        "NEQUI", "BANCOLOMBIA", "TRANSFERENCIA",
+        "DEUDA CLIENTE", "YO LE DEBO", "DEUDAS PAGAS",
+        "FALTANTES", "SALIDAS", "EFECTIVO NETO", "OBSERVACIÓN"
+      ]
+    ];
+
+    rows.forEach(function(x) {
+      detalle.push([
         recaudoTipoLabel(x.tipo),
         x.cliente,
-        Number(x.subtotal||0),
-        Number(x.recaudoDomi||0),
-        x.recibido ? "SI" : "NO",
-        Number(x.nequi||0),
-        Number(x.bancolombia||0),
-        Number(x.deudaCliente||0),
-        Number(x.deudaMia||0),
-        Number(x.deudasPagadas||0),
-        Number(x.faltantes||0),
-        Number(x.salidas||0),
-        x.resumen ? x.resumen.texto : "",
-        Number(x.efectivoNeto||0),
-        x.observacion||""
+        Number(x.subtotal       || 0),
+        Number(x.recaudoDomi    || 0),
+        x.recibido ? "✓ SÍ" : "✗ NO",
+        Number(x.nequi          || 0),
+        Number(x.bancolombia    || 0),
+        Number((x.nequi || 0) + (x.bancolombia || 0)),
+        Number(x.deudaCliente   || 0),
+        Number(x.deudaMia       || 0),
+        Number(x.deudasPagadas  || 0),
+        Number(x.faltantes      || 0),
+        Number(x.salidas        || 0),
+        Number(x.efectivoNeto   || 0),
+        x.observacion || ""
       ]);
     });
 
-    filas.push([]);
-    filas.push(["RESUMEN"]);
-    filas.push(["BRUTO TOTAL", Number(r.bruto||0)]);
-    filas.push(["RECAUDO DOMICILIARIO", Number(r.recaudoDomi||0)]);
-    filas.push(["TRANSFERENCIAS", Number(r.transferencias||0)]);
-    filas.push(["FALTANTES", Number(r.faltantes||0)]);
-    filas.push(["SALIDAS", Number(r.salidas||0)]);
-    filas.push(["DEUDAS PAGAS", Number(r.deudasPagadas||0)]);
-    filas.push(["NETO EFECTIVO", Number(r.netoEfectivo||0)]);
+    // Fila de totales
+    let tot = {
+      subtotal:      rows.reduce((s,x) => s + (Number(x.subtotal)      || 0), 0),
+      recaudoDomi:   rows.reduce((s,x) => s + (Number(x.recaudoDomi)   || 0), 0),
+      nequi:         rows.reduce((s,x) => s + (Number(x.nequi)         || 0), 0),
+      bancolombia:   rows.reduce((s,x) => s + (Number(x.bancolombia)   || 0), 0),
+      deudaCliente:  rows.reduce((s,x) => s + (Number(x.deudaCliente)  || 0), 0),
+      deudaMia:      rows.reduce((s,x) => s + (Number(x.deudaMia)      || 0), 0),
+      deudasPagadas: rows.reduce((s,x) => s + (Number(x.deudasPagadas) || 0), 0),
+      faltantes:     rows.reduce((s,x) => s + (Number(x.faltantes)     || 0), 0),
+      salidas:       rows.reduce((s,x) => s + (Number(x.salidas)       || 0), 0),
+      efectivoNeto:  rows.reduce((s,x) => s + (Number(x.efectivoNeto)  || 0), 0),
+    };
 
-    let csv = filas.map(function(f){
-      return f.map(function(v){
-        return '"' + String(v===undefined ? "" : v).replace(/"/g,'""') + '"';
-      }).join(",");
-    }).join("\n");
+    detalle.push([""]);
+    detalle.push([
+      "TOTALES", "",
+      tot.subtotal, tot.recaudoDomi, "",
+      tot.nequi, tot.bancolombia, tot.nequi + tot.bancolombia,
+      tot.deudaCliente, tot.deudaMia, tot.deudasPagadas,
+      tot.faltantes, tot.salidas, tot.efectivoNeto, ""
+    ]);
 
-    let blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
-    let url = URL.createObjectURL(blob);
-    let a = document.createElement("a");
-    a.href = url;
-    a.download = "recaudo_" + cajaFechaHoy() + ".csv";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }catch(e){
+    let ws1 = XLSX.utils.aoa_to_sheet(detalle);
+
+    // Ancho de columnas
+    ws1['!cols'] = [
+      {wch:12},{wch:30},{wch:14},{wch:14},{wch:10},
+      {wch:14},{wch:14},{wch:16},
+      {wch:14},{wch:12},{wch:14},
+      {wch:12},{wch:12},{wch:14},{wch:25}
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws1, "Detalle");
+
+    // ── HOJA 2: RESUMEN ──────────────────────────────────────
+    let resumen = [
+      [`RESUMEN RECAUDO — ${fecha}`],
+      [""],
+      ["CONCEPTO", "VALOR"],
+      ["Bruto total de pedidos",     Number(r.bruto         || 0)],
+      ["Recaudo domiciliario",        Number(r.recaudoDomi   || 0)],
+      ["Transferencias (Nequi + Bancolombia)", Number(r.transferencias || 0)],
+      ["Faltantes",                  Number(r.faltantes     || 0)],
+      ["Salidas",                    Number(r.salidas       || 0)],
+      ["Deudas pagadas",             Number(r.deudasPagadas || 0)],
+      [""],
+      ["NETO EFECTIVO FINAL",        Number(r.netoEfectivo  || 0)],
+    ];
+
+    let ws2 = XLSX.utils.aoa_to_sheet(resumen);
+    ws2['!cols'] = [{wch:38},{wch:18}];
+    XLSX.utils.book_append_sheet(wb, ws2, "Resumen");
+
+    // ── HOJA 3: POR TIPO ─────────────────────────────────────
+    let tipos = ['moto','auto','recoge','lejano'];
+    let porTipo = [
+      [`DESGLOSE POR TIPO — ${fecha}`],
+      [""],
+      ["TIPO", "CLIENTES", "SUBTOTAL", "EFECTIVO NETO", "TRANSFERENCIAS"]
+    ];
+
+    tipos.forEach(function(tipo) {
+      let grupo = rows.filter(x => x.tipo === tipo);
+      if (!grupo.length) return;
+      porTipo.push([
+        recaudoTipoLabel(tipo),
+        grupo.length,
+        grupo.reduce((s,x) => s + (Number(x.subtotal)     || 0), 0),
+        grupo.reduce((s,x) => s + (Number(x.efectivoNeto) || 0), 0),
+        grupo.reduce((s,x) => s + (Number(x.nequi || 0) + Number(x.bancolombia || 0)), 0),
+      ]);
+    });
+
+    let ws3 = XLSX.utils.aoa_to_sheet(porTipo);
+    ws3['!cols'] = [{wch:14},{wch:10},{wch:16},{wch:16},{wch:16}];
+    XLSX.utils.book_append_sheet(wb, ws3, "Por Tipo");
+
+    // ── DESCARGAR ─────────────────────────────────────────────
+    XLSX.writeFile(wb, `Recaudo_${fecha}.xlsx`);
+
+  } catch(e) {
     console.error(e);
     alert("No se pudo exportar el archivo");
   }
 }
 
-
-// Close panel clicking outside
-document.getElementById("panelStats").addEventListener("click",function(e){
-  if(e.target===this) cerrarPanel("panelStats");
-});
-document.getElementById("panelConta").addEventListener("click",function(e){
-  if(e.target===this) cerrarPanel("panelConta");
-});
-document.getElementById("panelRecaudo").addEventListener("click",function(e){
-  if(e.target===this) cerrarPanel("panelRecaudo");
-});
 
 async function abrirRecaudo(){
   let panel = document.getElementById("panelRecaudo");
