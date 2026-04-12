@@ -2750,6 +2750,27 @@ async function recaudoPedidosDelDia(){
   if(res.error) throw res.error;
   return depurarPedidosUnicos(res.data || []);
 }
+function recaudoGetDeudaHistorica(nombre) {
+  let deudaCliente = 0, deudaMia = 0, deudasPagadas = 0;
+  for (let i = 0; i < localStorage.length; i++) {
+    let key = localStorage.key(i);
+    if (key && key.startsWith('recaudo_')) {
+      try {
+        let obj = JSON.parse(localStorage.getItem(key));
+        if (obj && obj[nombre]) {
+          deudaCliente  += Number(obj[nombre].deudaCliente)  || 0;
+          deudaMia      += Number(obj[nombre].deudaMia)      || 0;
+          deudasPagadas += Number(obj[nombre].deudasPagadas) || 0;
+        }
+      } catch(e) {}
+    }
+  }
+  return {
+    deudaCliente:  Math.max(deudaCliente  - deudasPagadas, 0),
+    deudaMia:      Math.max(deudaMia      - deudasPagadas, 0),
+    deudasPagadas
+  };
+}
 
 async function recaudoConstruirData(){
   let pedidos = await recaudoPedidosDelDia();
@@ -2766,6 +2787,9 @@ async function recaudoConstruirData(){
 
     let subtotal = Number(ped && ped.total || 0);
 
+    // ← CAMBIO: trae deuda acumulada de todos los días
+    let deudaHist = recaudoGetDeudaHistorica(c.nombre);
+
     let row = {
       cliente: c.nombre,
       tipo: c.tipo || "moto",
@@ -2774,9 +2798,9 @@ async function recaudoConstruirData(){
       recibido: !!saved.recibido,
       nequi: Number(saved.nequi || 0),
       bancolombia: Number(saved.bancolombia || 0),
-      deudaCliente: Number(saved.deudaCliente || 0),
-      deudaMia: Number(saved.deudaMia || 0),
-      deudasPagadas: Number(saved.deudasPagadas || 0),
+      deudaCliente: deudaHist.deudaCliente,   // ← CAMBIO
+      deudaMia: deudaHist.deudaMia,           // ← CAMBIO
+      deudasPagadas: deudaHist.deudasPagadas, // ← CAMBIO
       faltantes: Number(saved.faltantes || 0),
       salidas: Number(saved.salidas || 0),
       observacion: saved.observacion || ""
@@ -2785,7 +2809,6 @@ async function recaudoConstruirData(){
     row.resumen = recaudoClasificarResumen(row.deudaCliente, row.deudaMia);
     row.totalTransferencia = row.nequi + row.bancolombia;
     row.efectivoNeto = row.subtotal - row.totalTransferencia - row.faltantes - row.salidas;
-
     if(row.efectivoNeto < 0) row.efectivoNeto = 0;
 
     return row;
@@ -2799,6 +2822,7 @@ async function recaudoConstruirData(){
     return a.cliente.localeCompare(b.cliente);
   });
 }
+
 
 function recaudoGuardarFila(nombre){
   let estado = recaudoLeerEstado();
