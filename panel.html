@@ -16,36 +16,41 @@ function tipoEmoji(tipo){
   return m[tipo]||"💳";
 }
 
-// --- MODAL HELPER (usa overlay permanente del body) ---
+// ===== HELPER MODAL =====
 function mostrarMC(contenido){
-  let overlay=document.getElementById("mcOverlayGlobal");
-  let box=document.getElementById("mcBoxGlobal");
-  if(!overlay||!box){ console.error("mcOverlayGlobal no encontrado"); return; }
-  box.innerHTML=contenido;
-  overlay.style.display="flex";
-}
-function cerrarMC(){
-  let o=document.getElementById("mcOverlayGlobal");
-  if(o) o.style.display="none";
+  let overlay = document.getElementById("mcOverlayGlobal");
+  let box     = document.getElementById("mcBoxGlobal");
+  if(!overlay || !box){ alert("Error: mcOverlayGlobal no encontrado"); return; }
+  box.innerHTML = contenido;
+  overlay.style.cssText = "display:flex;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.72);z-index:99999;align-items:center;justify-content:center;";
 }
 
-// --- NUEVA CUENTA ---
+function cerrarMC(){
+  let o = document.getElementById("mcOverlayGlobal");
+  if(o) o.style.display = "none";
+}
+
+// ===== NUEVA CUENTA =====
 function abrirModalNuevaCuenta(){
   mostrarMC(`
-    <h3>➕ Nueva Cuenta</h3>
-    <div class="mc-field"><label>Nombre</label><input id="nc_nombre" placeholder="Ej: Cuenta Davivienda"></div>
+    <h3>Nueva Cuenta</h3>
+    <div class="mc-field"><label>Nombre</label><input id="ncnombre" placeholder="Ej: Cuenta Davivienda"></div>
     <div class="mc-field"><label>Tipo</label>
-      <select id="nc_tipo">
+      <select id="nctipo">
         <option>CUENTA CORRIENTE</option><option>CUENTA DE AHORRO</option>
-        <option>NEQUI</option><option>DAVIPLATA</option><option>EFECTIVO</option><option>OTRO</option>
+        <option>NEQUI</option><option>DAVIPLATA</option>
+        <option>EFECTIVO</option><option>OTRO</option>
       </select>
     </div>
-    <div class="mc-field"><label>Saldo inicial ($)</label><input type="number" id="nc_saldo" value="0"></div>
+    <div class="mc-field"><label>Saldo inicial</label><input type="number" id="ncsaldo" value="0"></div>
     <div class="mc-field"><label>Color</label>
-      <select id="nc_color">
-        <option value="teal">Teal (Bancolombia)</option><option value="gray">Gris</option>
-        <option value="blue">Azul</option><option value="purple">Morado (Nequi)</option>
-        <option value="orange">Naranja (Efectivo)</option><option value="green">Verde</option>
+      <select id="nccolor">
+        <option value="teal">Teal - Bancolombia</option>
+        <option value="orange">Naranja - Efectivo</option>
+        <option value="blue">Azul</option>
+        <option value="purple">Morado - Nequi</option>
+        <option value="green">Verde</option>
+        <option value="gray">Gris</option>
         <option value="red">Rojo</option>
       </select>
     </div>
@@ -55,6 +60,7 @@ function abrirModalNuevaCuenta(){
     </div>
   `);
 }
+
 function confirmarNuevaCuenta(){
   let nombre = document.getElementById("ncnombre").value.trim();
   let tipo   = document.getElementById("nctipo").value;
@@ -67,25 +73,26 @@ function confirmarNuevaCuenta(){
   renderConta("cuentas");
 }
 
-// --- EDITAR CUENTA ---
+// ===== EDITAR CUENTA =====
 function abrirEditarCuenta(i){
-  let c=cuentasMemoria[i];
-  let tipoOpts=["CUENTA CORRIENTE","CUENTA DE AHORRO","NEQUI","DAVIPLATA","EFECTIVO","OTRO"]
-    .map(t=>`<option ${t===c.tipo?'selected':''}>${t}</option>`).join('');
-  let colorOpts=[["teal","Teal"],["gray","Gris"],["blue","Azul"],["purple","Morado"],["orange","Naranja"],["green","Verde"],["red","Rojo"]]
-    .map(([v,l])=>`<option value="${v}" ${v===c.color?'selected':''}>${l}</option>`).join('');
+  let c = cuentasMemoria[i];
+  let tipoOpts = ["CUENTA CORRIENTE","CUENTA DE AHORRO","NEQUI","DAVIPLATA","EFECTIVO","OTRO"]
+    .map(t => `<option ${t===c.tipo?"selected":""}>${t}</option>`).join("");
+  let colorOpts = [["teal","Teal"],["gray","Gris"],["blue","Azul"],["purple","Morado"],["orange","Naranja"],["green","Verde"],["red","Rojo"]]
+    .map(([v,l]) => `<option value="${v}" ${v===c.color?"selected":""}>${l}</option>`).join("");
   mostrarMC(`
-    <h3>✏️ Editar: ${c.nombre}</h3>
-    <div class="mc-field"><label>Nombre</label><input id="ec_nombre" value="${c.nombre}"></div>
-    <div class="mc-field"><label>Tipo</label><select id="ec_tipo">${tipoOpts}</select></div>
-    <div class="mc-field"><label>Saldo actual ($)</label><input type="number" id="ec_saldo" value="${c.saldo}"></div>
-    <div class="mc-field"><label>Color</label><select id="ec_color">${colorOpts}</select></div>
+    <h3>Editar ${c.nombre}</h3>
+    <div class="mc-field"><label>Nombre</label><input id="ecnombre" value="${c.nombre}"></div>
+    <div class="mc-field"><label>Tipo</label><select id="ectipo">${tipoOpts}</select></div>
+    <div class="mc-field"><label>Saldo actual</label><input type="number" id="ecsaldo" value="${c.saldo}"></div>
+    <div class="mc-field"><label>Color</label><select id="eccolor">${colorOpts}</select></div>
     <div class="mc-btns">
       <button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>
-      <button class="mc-btn-ok" onclick="confirmarEditarCuenta(${i})">Guardar cambios</button>
+      <button class="mc-btn-ok" onclick="confirmarEditarCuenta(${i})">Guardar</button>
     </div>
   `);
 }
+
 function confirmarEditarCuenta(i){
   let nombre = document.getElementById("ecnombre").value.trim();
   if(!nombre){ alert("El nombre no puede estar vacío"); return; }
@@ -97,6 +104,8 @@ function confirmarEditarCuenta(i){
   cerrarMC();
   renderConta("cuentas");
 }
+
+// ===== ELIMINAR CUENTA =====
 function eliminarCuenta(i){
   if(!confirm("¿Eliminar la cuenta " + cuentasMemoria[i].nombre + "?")) return;
   cuentasMemoria.splice(i,1);
@@ -104,22 +113,23 @@ function eliminarCuenta(i){
   renderConta("cuentas");
 }
 
-// --- TRANSFERIR ---
+// ===== TRANSFERIR =====
 function abrirModalTransferir(){
-  if(cuentasMemoria.length<2){alert("Necesitas al menos 2 cuentas para transferir");return;}
-  let opts=cuentasMemoria.map((c,i)=>`<option value="${i}">${c.nombre}</option>`).join('');
-  let optsD=cuentasMemoria.map((c,i)=>`<option value="${i}" ${i===1?'selected':''}>${c.nombre}</option>`).join('');
+  if(cuentasMemoria.length < 2){ alert("Necesitas al menos 2 cuentas para transferir"); return; }
+  let opts  = cuentasMemoria.map((c,i) => `<option value="${i}">${c.nombre} — $${Number(c.saldo).toLocaleString("es-CO")}</option>`).join("");
+  let optsD = cuentasMemoria.map((c,i) => `<option value="${i}" ${i===1?"selected":""}>${c.nombre} — $${Number(c.saldo).toLocaleString("es-CO")}</option>`).join("");
   mostrarMC(`
-    <h3>⇄ Transferir entre cuentas</h3>
-    <div class="mc-field"><label>Cuenta origen</label><select id="tf_origen">${opts}</select></div>
-    <div class="mc-field"><label>Cuenta destino</label><select id="tf_destino">${optsD}</select></div>
-    <div class="mc-field"><label>Monto ($)</label><input type="number" id="tf_monto" placeholder="Ej: 50000"></div>
+    <h3>Transferir entre cuentas</h3>
+    <div class="mc-field"><label>Cuenta origen</label><select id="tforigen">${opts}</select></div>
+    <div class="mc-field"><label>Cuenta destino</label><select id="tfdestino">${optsD}</select></div>
+    <div class="mc-field"><label>Monto</label><input type="number" id="tfmonto" placeholder="Ej: 50000"></div>
     <div class="mc-btns">
       <button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>
       <button class="mc-btn-ok verde" onclick="confirmarTransferencia()">Transferir</button>
     </div>
   `);
 }
+
 function confirmarTransferencia(){
   let ori   = Number(document.getElementById("tforigen").value);
   let dest  = Number(document.getElementById("tfdestino").value);
@@ -130,43 +140,47 @@ function confirmarTransferencia(){
   cuentasMemoria[ori].saldo  -= monto;
   cuentasMemoria[dest].saldo += monto;
   let fecha = new Date().toLocaleDateString("es-CO",{day:"numeric",month:"long",year:"numeric"});
-  transferenciasMem.push({origen: cuentasMemoria[ori].nombre, destino: cuentasMemoria[dest].nombre, monto, fecha});
+  transferenciasMem.push({
+    origen:  cuentasMemoria[ori].nombre,
+    destino: cuentasMemoria[dest].nombre,
+    monto, fecha
+  });
   cuentasGuardar();
   cerrarMC();
   renderConta("cuentas");
 }
 
-// --- CONCILIAR ---
+// ===== CONCILIAR =====
 function abrirConciliar(i){
-  let c=cuentasMemoria[i];
+  let c = cuentasMemoria[i];
   mostrarMC(`
-    <h3>⚖️ Conciliar: ${c.nombre}</h3>
+    <h3>Conciliar ${c.nombre}</h3>
     <div class="conciliar-saldo-box">
       <p>Saldo en sistema</p>
-      <div class="csval">$ ${c.saldo.toLocaleString('es-CO')}</div>
+      <div class="csval">$${Number(c.saldo).toLocaleString("es-CO")}</div>
     </div>
     <div class="mc-field">
       <label>Saldo real (banco / físico)</label>
-      <input type="number" id="conc_real" placeholder="Ingresa el saldo real" oninput="calcDiff(${i})">
+      <input type="number" id="concreal" placeholder="Ingresa el saldo real"
+        oninput="calcDiff(${i})">
     </div>
-    <div id="conc_diff" style="font-size:13px;margin-bottom:8px;color:#94a3b8;min-height:20px;"></div>
+    <div id="concdiff" style="font-size:13px;margin-bottom:8px;color:#94a3b8;min-height:20px;"></div>
     <div class="mc-btns">
       <button class="mc-btn-cancel" onclick="cerrarMC()">Cerrar</button>
       <button class="mc-btn-ok verde" onclick="aplicarConciliacion(${i})">Actualizar saldo</button>
     </div>
   `);
 }
+
 function calcDiff(i){
-  let real=Number(document.getElementById("conc_real").value)||0;
-  let diff=real-cuentasMemoria[i].saldo;
-  let el=document.getElementById("conc_diff");
+  let real = Number(document.getElementById("concreal").value)||0;
+  let diff = real - cuentasMemoria[i].saldo;
+  let el   = document.getElementById("concdiff");
   if(!el) return;
-  if(diff===0){
-    el.innerHTML=`<span style="color:#4ade80;font-weight:700;">✔ Sin diferencia — todo cuadra</span>`;
-  } else {
-    el.innerHTML=`<span style="color:#fbbf24;font-weight:700;">Diferencia: ${diff>0?'+':''}$${diff.toLocaleString('es-CO')}</span>`;
-  }
+  if(diff===0) el.innerHTML = `<span style="color:#4ade80;font-weight:700">✓ Sin diferencia, todo cuadra</span>`;
+  else el.innerHTML = `<span style="color:#fbbf24;font-weight:700">Diferencia: ${diff>0?"+":""}${diff.toLocaleString("es-CO")}</span>`;
 }
+
 function aplicarConciliacion(i){
   let val = document.getElementById("concreal").value;
   if(!val){ alert("Ingresa el saldo real"); return; }
@@ -174,6 +188,20 @@ function aplicarConciliacion(i){
   cuentasGuardar();
   cerrarMC();
   renderConta("cuentas");
+}
+
+// ===== ELIMINAR GASTO (descuenta de cuenta) =====
+function eliminarGasto(i){
+  if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
+  let g = gastosMemoria[i];
+  // Revertir el descuento de la cuenta si tiene cuentaIdx
+  if(g && g.cuentaIdx >= 0 && cuentasMemoria[g.cuentaIdx]){
+    cuentasMemoria[g.cuentaIdx].saldo += Number(g.monto)||0;
+    cuentasGuardar();
+  }
+  gastosMemoria.splice(i,1);
+  try{ sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria)); }catch(e){}
+  renderConta("resumen");
 }
 
 </script>
