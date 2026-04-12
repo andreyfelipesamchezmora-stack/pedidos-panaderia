@@ -2751,7 +2751,7 @@ async function recaudoPedidosDelDia(){
   return depurarPedidosUnicos(res.data || []);
 }
 function recaudoGetDeudaHistorica(nombre) {
-  let deudaCliente = 0, deudaMia = 0, deudasPagadas = 0, fechaPago = '—';
+  let deudaCliente = 0, deudaMia = 0;
 
   for (let i = 0; i < localStorage.length; i++) {
     let key = localStorage.key(i);
@@ -2759,14 +2759,16 @@ function recaudoGetDeudaHistorica(nombre) {
       try {
         let obj = JSON.parse(localStorage.getItem(key));
         if (obj && obj[nombre]) {
-          deudaCliente  += Number(obj[nombre].deudaCliente)  || 0;
-          deudaMia      += Number(obj[nombre].deudaMia)      || 0;
+          deudaCliente += Number(obj[nombre].deudaCliente) || 0;
+          deudaMia     += Number(obj[nombre].deudaMia)     || 0;
+          // ← NO sumar deudasPagadas aquí, se lee de cartera_deudas
         }
       } catch(e) {}
     }
   }
 
-  // Leer pagos permanentes de cartera
+  // Pagos permanentes SOLO desde cartera_deudas
+  let deudasPagadas = 0, fechaPago = '—';
   try {
     let cartera = JSON.parse(localStorage.getItem('cartera_deudas') || '{}');
     if (cartera[nombre]) {
@@ -2776,12 +2778,13 @@ function recaudoGetDeudaHistorica(nombre) {
   } catch(e) {}
 
   return {
-    deudaCliente:  Math.max(deudaCliente  - deudasPagadas, 0),
-    deudaMia:      Math.max(deudaMia      - deudasPagadas, 0),
+    deudaCliente:  Math.max(deudaCliente - deudasPagadas, 0),
+    deudaMia:      Math.max(deudaMia     - deudasPagadas, 0),
     deudasPagadas,
-    fechaPago // ← nuevo campo
+    fechaPago
   };
 }
+
 
 
 async function recaudoConstruirData(){
@@ -3422,6 +3425,7 @@ async function carteraVerPerfil(nombre) {
   document.body.appendChild(overlay);
 }
 function recaudoMarcarDeudaSaldada(nombre, deudaCliente, deudaMia) {
+  // Leer estado SOLO de hoy
   let estado = recaudoLeerEstado();
   if (!estado[nombre]) estado[nombre] = {};
 
@@ -3429,42 +3433,35 @@ function recaudoMarcarDeudaSaldada(nombre, deudaCliente, deudaMia) {
   let hoy = new Date().toLocaleDateString('es-CO', { day:'numeric', month:'long', year:'numeric' });
 
   if (checked) {
-    if (deudaCliente > 0) {
-      // El cliente me debe → marcar como pagado
-      estado[nombre].deudasPagadas = deudaCliente;
-      estado[nombre].deudaCliente  = deudaCliente;
-      estado[nombre].fechaPago     = hoy; // ← guarda fecha
-    } else if (deudaMia > 0) {
-      // Yo le debo al cliente → marcar como pagado
-      estado[nombre].deudasPagadas = deudaMia;
-      estado[nombre].deudaMia      = deudaMia;
-      estado[nombre].fechaPago     = hoy; // ← guarda fecha
-    }
+    let montoPagado = deudaCliente > 0 ? deudaCliente : deudaMia;
+    estado[nombre].deudasPagadas = montoPagado; // ← fijo, no acumula
+    estado[nombre].fechaPago     = hoy;
   } else {
-    // Desmarcar → borrar pago y fecha
     estado[nombre].deudasPagadas = 0;
     estado[nombre].fechaPago     = null;
   }
 
-  // Guardar en el día de HOY para que Cartera lo vea
   recaudoGuardarEstado(estado);
 
-  // Además guardar también en una clave PERMANENTE para cartera
-  let carteraEstado = JSON.parse(localStorage.getItem('cartera_deudas') || '{}');
-  if (!carteraEstado[nombre]) carteraEstado[nombre] = {};
+  // Guardar en cartera_deudas permanente
+  let carteraDeudas = {};
+  try { carteraDeudas = JSON.parse(localStorage.getItem('cartera_deudas') || '{}'); } catch(e) {}
+  if (!carteraDeudas[nombre]) carteraDeudas[nombre] = {};
 
   if (checked) {
-    carteraEstado[nombre].deudasPagadas = (deudaCliente || deudaMia);
-    carteraEstado[nombre].deudaCliente  = deudaCliente;
-    carteraEstado[nombre].deudaMia      = deudaMia;
-    carteraEstado[nombre].fechaPago     = hoy;
+    let montoPagado = deudaCliente > 0 ? deudaCliente : deudaMia;
+    carteraDeudas[nombre].deudasPagadas = montoPagado; // ← fijo, no acumula
+    carteraDeudas[nombre].deudaCliente  = deudaCliente;
+    carteraDeudas[nombre].deudaMia      = deudaMia;
+    carteraDeudas[nombre].fechaPago     = hoy;
   } else {
-    carteraEstado[nombre].deudasPagadas = 0;
-    carteraEstado[nombre].fechaPago     = null;
+    carteraDeudas[nombre].deudasPagadas = 0;
+    carteraDeudas[nombre].fechaPago     = null;
   }
 
-  localStorage.setItem('cartera_deudas', JSON.stringify(carteraEstado));
+  localStorage.setItem('cartera_deudas', JSON.stringify(carteraDeudas));
 }
+
 
 </script>
 </body>
