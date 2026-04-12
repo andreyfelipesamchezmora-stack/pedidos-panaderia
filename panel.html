@@ -56,12 +56,13 @@ function abrirModalNuevaCuenta(){
   `);
 }
 function confirmarNuevaCuenta(){
-  let nombre=document.getElementById("nc_nombre").value.trim();
-  let tipo=document.getElementById("nc_tipo").value;
-  let saldo=Number(document.getElementById("nc_saldo").value)||0;
-  let color=document.getElementById("nc_color").value;
-  if(!nombre){alert("Ingresa un nombre para la cuenta");return;}
-  cuentasMemoria.push({nombre,tipo,color,saldo});
+  let nombre = document.getElementById("ncnombre").value.trim();
+  let tipo   = document.getElementById("nctipo").value;
+  let saldo  = Number(document.getElementById("ncsaldo").value)||0;
+  let color  = document.getElementById("nccolor").value;
+  if(!nombre){ alert("Ingresa un nombre"); return; }
+  cuentasMemoria.push({nombre, tipo, color, saldo});
+  cuentasGuardar();
   cerrarMC();
   renderConta("cuentas");
 }
@@ -86,18 +87,20 @@ function abrirEditarCuenta(i){
   `);
 }
 function confirmarEditarCuenta(i){
-  let nombre=document.getElementById("ec_nombre").value.trim();
-  if(!nombre){alert("El nombre no puede estar vacío");return;}
-  cuentasMemoria[i].nombre=nombre;
-  cuentasMemoria[i].tipo=document.getElementById("ec_tipo").value;
-  cuentasMemoria[i].saldo=Number(document.getElementById("ec_saldo").value)||0;
-  cuentasMemoria[i].color=document.getElementById("ec_color").value;
+  let nombre = document.getElementById("ecnombre").value.trim();
+  if(!nombre){ alert("El nombre no puede estar vacío"); return; }
+  cuentasMemoria[i].nombre = nombre;
+  cuentasMemoria[i].tipo   = document.getElementById("ectipo").value;
+  cuentasMemoria[i].saldo  = Number(document.getElementById("ecsaldo").value)||0;
+  cuentasMemoria[i].color  = document.getElementById("eccolor").value;
+  cuentasGuardar();
   cerrarMC();
   renderConta("cuentas");
 }
 function eliminarCuenta(i){
-  if(!confirm(`¿Eliminar la cuenta "${cuentasMemoria[i].nombre}"?`)) return;
+  if(!confirm("¿Eliminar la cuenta " + cuentasMemoria[i].nombre + "?")) return;
   cuentasMemoria.splice(i,1);
+  cuentasGuardar();
   renderConta("cuentas");
 }
 
@@ -118,20 +121,17 @@ function abrirModalTransferir(){
   `);
 }
 function confirmarTransferencia(){
-  let ori=Number(document.getElementById("tf_origen").value);
-  let dest=Number(document.getElementById("tf_destino").value);
-  let monto=Number(document.getElementById("tf_monto").value)||0;
-  if(ori===dest){alert("El origen y el destino deben ser cuentas distintas");return;}
-  if(monto<=0){alert("Ingresa un monto válido mayor a 0");return;}
-  cuentasMemoria[ori].saldo-=monto;
-  cuentasMemoria[dest].saldo+=monto;
-  let fecha=new Date().toLocaleDateString('es-CO',{day:'numeric',month:'long',year:'numeric'});
-  transferenciasMem.push({
-    origen:cuentasMemoria[ori].nombre,
-    destino:cuentasMemoria[dest].nombre,
-    monto,
-    fecha
-  });
+  let ori   = Number(document.getElementById("tforigen").value);
+  let dest  = Number(document.getElementById("tfdestino").value);
+  let monto = Number(document.getElementById("tfmonto").value)||0;
+  if(ori===dest){ alert("El origen y destino deben ser distintos"); return; }
+  if(monto<=0){   alert("Ingresa un monto válido mayor a 0"); return; }
+  if(cuentasMemoria[ori].saldo < monto){ alert("Saldo insuficiente en la cuenta origen"); return; }
+  cuentasMemoria[ori].saldo  -= monto;
+  cuentasMemoria[dest].saldo += monto;
+  let fecha = new Date().toLocaleDateString("es-CO",{day:"numeric",month:"long",year:"numeric"});
+  transferenciasMem.push({origen: cuentasMemoria[ori].nombre, destino: cuentasMemoria[dest].nombre, monto, fecha});
+  cuentasGuardar();
   cerrarMC();
   renderConta("cuentas");
 }
@@ -168,9 +168,10 @@ function calcDiff(i){
   }
 }
 function aplicarConciliacion(i){
-  let val=document.getElementById("conc_real").value;
-  if(val===""){alert("Ingresa el saldo real");return;}
-  cuentasMemoria[i].saldo=Number(val)||0;
+  let val = document.getElementById("concreal").value;
+  if(!val){ alert("Ingresa el saldo real"); return; }
+  cuentasMemoria[i].saldo = Number(val)||0;
+  cuentasGuardar();
   cerrarMC();
   renderConta("cuentas");
 }
@@ -1812,12 +1813,32 @@ function mostrarRango(){
 
 // =========== MÓDULO CONTABILIDAD ===========
 // ===== VARIABLES MÓDULO CUENTAS =====
-let cuentasMemoria = [
-  {nombre:"CUENTA BANCOLOMBIA", tipo:"CUENTA CORRIENTE", color:"teal", saldo:0},
-  {nombre:"Efectivo", tipo:"EFECTIVO", color:"orange", saldo:0}
-];
+let cuentasMemoria = [];
+try {
+  let _c = JSON.parse(localStorage.getItem('cuentasMemoria'));
+  if(Array.isArray(_c) && _c.length) cuentasMemoria = _c;
+  else cuentasMemoria = [
+    {nombre:"CUENTA BANCOLOMBIA", tipo:"CUENTA CORRIENTE", color:"teal", saldo:0},
+    {nombre:"Efectivo", tipo:"EFECTIVO", color:"orange", saldo:0}
+  ];
+} catch(e) {
+  cuentasMemoria = [
+    {nombre:"CUENTA BANCOLOMBIA", tipo:"CUENTA CORRIENTE", color:"teal", saldo:0},
+    {nombre:"Efectivo", tipo:"EFECTIVO", color:"orange", saldo:0}
+  ];
+}
 
 let transferenciasMem = [];
+try {
+  let _t = JSON.parse(localStorage.getItem('transferenciasMem'));
+  if(Array.isArray(_t)) transferenciasMem = _t;
+} catch(e) {}
+
+function cuentasGuardar() {
+  localStorage.setItem('cuentasMemoria', JSON.stringify(cuentasMemoria));
+  localStorage.setItem('transferenciasMem', JSON.stringify(transferenciasMem));
+}
+
 
 function tipoEmoji(tipo){
   const m = {
@@ -2207,6 +2228,13 @@ async function cajaRegistrarIngreso(){
       usuario: usuario
     });
 
+// Acreditar en cuenta Efectivo automáticamente
+let idxEf2 = cuentasMemoria.findIndex(c => c.tipo === "EFECTIVO");
+if(idxEf2 >= 0) {
+  cuentasMemoria[idxEf2].saldo += valor;
+  cuentasGuardar();
+}
+
     document.getElementById("cajaIngresoTipo").value="";
     document.getElementById("cajaIngresoDesc").value="";
     document.getElementById("cajaIngresoValor").value="";
@@ -2476,6 +2504,9 @@ function _dibujarConta(tabActiva, ingresos){
       '<div class="gasto-row">'+
         '<input id="gastoDesc" placeholder="Descripción del gasto">'+
         '<select id="gastoCat"><option>Costo</option><option>Gasto</option></select>'+
+'<select id="gastoCuenta">'+
+  cuentasMemoria.map(function(c,i){ return '<option value="'+i+'">'+c.nombre+'</option>'; }).join("")+
+'</select>'+
         '<input id="gastoMonto" type="number" placeholder="Valor">'+
         '<button class="btn-add-gasto" onclick="agregarGasto()">+ Agregar</button>'+
       '</div>'+
@@ -2655,13 +2686,19 @@ function _dibujarConta(tabActiva, ingresos){
 }
 
 function agregarGasto(){
-  let desc=document.getElementById("gastoDesc").value.trim();
-  let cat=document.getElementById("gastoCat").value;
-  let monto=Number(document.getElementById("gastoMonto").value)||0;
-  if(!desc||monto<=0){alert("Completa descripción y valor");return;}
+  let desc   = document.getElementById("gastoDesc").value.trim();
+  let cat    = document.getElementById("gastoCat").value;
+  let monto  = Number(document.getElementById("gastoMonto").value)||0;
+  let cuenta = Number(document.getElementById("gastoCuenta")?.value ?? -1);
+  if(!desc||monto<=0){ alert("Completa descripción y valor"); return; }
   if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
-  gastosMemoria.push({descripcion:desc,categoria:cat,monto});
-  try{ sessionStorage.setItem("gastos",JSON.stringify(gastosMemoria)); }catch(e){}
+  gastosMemoria.push({descripcion:desc, categoria:cat, monto});
+  // Descontar de la cuenta seleccionada
+  if(cuenta >= 0 && cuentasMemoria[cuenta]){
+    cuentasMemoria[cuenta].saldo -= monto;
+    cuentasGuardar();
+  }
+  try{ sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria)); }catch(e){}
   renderConta("resumen");
 }
 
