@@ -3135,49 +3135,59 @@ async function abrirRecaudo(){
 
 async function carteraCargarDatos() {
   let hoy = new Date();
-  let estadosGuardados = JSON.parse(localStorage.getItem('recaudoEstado') || '{}');
   let { data: pedidos } = await db.from('pedidos').select('*');
+
+  // Lee TODAS las fechas del localStorage que sean de recaudo
+  let todosLosEstados = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    let key = localStorage.key(i);
+    if (key && key.startsWith('recaudo_')) {
+      try {
+        let obj = JSON.parse(localStorage.getItem(key));
+        if (obj && typeof obj === 'object') {
+          Object.keys(obj).forEach(nombre => {
+            if (!todosLosEstados[nombre]) {
+              todosLosEstados[nombre] = { deudaCliente: 0, deudasPagadas: 0, nequi: 0, bancolombia: 0, recaudoDomi: 0, fechas: [] };
+            }
+            let est = obj[nombre];
+            // Acumula deudas de todos los días
+            todosLosEstados[nombre].deudaCliente  += Number(est.deudaCliente)  || 0;
+            todosLosEstados[nombre].deudasPagadas += Number(est.deudasPagadas) || 0;
+            todosLosEstados[nombre].nequi         += Number(est.nequi)         || 0;
+            todosLosEstados[nombre].bancolombia   += Number(est.bancolombia)   || 0;
+            todosLosEstados[nombre].recaudoDomi   += Number(est.recaudoDomi)   || 0;
+          });
+        }
+      } catch(e) {}
+    }
+  }
 
   let lista = [];
 
-  Object.keys(estadosGuardados).forEach(nombre => {
-    let est = estadosGuardados[nombre];
+  Object.keys(todosLosEstados).forEach(nombre => {
+    let est = todosLosEstados[nombre];
+    let deuda = est.deudaCliente - est.deudasPagadas;
+    if (deuda <= 0) return;
 
-    // Deuda real = lo que marcaste en "Deuda cliente" menos lo que ya pagaron
-    let deudaCliente  = Number(est.deudaCliente)  || 0;
-    let deudasPagadas = Number(est.deudasPagadas) || 0;
-    let deuda = deudaCliente - deudasPagadas;
-
-    if (deuda <= 0) return; // No aparece si no debe nada
-
-    // Pedidos de este cliente para historial
     let pedidosCliente = (pedidos || []).filter(p => p.cliente === nombre);
-    let totalPedidos = pedidosCliente.reduce((s,p) => s + (Number(p.total)||0), 0);
+    let totalPedidos = pedidosCliente.reduce((s, p) => s + (Number(p.total) || 0), 0);
+    let totalPagado = est.nequi + est.bancolombia + est.recaudoDomi + est.deudasPagadas;
 
-    // Fecha pedido más antiguo
     let fechas = pedidosCliente.map(p => new Date(p.fecha)).filter(f => !isNaN(f));
     let masAntiguo = fechas.length ? new Date(Math.min(...fechas)) : hoy;
     let diasMora = Math.floor((hoy - masAntiguo) / 86400000);
-
-    let totalPagado = (Number(est.nequi)||0) + (Number(est.bancolombia)||0) +
-                      (Number(est.recaudoDomi)||0) + deudasPagadas;
 
     let ranking  = diasMora <= 30 ? 'bueno'    : diasMora <= 60 ? 'ocasional' : 'critico';
     let estado   = diasMora <= 30 ? 'Normal'   : diasMora <= 60 ? 'Riesgo'    : 'Crítico';
     let semaforo = diasMora <= 30 ? 'verde'    : diasMora <= 60 ? 'amarillo'  : 'rojo';
 
-    lista.push({
-      nombre, deuda, diasMora,
-      ultimoPago: est.fechaPago || '—',
-      ranking, estado, semaforo,
-      pedidos: pedidosCliente,
-      totalPedidos, totalPagado
-    });
+    lista.push({ nombre, deuda, diasMora, ultimoPago: '—', ranking, estado, semaforo, pedidos: pedidosCliente, totalPedidos, totalPagado });
   });
 
-  lista.sort((a,b) => b.deuda - a.deuda);
+  lista.sort((a, b) => b.deuda - a.deuda);
   return lista;
 }
+
 
 async function renderCartera(filtroMora='todos', filtroNombre='') {
   let body = document.getElementById('carteraBody');
