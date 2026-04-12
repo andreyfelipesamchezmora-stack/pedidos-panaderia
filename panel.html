@@ -206,211 +206,6 @@ function aplicarConciliacion(i){
   cerrarMC();
   renderConta("cuentas");
 }
-
-Object.assign(window, {
-  mostrarMC,
-  cerrarMC,
-  abrirModalNuevaCuenta,
-  confirmarNuevaCuenta,
-  abrirEditarCuenta,
-  confirmarEditarCuenta,
-  eliminarCuenta,
-  abrirModalTransferir,
-  confirmarTransferencia,
-  abrirConciliar,
-  calcDiff,
-  aplicarConciliacion
-});
-function cuentaIndicePorMetodo(metodo){
-  var m = String(metodo || "").toLowerCase();
-  if(m.indexOf("efec") > -1){
-    return cuentasMemoria.findIndex(function(c){ return String(c.tipo||"").toUpperCase() === "EFECTIVO"; });
-  }
-  if(m.indexOf("trans") > -1){
-    return cuentasMemoria.findIndex(function(c){ return String(c.tipo||"").toUpperCase() !== "EFECTIVO"; });
-  }
-  return -1;
-}
-
-// ===== HELPER MODAL CUENTAS =====
-function mostrarMC(contenido){
-  let overlay = document.getElementById("mcOverlayGlobal");
-  let box = document.getElementById("mcBoxGlobal");
-  if(!overlay || !box){
-    alert("No se encontró el modal global.");
-    return;
-  }
-  box.innerHTML = contenido;
-  overlay.style.display = "flex";
-}
-
-function cerrarMC(){
-  let overlay = document.getElementById("mcOverlayGlobal");
-  if(overlay) overlay.style.display = "none";
-}
-
-function abrirModalNuevaCuenta(){
-  mostrarMC(
-    '<h3>Nueva Cuenta</h3>'+
-    '<div class="mc-field"><label>Nombre</label><input id="ncnombre" placeholder="Ej: Davivienda principal"></div>'+
-    '<div class="mc-field"><label>Tipo</label>'+
-      '<select id="nctipo">'+
-        '<option>CUENTA CORRIENTE</option><option>CUENTA DE AHORRO</option>'+
-        '<option>NEQUI</option><option>DAVIPLATA</option><option>EFECTIVO</option><option>OTRO</option>'+
-      '</select>'+
-    '</div>'+
-    '<div class="mc-field"><label>Saldo inicial</label><input type="number" id="ncsaldo" value="0"></div>'+
-    '<div class="mc-field"><label>Color</label>'+
-      '<select id="nccolor">'+
-        '<option value="teal">Teal</option><option value="orange">Naranja</option><option value="blue">Azul</option>'+
-        '<option value="purple">Morado</option><option value="green">Verde</option><option value="gray">Gris</option><option value="red">Rojo</option>'+
-      '</select>'+
-    '</div>'+
-    '<div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button><button class="mc-btn-ok" onclick="confirmarNuevaCuenta()">Crear cuenta</button></div>'
-  );
-}
-
-function confirmarNuevaCuenta(){
-  let nombre = document.getElementById("ncnombre")?.value.trim();
-  let tipo = document.getElementById("nctipo")?.value || "OTRO";
-  let saldo = Number(document.getElementById("ncsaldo")?.value || 0);
-  let color = document.getElementById("nccolor")?.value || "teal";
-  if(!nombre){
-    alert("Ingresa un nombre para la cuenta.");
-    return;
-  }
-  cuentasMemoria.push({nombre:nombre, tipo:tipo, color:color, saldo:saldo});
-  cuentasGuardar();
-  cerrarMC();
-  renderConta("cuentas");
-}
-
-function abrirEditarCuenta(i){
-  let c = cuentasMemoria[i];
-  if(!c) return;
-  let tipos = ["CUENTA CORRIENTE","CUENTA DE AHORRO","NEQUI","DAVIPLATA","EFECTIVO","OTRO"].map(function(t){
-    return '<option '+(t===c.tipo?'selected':'')+'>'+t+'</option>';
-  }).join("");
-  let colores = [["teal","Teal"],["gray","Gris"],["blue","Azul"],["purple","Morado"],["orange","Naranja"],["green","Verde"],["red","Rojo"]].map(function(p){
-    return '<option value="'+p[0]+'" '+(p[0]===c.color?'selected':'')+'>'+p[1]+'</option>';
-  }).join("");
-  mostrarMC(
-    '<h3>Editar cuenta</h3>'+
-    '<div class="mc-field"><label>Nombre</label><input id="ecnombre" value="'+(c.nombre||"")+'"></div>'+
-    '<div class="mc-field"><label>Tipo</label><select id="ectipo">'+tipos+'</select></div>'+
-    '<div class="mc-field"><label>Saldo actual</label><input type="number" id="ecsaldo" value="'+(Number(c.saldo)||0)+'"></div>'+
-    '<div class="mc-field"><label>Color</label><select id="eccolor">'+colores+'</select></div>'+
-    '<div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button><button class="mc-btn-ok" onclick="confirmarEditarCuenta('+i+')">Guardar</button></div>'
-  );
-}
-
-function confirmarEditarCuenta(i){
-  if(!cuentasMemoria[i]) return;
-  let nombre = document.getElementById("ecnombre")?.value.trim();
-  if(!nombre){
-    alert("El nombre no puede estar vacío.");
-    return;
-  }
-  cuentasMemoria[i].nombre = nombre;
-  cuentasMemoria[i].tipo = document.getElementById("ectipo")?.value || cuentasMemoria[i].tipo;
-  cuentasMemoria[i].saldo = Number(document.getElementById("ecsaldo")?.value || 0);
-  cuentasMemoria[i].color = document.getElementById("eccolor")?.value || cuentasMemoria[i].color;
-  cuentasGuardar();
-  cerrarMC();
-  renderConta("cuentas");
-}
-
-function eliminarCuenta(i){
-  if(!cuentasMemoria[i]) return;
-  if(!confirm("¿Eliminar la cuenta " + cuentasMemoria[i].nombre + "?")) return;
-  cuentasMemoria.splice(i, 1);
-  cuentasGuardar();
-  renderConta("cuentas");
-}
-
-function abrirModalTransferir(){
-  if(cuentasMemoria.length < 2){
-    alert("Necesitas al menos 2 cuentas.");
-    return;
-  }
-  let opciones = cuentasMemoria.map(function(c, i){
-    return '<option value="'+i+'">'+c.nombre+' — $'+(Number(c.saldo)||0).toLocaleString("es-CO")+'</option>';
-  }).join("");
-  mostrarMC(
-    '<h3>Transferir entre cuentas</h3>'+
-    '<div class="mc-field"><label>Cuenta origen</label><select id="tforigen">'+opciones+'</select></div>'+
-    '<div class="mc-field"><label>Cuenta destino</label><select id="tfdestino">'+opciones+'</select></div>'+
-    '<div class="mc-field"><label>Monto</label><input id="tfmonto" type="number" placeholder="Ej: 50000"></div>'+
-    '<div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button><button class="mc-btn-ok verde" onclick="confirmarTransferencia()">Transferir</button></div>'
-  );
-}
-
-function confirmarTransferencia(){
-  let ori = Number(document.getElementById("tforigen")?.value);
-  let dest = Number(document.getElementById("tfdestino")?.value);
-  let monto = Number(document.getElementById("tfmonto")?.value || 0);
-  if(ori===dest){
-    alert("El origen y destino deben ser diferentes.");
-    return;
-  }
-  if(monto<=0){
-    alert("Ingresa un monto válido.");
-    return;
-  }
-  if(!cuentasMemoria[ori] || !cuentasMemoria[dest]) return;
-  if(Number(cuentasMemoria[ori].saldo||0) < monto){
-    alert("Saldo insuficiente en la cuenta origen.");
-    return;
-  }
-  cuentasMemoria[ori].saldo -= monto;
-  cuentasMemoria[dest].saldo += monto;
-  transferenciasMem.push({
-    origen: cuentasMemoria[ori].nombre,
-    destino: cuentasMemoria[dest].nombre,
-    monto: monto,
-    fecha: new Date().toLocaleDateString("es-CO",{day:"numeric",month:"long",year:"numeric"})
-  });
-  cuentasGuardar();
-  cerrarMC();
-  renderConta("cuentas");
-}
-
-function abrirConciliar(i){
-  let c = cuentasMemoria[i];
-  if(!c) return;
-  mostrarMC(
-    '<h3>Conciliar '+c.nombre+'</h3>'+
-    '<div class="conciliar-saldo-box"><p>Saldo en sistema</p><div class="csval">$'+(Number(c.saldo)||0).toLocaleString("es-CO")+'</div></div>'+
-    '<div class="mc-field"><label>Saldo real (banco / físico)</label><input id="concreal" type="number" oninput="calcDiff('+i+')" placeholder="Ingresa el saldo real"></div>'+
-    '<div id="concdiff" style="font-size:13px;margin-bottom:8px;color:#94a3b8;min-height:20px;"></div>'+
-    '<div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC()">Cerrar</button><button class="mc-btn-ok verde" onclick="aplicarConciliacion('+i+')">Actualizar saldo</button></div>'
-  );
-}
-
-function calcDiff(i){
-  let real = Number(document.getElementById("concreal")?.value || 0);
-  let diff = real - Number(cuentasMemoria[i]?.saldo || 0);
-  let el = document.getElementById("concdiff");
-  if(!el) return;
-  if(diff === 0){
-    el.innerHTML = '<span style="color:#4ade80;font-weight:700">✓ Sin diferencia, todo cuadra</span>';
-  }else{
-    el.innerHTML = '<span style="color:#fbbf24;font-weight:700">Diferencia: '+(diff>0?'+':'')+diff.toLocaleString("es-CO")+'</span>';
-  }
-}
-
-function aplicarConciliacion(i){
-  if(!cuentasMemoria[i]) return;
-  let val = document.getElementById("concreal")?.value;
-  if(val === ""){
-    alert("Ingresa el saldo real.");
-    return;
-  }
-  cuentasMemoria[i].saldo = Number(val || 0);
-  cuentasGuardar();
-  cerrarMC();
-  renderConta("cuentas");
-}
 // ===== HELPER MODAL =====
 function mostrarMC(contenido){
   let overlay = document.getElementById("mcOverlayGlobal");
@@ -1367,6 +1162,18 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
     </div>
   </div>
 </div>
+<!-- PANEL RECAUDO -->
+<div class="overlay-panel" id="panelRecaudo">
+  <div class="panel-drawer" style="width:min(1280px,98vw);">
+    <div class="panel-header">
+      <h2>🧾 Recaudo del Día</h2>
+      <button class="panel-close" onclick="cerrarPanel('panelRecaudo')">Cerrar</button>
+    </div>
+    <div class="panel-body" id="recaudoBody">
+      <!-- Se llena con JS -->
+    </div>
+  </div>
+</div>
 
 <!-- PANEL CONTABILIDAD -->
 <div class="overlay-panel" id="panelConta">
@@ -1379,6 +1186,23 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
           <path d="M12 17v4"></path>
         </svg>
         Contabilidad
+        <div class="overlay-panel" id="panelRecaudo">
+  <div class="panel-drawer" style="width:min(1280px, 98vw);">
+    <div class="panel-header">
+      <h2>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 7h18"></path>
+          <path d="M6 3h12v18H6z"></path>
+          <path d="M9 11h6"></path>
+          <path d="M9 15h6"></path>
+        </svg>
+        Recaudo Diario
+      </h2>
+      <button class="panel-close" onclick="cerrarPanel('panelRecaudo')">Cerrar</button>
+    </div>
+    <div class="panel-body" id="recaudoBody"></div>
+  </div>
+</div>
       </h2>
       <button class="panel-close" onclick="cerrarPanel('panelConta')">Cerrar</button>
     </div>
@@ -1387,12 +1211,10 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
     </div>
   </div>
 </div>
-  
-<!-- PANEL RECAUDO -->
 <div class="overlay-panel" id="panelRecaudo">
-  <div class="panel-drawer" style="width:min(1280px,98vw);">
+  <div class="panel-drawer" style="width:min(1280px, 98vw);">
     <div class="panel-header">
-      <h2>🧾 Recaudo del Día</h2>
+      <h2>Recaudo</h2>
       <button class="panel-close" onclick="cerrarPanel('panelRecaudo')">Cerrar</button>
     </div>
     <div class="panel-body" id="recaudoBody">
@@ -2698,19 +2520,11 @@ async function cajaRegistrarEgreso(){
       cuentasGuardar();
     }
     
-    let cuentaIdx = cuentaIndicePorMetodo(metodo);
-    if(cuentaIdx >= 0 && cuentasMemoria[cuentaIdx]){
-      cuentasMemoria[cuentaIdx].saldo -= valor;
-      cuentasGuardar();
-    }
-    
     if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
     gastosMemoria.push({
       descripcion: descripcion,
       categoria: categoria,
       monto: valor,
-      cuentaIdx: cuentaIdx,
-      cuentaNombre: (cuentaIdx >= 0 && cuentasMemoria[cuentaIdx]) ? cuentasMemoria[cuentaIdx].nombre : ""
       cuentaIdx: cuentaIdx,
       cuentaNombre: (cuentaIdx >= 0 && cuentasMemoria[cuentaIdx]) ? cuentasMemoria[cuentaIdx].nombre : ""
     });
@@ -2896,7 +2710,7 @@ function _dibujarConta(tabActiva, ingresos){
     for(var gi=0;gi<gastosMemoria.length;gi++){
       var g=gastosMemoria[gi];
       var cuentaTag = g.cuentaNombre ? ' <span class="gasto-cat">['+g.cuentaNombre+']</span>' : '';
-  gastosHtml+='<div class="gasto-item"><span>'+g.descripcion+' <span class="gasto-cat">['+g.categoria+']</span>'+cuentaTag+'</span><span style="display:flex;align-items:center;gap:4px;"><span class="gasto-monto">-$'+(Number(g.monto)||0).toLocaleString("es-CO")+'</span><button class="gasto-del" onclick="eliminarGasto('+gi+')">✕</button></span></div>';
+      gastosHtml+='<div class="gasto-item"><span>'+g.descripcion+' <span class="gasto-cat">['+g.categoria+']</span>'+cuentaTag+'</span><span style="display:flex;align-items:center;gap:4px;"><span class="gasto-monto">-$'+(Number(g.monto)||0).toLocaleString("es-CO")+'</span><button class="gasto-del" onclick="eliminarGasto('+gi+')">✕</button></span></div>';
     }
   }
 
@@ -3110,7 +2924,11 @@ function agregarGasto(){
   let cuenta = Number(document.getElementById("gastoCuenta")?.value ?? -1);
   if(!desc||monto<=0){ alert("Completa descripción y valor"); return; }
   if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
-  gastosMemoria.push({descripcion:desc,categoria:cat,monto:monto,cuentaIdx: cuenta,
+  gastosMemoria.push({
+    descripcion:desc,
+    categoria:cat,
+    monto:monto,
+    cuentaIdx: cuenta,
     cuentaNombre: (cuenta >= 0 && cuentasMemoria[cuenta]) ? cuentasMemoria[cuenta].nombre : ""
   });
   // Descontar de la cuenta seleccionada
@@ -3124,11 +2942,6 @@ function agregarGasto(){
 
 function eliminarGasto(i){
   if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
-  let g = gastosMemoria[i];
-  if(g && g.cuentaIdx >= 0 && cuentasMemoria[g.cuentaIdx]){
-    cuentasMemoria[g.cuentaIdx].saldo += Number(g.monto)||0;
-    cuentasGuardar();
-  }
   gastosMemoria.splice(i,1);
   try{ sessionStorage.setItem("gastos",JSON.stringify(gastosMemoria)); }catch(e){}
   renderConta("resumen");
