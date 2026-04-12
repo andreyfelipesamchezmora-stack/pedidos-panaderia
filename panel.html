@@ -2941,6 +2941,7 @@ async function renderRecaudo(){
     <th style="min-width:80px">Tipo</th>
     <th style="min-width:160px">Cliente</th>
     <th style="min-width:100px">Subtotal</th>
+<th style="min-width:120px;text-align:center">Deuda</th>
     <th style="min-width:130px">Recaudo domi</th>
     <th style="min-width:80px;text-align:center">Recibido</th>
     <th style="min-width:120px">Nequi</th>
@@ -2967,6 +2968,18 @@ async function renderRecaudo(){
                   <td><span class="recaudo-badge ${r.tipo}">${recaudoTipoLabel(r.tipo)}</span></td>
                   <td style="font-weight:700;">${r.cliente}</td>
                   <td>${recaudoMoney(r.subtotal)}</td>
+<td style="text-align:center;">
+  ${(r.deudaCliente > 0 || r.deudaMia > 0) ? `
+    <div style="font-size:11px;color:${r.deudaCliente > 0 ? '#fca5a5' : '#93c5fd'};font-weight:700;margin-bottom:3px;">
+      ${r.deudaCliente > 0 ? '⚠️ Te debe: ' + recaudoMoney(r.deudaCliente) : '💙 Le debes: ' + recaudoMoney(r.deudaMia)}
+    </div>
+    <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox"
+      ${r.deudasPagadas > 0 ? 'checked' : ''}
+      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia}); renderRecaudo();"
+      title="${r.deudaCliente > 0 ? 'Marcar deuda del cliente como pagada' : 'Marcar deuda tuya como pagada'}">
+  ` : '<span style="color:#4ade80;font-size:11px">✓ Sin deuda</span>'}
+</td>
+
                   <td style="text-align:center;">
   <input id="rec_domi_${safe}" class="recaudo-check" type="checkbox"
     ${r.recaudoDomi > 0 ? 'checked' : ''}
@@ -3357,7 +3370,30 @@ async function carteraVerPerfil(nombre) {
 
   document.body.appendChild(overlay);
 }
+function recaudoMarcarDeudaSaldada(nombre, deudaCliente, deudaMia) {
+  let estado = recaudoLeerEstado();
+  if (!estado[nombre]) estado[nombre] = {};
 
+  let checked = document.getElementById('rec_deuda_saldo_' + nombre)?.checked;
+
+  if (checked) {
+    // Marcar como saldada
+    if (deudaCliente > 0) {
+      // El cliente me debe → se suma al recaudo domi (yo recibí ese dinero)
+      estado[nombre].deudasPagadas = deudaCliente;
+      estado[nombre].deudaCliente  = deudaCliente; // conservar referencia
+    } else if (deudaMia > 0) {
+      // Yo le debo al cliente → se resta del recaudo domi
+      estado[nombre].deudasPagadas = 0;
+      estado[nombre].deudaMia      = deudaMia;
+    }
+  } else {
+    // Desmarcar → limpiar pago de deuda
+    estado[nombre].deudasPagadas = 0;
+  }
+
+  recaudoGuardarEstado(estado);
+}
 </script>
 </body>
 </html>
