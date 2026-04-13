@@ -2245,16 +2245,103 @@ async function abrirConta(){
   }
 }
 function renderConta(tab){
-  if(tab === "flujo"){
-    let html = `
-      <h2>📊 Flujo de Caja</h2>
-      <p>✔ Aquí irá tu flujo mensual</p>
-    `;
+ if(tab === "flujo"){
 
-    document.getElementById("mcBoxGlobal").innerHTML = html;
+  let meses = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 
-    return;
+  // 🔹 TOTAL CUENTAS
+  let saldoInicial = (Array.isArray(cuentasMemoria) ? cuentasMemoria : [])
+    .reduce((acc,c)=> acc + (Number(c.saldo)||0),0);
+
+  let ingresosMes = Array(12).fill(0);
+  let gastosMes = Array(12).fill(0);
+
+  // 🔹 INGRESOS (movimientosContables)
+  (Array.isArray(movimientosContables) ? movimientosContables : []).forEach(m=>{
+    let fecha = new Date(m.fecha);
+    let mes = fecha.getMonth();
+
+    if((m.tipo||"").toLowerCase().includes("ingreso")){
+      ingresosMes[mes] += Number(m.monto||0);
+    }
+
+    if((m.tipo||"").toLowerCase().includes("gasto")){
+      gastosMes[mes] += Number(m.monto||0);
+    }
+  });
+
+  // 🔹 GASTOS EXTRA
+  (Array.isArray(gastosMemoria) ? gastosMemoria : []).forEach(g=>{
+    let fecha = new Date(g.fecha);
+    let mes = fecha.getMonth();
+    gastosMes[mes] += Number(g.valor||0);
+  });
+
+  let acumulado = [];
+  let saldo = saldoInicial;
+
+  let filas = {
+    saldoInicial: [],
+    ingresos: [],
+    gastos: [],
+    ganancia: [],
+    acumulado: []
+  };
+
+  for(let i=0;i<12;i++){
+    filas.saldoInicial.push(saldo);
+
+    let ing = ingresosMes[i];
+    let gas = gastosMes[i];
+    let gan = ing - gas;
+
+    saldo += gan;
+
+    filas.ingresos.push(ing);
+    filas.gastos.push(gas);
+    filas.ganancia.push(gan);
+    filas.acumulado.push(saldo);
   }
+
+  function money(v){
+    return Number(v).toLocaleString("es-CO",{style:"currency",currency:"COP",maximumFractionDigits:0});
+  }
+
+  function fila(nombre, data){
+    let html = `<tr><td>${nombre}</td>`;
+    data.forEach(v=>{
+      html += `<td>${money(v)}</td>`;
+    });
+    html += "</tr>";
+    return html;
+  }
+
+  let html = `
+    <h2>📊 Flujo de Caja</h2>
+
+    <div style="overflow:auto; margin-top:15px;">
+      <table style="width:100%; border-collapse:collapse; text-align:center;">
+        <thead>
+          <tr>
+            <th>Concepto</th>
+            ${meses.map(m=>`<th>${m}</th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${fila("Saldo Inicial", filas.saldoInicial)}
+          ${fila("Ingresos", filas.ingresos)}
+          ${fila("Gastos", filas.gastos)}
+          ${fila("Ganancia", filas.ganancia)}
+          ${fila("Acumulado", filas.acumulado)}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  document.getElementById("mcBoxGlobal").innerHTML = html;
+
+  return;
+}
 
   _dibujarConta(tab||"resumen", window._ingresosCache||0);
 }
