@@ -944,6 +944,7 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
 </head>
 
 <body>
+<div id="flujoCajaWrap"></div>
 <div class="container">
 
 <!-- SIDEBAR -->
@@ -2243,18 +2244,9 @@ async function abrirConta(){
   }
 }
 function renderConta(tab){
-  // ===== FLUJO DE CAJA (INTEGRADO A TU SISTEMA) =====
-if(tab === "flujo"){
-  let cont = document.getElementById("contenidoContabilidad");
-
-  if(cont){
-    cont.innerHTML = '<div id="flujoCajaWrap"></div>';
-  }
-
-  if(typeof renderFlujoCaja === "function"){
-    renderFlujoCaja();
-  }
-
+  if(tab === "flujo"){
+  document.getElementById("flujoCajaWrap").innerHTML = "";
+  renderFlujoCaja();
   return;
 }
   _dibujarConta(tab||"resumen", window._ingresosCache||0);
