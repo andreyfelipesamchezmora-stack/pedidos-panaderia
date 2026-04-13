@@ -853,6 +853,92 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
 .ranking-critico  { background:rgba(220,38,38,.15);  color:#f87171; }
 .edad-bar { height:8px; border-radius:4px; background:rgba(255,255,255,0.08); overflow:hidden; margin-top:4px; }
 .edad-bar-fill { height:100%; border-radius:4px; }
+#flujoCajaWrap{
+  margin-top:16px;
+}
+
+.fc-toolbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-bottom:14px;
+}
+
+.fc-left{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+
+.fc-select, .fc-btn{
+  padding:10px 14px;
+  border-radius:10px;
+  border:none;
+  font-size:14px;
+}
+
+.fc-select{
+  background:#0f172a;
+  color:#fff;
+  border:1px solid #334155;
+}
+
+.fc-btn{
+  color:#fff;
+  cursor:pointer;
+  font-weight:700;
+  background:#1d4ed8;
+}
+
+.fc-btn.green{ background:#15803d; }
+.fc-btn.red{ background:#b91c1c; }
+
+.fc-table-wrap{
+  overflow:auto;
+  background:#0b1220;
+  border:1px solid #1e293b;
+  border-radius:14px;
+}
+
+.fc-table{
+  width:100%;
+  min-width:1200px;
+  border-collapse:collapse;
+  color:#e2e8f0;
+}
+
+.fc-table th, .fc-table td{
+  padding:12px 10px;
+  border-bottom:1px solid #1e293b;
+  text-align:right;
+  white-space:nowrap;
+}
+
+.fc-table thead th{
+  background:#0f172a;
+  color:#fff;
+  text-align:center;
+}
+
+.fc-table tbody th{
+  text-align:left;
+  color:#cbd5e1;
+  background:#0b1220;
+}
+
+.fc-pos{ color:#4ade80; font-weight:700; }
+.fc-neg{ color:#f87171; font-weight:700; }
+.fc-total td, .fc-total th{
+  background:rgba(22,163,74,.12);
+  color:#dcfce7;
+  font-weight:700;
+}
+.fc-lock{
+  margin-left:6px;
+}
 
 </style>
 </head>
