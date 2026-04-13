@@ -2157,6 +2157,20 @@ async function abrirConta(){
   }
 }
 function renderConta(tab){
+  // ===== FLUJO DE CAJA (INTEGRADO A TU SISTEMA) =====
+if(tab === "flujo"){
+  let cont = document.getElementById("contenidoContabilidad");
+
+  if(cont){
+    cont.innerHTML = '<div id="flujoCajaWrap"></div>';
+  }
+
+  if(typeof renderFlujoCaja === "function"){
+    renderFlujoCaja();
+  }
+
+  return;
+}
   _dibujarConta(tab||"resumen", window._ingresosCache||0);
 }
 
@@ -2538,6 +2552,7 @@ function _dibujarConta(tabActiva, ingresos){
     '<div class="filter-tabs">'+
       '<button class="ftab '+(tabActiva==="resumen"?"active":"")+'" onclick="renderConta(\'resumen\')">📊 Resumen</button>'+
       '<button class="ftab '+(tabActiva==="cuentas"?"active":"")+'" onclick="renderConta(\'cuentas\')">🏦 Cuentas</button>'+
+      '<button class="ftab" onclick="renderConta(\'flujo\')">📊 Flujo de Caja</button>'+
       '<button class="ftab '+(tabActiva==="caja"?"active":"")+'" onclick="cajaCargarResumenDia().then(function(){renderConta(\'caja\');})">💵 Caja</button>'+
     '</div>';
 
