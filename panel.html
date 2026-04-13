@@ -2246,15 +2246,16 @@ async function abrirConta(){
 }
 function renderConta(tab){
   if(tab === "flujo"){
-  let html = `
-    <h2>📊 Flujo de Caja</h2>
-    <p>✔ Aquí irá tu flujo mensual</p>
-  `;
+    let html = `
+      <h2>📊 Flujo de Caja</h2>
+      <p>✔ Aquí irá tu flujo mensual</p>
+    `;
 
-  document.getElementById("contenidoContabilidad").innerHTML = html;
+    document.getElementById("mcBoxGlobal").innerHTML = html;
 
-  return;
-}
+    return;
+  }
+
   _dibujarConta(tab||"resumen", window._ingresosCache||0);
 }
 
