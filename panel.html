@@ -2600,7 +2600,7 @@ function _dibujarConta(tabActiva, ingresos){
     '<div class="filter-tabs">'+
       '<button class="ftab '+(tabActiva==="resumen"?"active":"")+'" onclick="renderConta(\'resumen\')">📊 Resumen</button>'+
       '<button class="ftab '+(tabActiva==="cuentas"?"active":"")+'" onclick="renderConta(\'cuentas\')">🏦 Cuentas</button>'+
-      '<button onclick="renderConta('flujo')">Flujo de Caja</button>'+
+      '<button onclick="renderConta(\'flujo\')">Flujo de Caja</button>'+
       '<button class="ftab '+(tabActiva==="caja"?"active":"")+'" onclick="cajaCargarResumenDia().then(function(){renderConta(\'caja\');})">💵 Caja</button>'+
     '</div>';
 
