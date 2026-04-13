@@ -2587,7 +2587,7 @@ function _dibujarConta(tabActiva, ingresos){
 
   var cuentasCards = (Array.isArray(cuentasMemoria)?cuentasMemoria:[]).map(function(c,i){
     var saldoCls = (c.saldo<0 ? ' negativo' : (c.saldo===0 ? ' cero' : ''));
-    '<button class="btn-cuenta peligro" onclick="eliminarCuenta('+i+')">🗑️</button>' : '';
+    var btnEliminar = '<button class="btn-cuenta peligro" onclick="eliminarCuenta('+i+')">🗑️</button>';
     return ''+
     '<div class="cuenta-card" data-color="'+(c.color||'teal')+'">'+
       '<div class="cuenta-header">'+
