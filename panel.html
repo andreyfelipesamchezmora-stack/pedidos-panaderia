@@ -1877,11 +1877,7 @@ try {
     {nombre:"Efectivo", tipo:"EFECTIVO", color:"orange", saldo:0}
   ];
 }
-  
-// ===== FLUJO DE CAJA =====
-let mesesBloqueados = JSON.parse(localStorage.getItem("mesesBloqueados")) || [];
-let flujoCajaGuardado = JSON.parse(localStorage.getItem("flujoCajaGuardado")) || {};
-  
+
 let transferenciasMem = [];
 try {
   let _t = JSON.parse(localStorage.getItem('transferenciasMem'));
@@ -2161,65 +2157,7 @@ async function abrirConta(){
   }
 }
 function renderConta(tab){
-  tab = tab || "resumen";
-
-  if(tab === "flujo"){
-    renderFlujoCaja();
-    return;
-  }
-
-  _dibujarConta(tab, window._ingresosCache||0);
-}
-
-function renderFlujoCaja(){
-  const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-
-  let cont = document.getElementById("contenidoContabilidad");
-  if(!cont) return;
-
-  let html = "<h2>Flujo de Caja</h2><table border='1'>";
-
-  html += "<tr><th>Concepto</th>";
-  meses.forEach((m,i)=>{
-    html += `<th>${m} ${esMesBloqueado(i)?"🔒":""}</th>`;
-  });
-  html += "</tr>";
-
-  let saldoInicial = (cuentasMemoria || []).reduce((a,c)=>a+(Number(c.saldo)||0),0);
-  let acumulado = saldoInicial;
-
-  let filaSaldo = "<tr><td>Saldo inicial</td>";
-  let filaIng = "<tr><td>Ingresos</td>";
-  let filaGas = "<tr><td>Gastos</td>";
-  let filaGan = "<tr><td>Ganancia</td>";
-
-  meses.forEach((m,i)=>{
-    let data = esMesBloqueado(i) && flujoCajaGuardado[i]
-      ? flujoCajaGuardado[i]
-      : calcularMes(i);
-
-    acumulado += data.ganancia;
-
-    filaSaldo += `<td>$${saldoInicial.toLocaleString()}</td>`;
-    filaIng += `<td>$${data.ingresos.toLocaleString()}</td>`;
-    filaGas += `<td>$${data.gastos.toLocaleString()}</td>`;
-    filaGan += `<td>$${data.ganancia.toLocaleString()}</td>`;
-  });
-
-  html += filaSaldo + "</tr>";
-  html += filaIng + "</tr>";
-  html += filaGas + "</tr>";
-  html += filaGan + "</tr>";
-
-  html += "</table>";
-
-  html += `
-  <br>
-  <button onclick="cerrarMes(4)">Cerrar Mayo</button>
-  <button onclick="desbloquearMes(4)">Abrir Mayo</button>
-  `;
-
-  cont.innerHTML = html;
+  _dibujarConta(tab||"resumen", window._ingresosCache||0);
 }
 
 async function cajaAbrir(){
@@ -2600,7 +2538,6 @@ function _dibujarConta(tabActiva, ingresos){
     '<div class="filter-tabs">'+
       '<button class="ftab '+(tabActiva==="resumen"?"active":"")+'" onclick="renderConta(\'resumen\')">📊 Resumen</button>'+
       '<button class="ftab '+(tabActiva==="cuentas"?"active":"")+'" onclick="renderConta(\'cuentas\')">🏦 Cuentas</button>'+
-      '<button onclick="renderConta(\'flujo\')">Flujo de Caja</button>'+
       '<button class="ftab '+(tabActiva==="caja"?"active":"")+'" onclick="cajaCargarResumenDia().then(function(){renderConta(\'caja\');})">💵 Caja</button>'+
     '</div>';
 
@@ -2819,50 +2756,7 @@ function agregarGasto(){
   try{ sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria)); }catch(e){}
   renderConta("resumen");
 }
-function guardarBloqueos(){
-  localStorage.setItem("mesesBloqueados", JSON.stringify(mesesBloqueados));
-}
 
-function esMesBloqueado(mes){
-  return mesesBloqueados.includes(mes);
-}
-
-function cerrarMes(mes){
-  if(!mesesBloqueados.includes(mes)){
-    mesesBloqueados.push(mes);
-    guardarBloqueos();
-    flujoCajaGuardado[mes] = calcularMes(mes);
-    localStorage.setItem("flujoCajaGuardado", JSON.stringify(flujoCajaGuardado));
-  }
-  renderFlujoCaja();
-}
-
-function desbloquearMes(mes){
-  mesesBloqueados = mesesBloqueados.filter(m => m !== mes);
-  guardarBloqueos();
-  renderFlujoCaja();
-}
-
-function calcularMes(mes){
-  let ingresos = 0;
-  let gastos = 0;
-
-  (movimientosContables || []).forEach(m=>{
-    let fecha = new Date(m.fecha);
-    if(fecha.getMonth() === mes && m.tipo === "ingreso"){
-      ingresos += Number(m.monto) || 0;
-    }
-    if(fecha.getMonth() === mes && m.tipo === "gasto"){
-      gastos += Number(m.monto) || 0;
-    }
-  });
-
-  return {
-    ingresos,
-    gastos,
-    ganancia: ingresos - gastos
-  };
-}
 function eliminarGasto(i){
   if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
   gastosMemoria.splice(i,1);
