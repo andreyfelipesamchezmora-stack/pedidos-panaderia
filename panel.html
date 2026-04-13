@@ -2245,9 +2245,19 @@ async function abrirConta(){
 }
 function renderConta(tab){
   if(tab === "flujo"){
-  alert("YA ESTOY ENTRANDO AL FLUJO"); // 👈 prueba
+  let html = `
+    <h2>📊 Flujo de Caja</h2>
 
-  document.body.innerHTML = "<h1>FLUJO FUNCIONANDO</h1>";
+    <div style="margin-top:20px;">
+      <p>✔ Aquí irá tu flujo mensual</p>
+
+      <button onclick="alert('Cerrar mes funcionando')">
+        🔒 Cerrar mes
+      </button>
+    </div>
+  `;
+
+  document.body.innerHTML = html;
 
   return;
 }
