@@ -944,6 +944,7 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
 </head>
 
 <body>
+<div id="contenidoContabilidad"></div>
 <div id="flujoCajaWrap"></div>
 <div class="container">
 
@@ -2247,17 +2248,10 @@ function renderConta(tab){
   if(tab === "flujo"){
   let html = `
     <h2>📊 Flujo de Caja</h2>
-
-    <div style="margin-top:20px;">
-      <p>✔ Aquí irá tu flujo mensual</p>
-
-      <button onclick="alert('Cerrar mes funcionando')">
-        🔒 Cerrar mes
-      </button>
-    </div>
+    <p>✔ Aquí irá tu flujo mensual</p>
   `;
 
-  document.body.innerHTML = html;
+  document.getElementById("contenidoContabilidad").innerHTML = html;
 
   return;
 }
