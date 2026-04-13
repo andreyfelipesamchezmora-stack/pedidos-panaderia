@@ -944,9 +944,7 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
 </head>
 
 <body>
-<div id="contenidoContabilidad">
-  <div id="contaTabsContenido"></div>
-</div>
+<div id="contenidoContabilidad"></div>
 <div id="flujoCajaWrap"></div>
 <div class="container">
 
@@ -2340,7 +2338,7 @@ function renderConta(tab){
     </div>
   `;
 
-  document.getElementById("contaTabsContenido").innerHTML = html;
+  document.getElementById("contenidoContabilidad").innerHTML = html;
 
   return;
 }
@@ -2726,7 +2724,7 @@ function _dibujarConta(tabActiva, ingresos){
     '<div class="filter-tabs">'+
       '<button class="ftab '+(tabActiva==="resumen"?"active":"")+'" onclick="renderConta(\'resumen\')">📊 Resumen</button>'+
       '<button class="ftab '+(tabActiva==="cuentas"?"active":"")+'" onclick="renderConta(\'cuentas\')">🏦 Cuentas</button>'+
-      <button class="ftab" onclick="renderConta('flujo')">📊 Flujo de Caja</button>+
+      '<button class="ftab" onclick="renderConta(\'flujo\')">📊 Flujo de Caja</button>'+
       '<button class="ftab '+(tabActiva==="caja"?"active":"")+'" onclick="cajaCargarResumenDia().then(function(){renderConta(\'caja\');})">💵 Caja</button>'+
     '</div>';
 
