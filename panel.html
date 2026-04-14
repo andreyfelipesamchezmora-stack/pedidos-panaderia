@@ -939,13 +939,119 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
 .fc-lock{
   margin-left:6px;
 }
+.flujo-box{
+  background: var(--clr-panel-surface);
+  border: 1px solid var(--clr-panel-border);
+  border-radius: 16px;
+  padding: 18px;
+}
 
+.flujo-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+  margin-bottom:16px;
+}
+
+.flujo-title{
+  font-size:20px;
+  font-weight:800;
+  color:white;
+}
+
+.flujo-subtitle{
+  font-size:12px;
+  color:var(--clr-panel-muted);
+  margin-top:2px;
+}
+
+.flujo-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+.flujo-table-wrap{
+  overflow:auto;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:#0b1220;
+}
+
+.flujo-table{
+  width:100%;
+  min-width:1200px;
+  border-collapse:collapse;
+  font-size:13px;
+}
+
+.flujo-table th,
+.flujo-table td{
+  padding:12px 10px;
+  border-bottom:1px solid rgba(255,255,255,0.06);
+  text-align:right;
+  white-space:nowrap;
+}
+
+.flujo-table thead th{
+  position:sticky;
+  top:0;
+  background:#162033;
+  color:#cbd5e1;
+  z-index:2;
+  text-transform:uppercase;
+  font-size:11px;
+  letter-spacing:.05em;
+  text-align:center;
+}
+
+.flujo-table tbody th{
+  text-align:left;
+  color:#e2e8f0;
+  background:#0f172a;
+  position:sticky;
+  left:0;
+  z-index:1;
+}
+
+.flujo-table tr:hover td{
+  background:rgba(255,255,255,0.02);
+}
+
+.flujo-pos{
+  color:#4ade80;
+  font-weight:800;
+}
+
+.flujo-neg{
+  color:#f87171;
+  font-weight:800;
+}
+
+.flujo-total td,
+.flujo-total th{
+  background:rgba(22,163,74,.12);
+  color:#dcfce7;
+  font-weight:800;
+}
+
+.flujo-lock{
+  font-size:12px;
+  margin-left:6px;
+}
+
+.flujo-note{
+  color:#94a3b8;
+  font-size:12px;
+  margin-top:10px;
+}
 </style>
 </head>
 
 <body>
 <div id="contenidoContabilidad"></div>
-<div id="flujoCajaWrap"></div>
 <div class="container">
 
 <!-- SIDEBAR -->
@@ -2245,107 +2351,177 @@ async function abrirConta(){
   }
 }
 function renderConta(tab){
- if(tab === "flujo"){
+if(tab === "flujo"){
+  let meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
-  let meses = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  let mesesBloqueados = [];
+  try{
+    mesesBloqueados = JSON.parse(localStorage.getItem("mesesBloqueados")) || [];
+  }catch(e){
+    mesesBloqueados = [];
+  }
 
-  // 🔹 TOTAL CUENTAS
-  let saldoInicial = (Array.isArray(cuentasMemoria) ? cuentasMemoria : [])
-    .reduce((acc,c)=> acc + (Number(c.saldo)||0),0);
+  let cierres = {};
+  try{
+    cierres = JSON.parse(localStorage.getItem("flujoCajaMesesCerradosData")) || {};
+  }catch(e){
+    cierres = {};
+  }
+
+  let saldoInicialBase = Array.isArray(cuentasMemoria)
+    ? cuentasMemoria.reduce((acc,c)=> acc + Number(c.saldo || 0), 0)
+    : 0;
 
   let ingresosMes = Array(12).fill(0);
   let gastosMes = Array(12).fill(0);
 
-  // 🔹 INGRESOS (movimientosContables)
-  (Array.isArray(movimientosContables) ? movimientosContables : []).forEach(m=>{
-    let fecha = new Date(m.fecha);
-    let mes = fecha.getMonth();
+  if(Array.isArray(movimientosContables)){
+    movimientosContables.forEach(m=>{
+      let fecha = new Date(m.fecha);
+      if(isNaN(fecha.getTime())) return;
+      let mes = fecha.getMonth();
+      let monto = Number(m.monto || 0);
+      let tipo = String(m.tipo || "").toLowerCase();
 
-    if((m.tipo||"").toLowerCase().includes("ingreso")){
-      ingresosMes[mes] += Number(m.monto||0);
-    }
+      if(tipo.includes("ingreso")) ingresosMes[mes] += monto;
+      if(tipo.includes("gasto")) gastosMes[mes] += monto;
+    });
+  }
 
-    if((m.tipo||"").toLowerCase().includes("gasto")){
-      gastosMes[mes] += Number(m.monto||0);
-    }
-  });
-
-  // 🔹 GASTOS EXTRA
-  (Array.isArray(gastosMemoria) ? gastosMemoria : []).forEach(g=>{
-    let fecha = new Date(g.fecha);
-    let mes = fecha.getMonth();
-    gastosMes[mes] += Number(g.valor||0);
-  });
-
-  let acumulado = [];
-  let saldo = saldoInicial;
+  if(Array.isArray(gastosMemoria)){
+    gastosMemoria.forEach(g=>{
+      let fecha = new Date(g.fecha || new Date());
+      if(isNaN(fecha.getTime())) return;
+      let mes = fecha.getMonth();
+      gastosMes[mes] += Number(g.monto || g.valor || 0);
+    });
+  }
 
   let filas = {
     saldoInicial: [],
     ingresos: [],
     gastos: [],
     ganancia: [],
-    acumulado: []
+    acumulado: [],
+    rentabilidad: []
   };
 
+  let saldoMes = saldoInicialBase;
+
   for(let i=0;i<12;i++){
-    filas.saldoInicial.push(saldo);
+    if(mesesBloqueados.includes(i) && cierres[i]){
+      filas.saldoInicial.push(Number(cierres[i].saldoInicial || 0));
+      filas.ingresos.push(Number(cierres[i].ingresos || 0));
+      filas.gastos.push(Number(cierres[i].gastos || 0));
+      filas.ganancia.push(Number(cierres[i].ganancia || 0));
+      filas.acumulado.push(Number(cierres[i].acumulado || 0));
+      filas.rentabilidad.push(Number(cierres[i].rentabilidad || 0));
+      saldoMes = Number(cierres[i].acumulado || 0);
+      continue;
+    }
 
-    let ing = ingresosMes[i];
-    let gas = gastosMes[i];
+    let saldoIni = i === 0 ? saldoInicialBase : saldoMes;
+    let ing = Number(ingresosMes[i] || 0);
+    let gas = Number(gastosMes[i] || 0);
     let gan = ing - gas;
+    let acu = saldoIni + gan;
+    let rent = ing > 0 ? (gan / ing) * 100 : 0;
 
-    saldo += gan;
-
+    filas.saldoInicial.push(saldoIni);
     filas.ingresos.push(ing);
     filas.gastos.push(gas);
     filas.ganancia.push(gan);
-    filas.acumulado.push(saldo);
+    filas.acumulado.push(acu);
+    filas.rentabilidad.push(rent);
+
+    saldoMes = acu;
   }
 
   function money(v){
-    return Number(v).toLocaleString("es-CO",{style:"currency",currency:"COP",maximumFractionDigits:0});
+    return Number(v || 0).toLocaleString("es-CO", {
+      style:"currency",
+      currency:"COP",
+      maximumFractionDigits:0
+    });
   }
 
-  function fila(nombre, data){
-    let html = `<tr><td>${nombre}</td>`;
-    data.forEach(v=>{
-      html += `<td>${money(v)}</td>`;
+  function claseNum(v){
+    if(Number(v) > 0) return "flujo-pos";
+    if(Number(v) < 0) return "flujo-neg";
+    return "";
+  }
+
+  function totalArr(arr){
+    return arr.reduce((a,b)=>a+Number(b||0),0);
+  }
+
+  function filaTabla(nombre, arr, isPct=false, totalFinal=null, extraClass=""){
+    let html = `<tr class="${extraClass}"><th>${nombre}</th>`;
+    arr.forEach((v,idx)=>{
+      let lock = mesesBloqueados.includes(idx) ? ' title="Mes cerrado"' : '';
+      let val = isPct ? `${Number(v || 0).toFixed(1)}%` : money(v);
+      html += `<td class="${claseNum(v)}"${lock}>${val}</td>`;
     });
-    html += "</tr>";
+    let totalMostrar = totalFinal !== null
+      ? totalFinal
+      : (isPct
+          ? (totalArr(filas.ingresos) > 0 ? (totalArr(filas.ganancia)/totalArr(filas.ingresos))*100 : 0)
+          : totalArr(arr));
+    html += `<td class="${claseNum(totalMostrar)}">${isPct ? `${Number(totalMostrar).toFixed(1)}%` : money(totalMostrar)}</td>`;
+    html += `</tr>`;
     return html;
   }
 
-  let html = `
-    <h2>📊 Flujo de Caja</h2>
+  let totalIngresos = totalArr(filas.ingresos);
+  let totalGastos = totalArr(filas.gastos);
+  let totalGanancia = totalArr(filas.ganancia);
+  let acumuladoFinal = filas.acumulado[11] || 0;
+  let rentTotal = totalIngresos > 0 ? (totalGanancia / totalIngresos) * 100 : 0;
 
-    <div style="overflow:auto; margin-top:15px;">
-      <table style="width:100%; border-collapse:collapse; text-align:center;">
-        <thead>
-          <tr>
-            <th>Concepto</th>
-            ${meses.map(m=>`<th>${m}</th>`).join("")}
-          </tr>
-        </thead>
-        <tbody>
-          ${fila("Saldo Inicial", filas.saldoInicial)}
-          ${fila("Ingresos", filas.ingresos)}
-          ${fila("Gastos", filas.gastos)}
-          ${fila("Ganancia", filas.ganancia)}
-          ${fila("Acumulado", filas.acumulado)}
-        </tbody>
-      </table>
+  let headMeses = meses.map((m,i)=>`<th>${m}${mesesBloqueados.includes(i) ? '<span class="flujo-lock">🔒</span>' : ''}</th>`).join("");
+
+  body.innerHTML = `
+    ${tabsHtml}
+    <div class="flujo-box">
+      <div class="flujo-head">
+        <div>
+          <div class="flujo-title">Flujo de Caja</div>
+          <div class="flujo-subtitle">Resumen financiero mensual con cierre contable por mes</div>
+        </div>
+        <div class="flujo-actions">
+          <button class="btn-transferir" onclick="cerrarMesFlujoCajaPrompt()">Cerrar mes</button>
+          <button class="btn-nueva-cuenta" onclick="resetearBloqueosFlujoCaja()">Resetear bloqueos</button>
+        </div>
+      </div>
+
+      <div class="flujo-table-wrap">
+        <table class="flujo-table">
+          <thead>
+            <tr>
+              <th>Concepto</th>
+              ${headMeses}
+              <th>Acumulado</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filaTabla("Saldo inicial", filas.saldoInicial, false, filas.saldoInicial[0] || 0)}
+            ${filaTabla("Ingresos", filas.ingresos)}
+            ${filaTabla("Gastos", filas.gastos)}
+            ${filaTabla("Ganancia / Pérdida", filas.ganancia, false, totalGanancia)}
+            ${filaTabla("Acumulado", filas.acumulado, false, acumuladoFinal, "flujo-total")}
+            ${filaTabla("Rentabilidad (%)", filas.rentabilidad, true, rentTotal)}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flujo-note">
+        Los meses con candado están cerrados y conservan sus valores congelados.
+      </div>
     </div>
   `;
-
-  document.getElementById("contenidoContabilidad").innerHTML = html;
-
   return;
 }
-
-  _dibujarConta(tab||"resumen", window._ingresosCache||0);
-}
-
+  
 async function cajaAbrir(){
   try{
     var ya = await cajaBuscarSesionAbierta();
@@ -2943,7 +3119,102 @@ function agregarGasto(){
   try{ sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria)); }catch(e){}
   renderConta("resumen");
 }
+function cerrarMesFlujoCajaPrompt(){
+  let entrada = prompt("¿Qué mes deseas cerrar?\nEscribe un número del 1 al 12\n(1=Enero, 12=Diciembre)");
+  if(entrada === null) return;
 
+  let mes = Number(entrada) - 1;
+  if(isNaN(mes) || mes < 0 || mes > 11){
+    alert("Mes inválido");
+    return;
+  }
+
+  let mesesBloqueados = [];
+  try{
+    mesesBloqueados = JSON.parse(localStorage.getItem("mesesBloqueados")) || [];
+  }catch(e){
+    mesesBloqueados = [];
+  }
+
+  let cierres = {};
+  try{
+    cierres = JSON.parse(localStorage.getItem("flujoCajaMesesCerradosData")) || {};
+  }catch(e){
+    cierres = {};
+  }
+
+  let saldoInicialBase = Array.isArray(cuentasMemoria)
+    ? cuentasMemoria.reduce((acc,c)=> acc + Number(c.saldo || 0), 0)
+    : 0;
+
+  let ingresosMes = Array(12).fill(0);
+  let gastosMes = Array(12).fill(0);
+
+  if(Array.isArray(movimientosContables)){
+    movimientosContables.forEach(m=>{
+      let fecha = new Date(m.fecha);
+      if(isNaN(fecha.getTime())) return;
+      let idx = fecha.getMonth();
+      let monto = Number(m.monto || 0);
+      let tipo = String(m.tipo || "").toLowerCase();
+      if(tipo.includes("ingreso")) ingresosMes[idx] += monto;
+      if(tipo.includes("gasto")) gastosMes[idx] += monto;
+    });
+  }
+
+  if(Array.isArray(gastosMemoria)){
+    gastosMemoria.forEach(g=>{
+      let fecha = new Date(g.fecha || new Date());
+      if(isNaN(fecha.getTime())) return;
+      let idx = fecha.getMonth();
+      gastosMes[idx] += Number(g.monto || g.valor || 0);
+    });
+  }
+
+  let saldoMes = saldoInicialBase;
+  for(let i=0;i<=mes;i++){
+    if(mesesBloqueados.includes(i) && cierres[i]){
+      saldoMes = Number(cierres[i].acumulado || 0);
+      continue;
+    }
+
+    let saldoIni = i === 0 ? saldoInicialBase : saldoMes;
+    let ing = Number(ingresosMes[i] || 0);
+    let gas = Number(gastosMes[i] || 0);
+    let gan = ing - gas;
+    let acu = saldoIni + gan;
+    let rent = ing > 0 ? (gan / ing) * 100 : 0;
+
+    if(i === mes){
+      cierres[i] = {
+        saldoInicial: saldoIni,
+        ingresos: ing,
+        gastos: gas,
+        ganancia: gan,
+        acumulado: acu,
+        rentabilidad: rent,
+        cerradoEn: new Date().toISOString()
+      };
+    }
+
+    saldoMes = acu;
+  }
+
+  if(!mesesBloqueados.includes(mes)) mesesBloqueados.push(mes);
+  mesesBloqueados.sort((a,b)=>a-b);
+
+  localStorage.setItem("mesesBloqueados", JSON.stringify(mesesBloqueados));
+  localStorage.setItem("flujoCajaMesesCerradosData", JSON.stringify(cierres));
+
+  renderConta("flujo");
+}
+
+function resetearBloqueosFlujoCaja(){
+  if(!confirm("¿Seguro que deseas resetear todos los cierres de meses?")) return;
+  localStorage.removeItem("mesesBloqueados");
+  localStorage.removeItem("flujoCajaMesesCerradosData");
+  renderConta("flujo");
+}
 function eliminarGasto(i){
   if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
   gastosMemoria.splice(i,1);
