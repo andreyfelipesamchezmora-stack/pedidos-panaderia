@@ -939,119 +939,13 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
 .fc-lock{
   margin-left:6px;
 }
-.flujo-box{
-  background: var(--clr-panel-surface);
-  border: 1px solid var(--clr-panel-border);
-  border-radius: 16px;
-  padding: 18px;
-}
 
-.flujo-head{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  flex-wrap:wrap;
-  margin-bottom:16px;
-}
-
-.flujo-title{
-  font-size:20px;
-  font-weight:800;
-  color:white;
-}
-
-.flujo-subtitle{
-  font-size:12px;
-  color:var(--clr-panel-muted);
-  margin-top:2px;
-}
-
-.flujo-actions{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-}
-
-.flujo-table-wrap{
-  overflow:auto;
-  border-radius:14px;
-  border:1px solid rgba(255,255,255,0.08);
-  background:#0b1220;
-}
-
-.flujo-table{
-  width:100%;
-  min-width:1200px;
-  border-collapse:collapse;
-  font-size:13px;
-}
-
-.flujo-table th,
-.flujo-table td{
-  padding:12px 10px;
-  border-bottom:1px solid rgba(255,255,255,0.06);
-  text-align:right;
-  white-space:nowrap;
-}
-
-.flujo-table thead th{
-  position:sticky;
-  top:0;
-  background:#162033;
-  color:#cbd5e1;
-  z-index:2;
-  text-transform:uppercase;
-  font-size:11px;
-  letter-spacing:.05em;
-  text-align:center;
-}
-
-.flujo-table tbody th{
-  text-align:left;
-  color:#e2e8f0;
-  background:#0f172a;
-  position:sticky;
-  left:0;
-  z-index:1;
-}
-
-.flujo-table tr:hover td{
-  background:rgba(255,255,255,0.02);
-}
-
-.flujo-pos{
-  color:#4ade80;
-  font-weight:800;
-}
-
-.flujo-neg{
-  color:#f87171;
-  font-weight:800;
-}
-
-.flujo-total td,
-.flujo-total th{
-  background:rgba(22,163,74,.12);
-  color:#dcfce7;
-  font-weight:800;
-}
-
-.flujo-lock{
-  font-size:12px;
-  margin-left:6px;
-}
-
-.flujo-note{
-  color:#94a3b8;
-  font-size:12px;
-  margin-top:10px;
-}
 </style>
 </head>
 
 <body>
 <div id="contenidoContabilidad"></div>
+<div id="flujoCajaWrap"></div>
 <div class="container">
 
 <!-- SIDEBAR -->
@@ -2350,645 +2244,108 @@ async function abrirConta(){
     renderConta("resumen");
   }
 }
-  
-function renderFlujoCajaEnContabilidad(body, tabsHtml){
-  let meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+function renderConta(tab){
+ if(tab === "flujo"){
 
-  let mesesBloqueados = [];
-  try{
-    mesesBloqueados = JSON.parse(localStorage.getItem("mesesBloqueados")) || [];
-  }catch(e){
-    mesesBloqueados = [];
-  }
+  let meses = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 
-  let cierres = {};
-  try{
-    cierres = JSON.parse(localStorage.getItem("flujoCajaMesesCerradosData")) || {};
-  }catch(e){
-    cierres = {};
-  }
-
-  let saldoInicialBase = Array.isArray(cuentasMemoria)
-    ? cuentasMemoria.reduce((acc,c)=> acc + Number(c.saldo || 0), 0)
-    : 0;
+  // 🔹 TOTAL CUENTAS
+  let saldoInicial = (Array.isArray(cuentasMemoria) ? cuentasMemoria : [])
+    .reduce((acc,c)=> acc + (Number(c.saldo)||0),0);
 
   let ingresosMes = Array(12).fill(0);
   let gastosMes = Array(12).fill(0);
 
-  if(Array.isArray(movimientosContables)){
-    movimientosContables.forEach(m=>{
-      let fecha = new Date(m.fecha);
-      if(isNaN(fecha.getTime())) return;
-      let mes = fecha.getMonth();
-      let monto = Number(m.monto || 0);
-      let tipo = String(m.tipo || "").toLowerCase();
+  // 🔹 INGRESOS (movimientosContables)
+  (Array.isArray(movimientosContables) ? movimientosContables : []).forEach(m=>{
+    let fecha = new Date(m.fecha);
+    let mes = fecha.getMonth();
 
-      if(tipo.includes("ingreso")) ingresosMes[mes] += monto;
-      if(tipo.includes("gasto")) gastosMes[mes] += monto;
-    });
-  }
+    if((m.tipo||"").toLowerCase().includes("ingreso")){
+      ingresosMes[mes] += Number(m.monto||0);
+    }
 
-  if(Array.isArray(gastosMemoria)){
-    gastosMemoria.forEach(g=>{
-      let fecha = new Date(g.fecha || new Date());
-      if(isNaN(fecha.getTime())) return;
-      let mes = fecha.getMonth();
-      gastosMes[mes] += Number(g.monto || g.valor || 0);
-    });
-  }
+    if((m.tipo||"").toLowerCase().includes("gasto")){
+      gastosMes[mes] += Number(m.monto||0);
+    }
+  });
+
+  // 🔹 GASTOS EXTRA
+  (Array.isArray(gastosMemoria) ? gastosMemoria : []).forEach(g=>{
+    let fecha = new Date(g.fecha);
+    let mes = fecha.getMonth();
+    gastosMes[mes] += Number(g.valor||0);
+  });
+
+  let acumulado = [];
+  let saldo = saldoInicial;
 
   let filas = {
     saldoInicial: [],
     ingresos: [],
     gastos: [],
     ganancia: [],
-    acumulado: [],
-    rentabilidad: []
+    acumulado: []
   };
 
-  let saldoMes = saldoInicialBase;
-
   for(let i=0;i<12;i++){
-    if(mesesBloqueados.includes(i) && cierres[i]){
-      filas.saldoInicial.push(Number(cierres[i].saldoInicial || 0));
-      filas.ingresos.push(Number(cierres[i].ingresos || 0));
-      filas.gastos.push(Number(cierres[i].gastos || 0));
-      filas.ganancia.push(Number(cierres[i].ganancia || 0));
-      filas.acumulado.push(Number(cierres[i].acumulado || 0));
-      filas.rentabilidad.push(Number(cierres[i].rentabilidad || 0));
-      saldoMes = Number(cierres[i].acumulado || 0);
-      continue;
-    }
+    filas.saldoInicial.push(saldo);
 
-    let saldoIni = i === 0 ? saldoInicialBase : saldoMes;
-    let ing = Number(ingresosMes[i] || 0);
-    let gas = Number(gastosMes[i] || 0);
+    let ing = ingresosMes[i];
+    let gas = gastosMes[i];
     let gan = ing - gas;
-    let acu = saldoIni + gan;
-    let rent = ing > 0 ? (gan / ing) * 100 : 0;
 
-    filas.saldoInicial.push(saldoIni);
+    saldo += gan;
+
     filas.ingresos.push(ing);
     filas.gastos.push(gas);
     filas.ganancia.push(gan);
-    filas.acumulado.push(acu);
-    filas.rentabilidad.push(rent);
-
-    saldoMes = acu;
+    filas.acumulado.push(saldo);
   }
 
   function money(v){
-    return Number(v || 0).toLocaleString("es-CO", {
-      style:"currency",
-      currency:"COP",
-      maximumFractionDigits:0
+    return Number(v).toLocaleString("es-CO",{style:"currency",currency:"COP",maximumFractionDigits:0});
+  }
+
+  function fila(nombre, data){
+    let html = `<tr><td>${nombre}</td>`;
+    data.forEach(v=>{
+      html += `<td>${money(v)}</td>`;
     });
-  }
-
-  function claseNum(v){
-    if(Number(v) > 0) return "flujo-pos";
-    if(Number(v) < 0) return "flujo-neg";
-    return "";
-  }
-
-  function totalArr(arr){
-    return arr.reduce((a,b)=>a+Number(b||0),0);
-  }
-
-  function filaTabla(nombre, arr, isPct=false, totalFinal=null, extraClass=""){
-    let html = `<tr class="${extraClass}"><th>${nombre}</th>`;
-    arr.forEach((v,idx)=>{
-      let lock = mesesBloqueados.includes(idx) ? ' title="Mes cerrado"' : '';
-      let val = isPct ? `${Number(v || 0).toFixed(1)}%` : money(v);
-      html += `<td class="${claseNum(v)}"${lock}>${val}</td>`;
-    });
-
-    let totalMostrar = totalFinal !== null
-      ? totalFinal
-      : (isPct
-          ? (totalArr(filas.ingresos) > 0 ? (totalArr(filas.ganancia)/totalArr(filas.ingresos))*100 : 0)
-          : totalArr(arr));
-
-    html += `<td class="${claseNum(totalMostrar)}">${isPct ? `${Number(totalMostrar).toFixed(1)}%` : money(totalMostrar)}</td>`;
-    html += `</tr>`;
+    html += "</tr>";
     return html;
   }
 
-  let totalIngresos = totalArr(filas.ingresos);
-  let totalGanancia = totalArr(filas.ganancia);
-  let acumuladoFinal = filas.acumulado[11] || 0;
-  let rentTotal = totalIngresos > 0 ? (totalGanancia / totalIngresos) * 100 : 0;
+  let html = `
+    <h2>📊 Flujo de Caja</h2>
 
-  let headMeses = meses.map((m,i)=>`<th>${m}${mesesBloqueados.includes(i) ? '<span class="flujo-lock" title="Mes cerrado">🔒</span>' : ''}</th>`).join("");
-
-  body.innerHTML = `
-    ${tabsHtml}
-    <div class="flujo-box">
-      <div class="flujo-head">
-        <div>
-          <div class="flujo-title">Flujo de Caja</div>
-          <div class="flujo-subtitle">Resumen financiero mensual con cierre contable por mes</div>
-        </div>
-        <div class="flujo-actions">
-          <button class="btn-transferir" onclick="cerrarMesFlujoCajaPrompt()">Cerrar mes</button>
-          <button class="btn-nueva-cuenta" onclick="resetearBloqueosFlujoCaja()">Resetear bloqueos</button>
-        </div>
-      </div>
-
-      <div class="flujo-table-wrap">
-        <table class="flujo-table">
-          <thead>
-            <tr>
-              <th>Concepto</th>
-              ${headMeses}
-              <th>Acumulado</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filaTabla("Saldo inicial", filas.saldoInicial, false, filas.saldoInicial[0] || 0)}
-            ${filaTabla("Ingresos", filas.ingresos)}
-            ${filaTabla("Gastos", filas.gastos)}
-            ${filaTabla("Ganancia / Pérdida", filas.ganancia, false, totalGanancia)}
-            ${filaTabla("Acumulado", filas.acumulado, false, acumuladoFinal, "flujo-total")}
-            ${filaTabla("Rentabilidad (%)", filas.rentabilidad, true, rentTotal)}
-          </tbody>
-        </table>
-      </div>
-
-      <div class="flujo-note">
-        Los meses con candado están cerrados y conservan sus valores congelados.
-      </div>
-    </div>
-  `;
-}
-
-function cerrarMesFlujoCajaPrompt(){
-  let entrada = prompt("¿Qué mes deseas cerrar?\nEscribe un número del 1 al 12\n(1=Enero, 12=Diciembre)");
-  if(entrada === null) return;
-
-  let mes = Number(entrada) - 1;
-  if(isNaN(mes) || mes < 0 || mes > 11){
-    alert("Mes inválido");
-    return;
-  }
-
-  let mesesBloqueados = [];
-  try{
-    mesesBloqueados = JSON.parse(localStorage.getItem("mesesBloqueados")) || [];
-  }catch(e){
-    mesesBloqueados = [];
-  }
-
-  let cierres = {};
-  try{
-    cierres = JSON.parse(localStorage.getItem("flujoCajaMesesCerradosData")) || {};
-  }catch(e){
-    cierres = {};
-  }
-
-  let saldoInicialBase = Array.isArray(cuentasMemoria)
-    ? cuentasMemoria.reduce((acc,c)=> acc + Number(c.saldo || 0), 0)
-    : 0;
-
-  let ingresosMes = Array(12).fill(0);
-  let gastosMes = Array(12).fill(0);
-
-  if(Array.isArray(movimientosContables)){
-    movimientosContables.forEach(m=>{
-      let fecha = new Date(m.fecha);
-      if(isNaN(fecha.getTime())) return;
-      let idx = fecha.getMonth();
-      let monto = Number(m.monto || 0);
-      let tipo = String(m.tipo || "").toLowerCase();
-      if(tipo.includes("ingreso")) ingresosMes[idx] += monto;
-      if(tipo.includes("gasto")) gastosMes[idx] += monto;
-    });
-  }
-
-  if(Array.isArray(gastosMemoria)){
-    gastosMemoria.forEach(g=>{
-      let fecha = new Date(g.fecha || new Date());
-      if(isNaN(fecha.getTime())) return;
-      let idx = fecha.getMonth();
-      gastosMes[idx] += Number(g.monto || g.valor || 0);
-    });
-  }
-
-  let saldoMes = saldoInicialBase;
-
-  for(let i=0;i<=mes;i++){
-    if(mesesBloqueados.includes(i) && cierres[i]){
-      saldoMes = Number(cierres[i].acumulado || 0);
-      continue;
-    }
-
-    let saldoIni = i === 0 ? saldoInicialBase : saldoMes;
-    let ing = Number(ingresosMes[i] || 0);
-    let gas = Number(gastosMes[i] || 0);
-    let gan = ing - gas;
-    let acu = saldoIni + gan;
-    let rent = ing > 0 ? (gan / ing) * 100 : 0;
-
-    if(i === mes){
-      cierres[i] = {
-        saldoInicial: saldoIni,
-        ingresos: ing,
-        gastos: gas,
-        ganancia: gan,
-        acumulado: acu,
-        rentabilidad: rent,
-        cerradoEn: new Date().toISOString()
-      };
-    }
-
-    saldoMes = acu;
-  }
-
-  if(!mesesBloqueados.includes(mes)) mesesBloqueados.push(mes);
-  mesesBloqueados.sort((a,b)=>a-b);
-
-  localStorage.setItem("mesesBloqueados", JSON.stringify(mesesBloqueados));
-  localStorage.setItem("flujoCajaMesesCerradosData", JSON.stringify(cierres));
-
-  renderConta("flujo");
-}
-
-function resetearBloqueosFlujoCaja(){
-  if(!confirm("¿Seguro que deseas resetear todos los cierres de meses?")) return;
-  localStorage.removeItem("mesesBloqueados");
-  localStorage.removeItem("flujoCajaMesesCerradosData");
-  renderConta("flujo");
-}
-function renderConta(tab){
-  var body = document.getElementById("contaBody");
-  if(!body) return;
-
-  var tabActiva = tab || "resumen";
-
-  var tabsHtml = `
-    <div class="filter-tabs">
-      <button class="ftab ${tabActiva==='resumen'?'active':''}" onclick="renderConta('resumen')">Resumen</button>
-      <button class="ftab ${tabActiva==='cuentas'?'active':''}" onclick="renderConta('cuentas')">Cuentas</button>
-      <button class="ftab ${tabActiva==='flujo'?'active':''}" onclick="renderConta('flujo')">Flujo de Caja</button>
-      <button class="ftab ${tabActiva==='caja'?'active':''}" onclick="cajaCargarResumenDia().then(function(){ renderConta('caja'); })">Caja</button>
+    <div style="overflow:auto; margin-top:15px;">
+      <table style="width:100%; border-collapse:collapse; text-align:center;">
+        <thead>
+          <tr>
+            <th>Concepto</th>
+            ${meses.map(m=>`<th>${m}</th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${fila("Saldo Inicial", filas.saldoInicial)}
+          ${fila("Ingresos", filas.ingresos)}
+          ${fila("Gastos", filas.gastos)}
+          ${fila("Ganancia", filas.ganancia)}
+          ${fila("Acumulado", filas.acumulado)}
+        </tbody>
+      </table>
     </div>
   `;
 
-  if(tabActiva === "flujo"){
-    renderFlujoCajaEnContabilidad(body, tabsHtml);
-    return;
-  }
+  document.getElementById("contenidoContabilidad").innerHTML = html;
 
-  if(tabActiva === "caja"){
-    renderCajaEnContabilidad(body, tabsHtml);
-    return;
-  }
-
-  if(tabActiva === "cuentas"){
-    renderCuentasEnContabilidad(body, tabsHtml);
-    return;
-  }
-
-  renderResumenEnContabilidad(body, tabsHtml);
+  return;
 }
 
-function renderResumenEnContabilidad(body, tabsHtml){
-  var ingresos = Number(window.ingresosCache || 0);
-  var totalGastos = Array.isArray(gastosMemoria)
-    ? gastosMemoria.reduce(function(s,g){ return s + Number(g.monto || 0); }, 0)
-    : 0;
-
-  var utilidad = ingresos - totalGastos;
-  var margen = ingresos > 0 ? ((utilidad / ingresos) * 100).toFixed(1) : "0.0";
-
-  var saldoTotal = Array.isArray(cuentasMemoria)
-    ? cuentasMemoria.reduce(function(s,c){ return s + Number(c.saldo || 0); }, 0)
-    : 0;
-
-  var gastosHtml = "";
-  if(!Array.isArray(gastosMemoria) || !gastosMemoria.length){
-    gastosHtml = `<div style="padding:20px;text-align:center;color:#64748b;">Sin gastos registrados</div>`;
-  }else{
-    for(var gi=0; gi<gastosMemoria.length; gi++){
-      var g = gastosMemoria[gi];
-      gastosHtml += `
-        <div class="gasto-item">
-          <span>
-            ${g.descripcion || "Sin descripción"}
-            <span class="gasto-cat">${g.categoria || "General"}</span>
-          </span>
-          <span style="display:flex;align-items:center;gap:4px;">
-            <span class="gasto-monto">-$${Number(g.monto || 0).toLocaleString("es-CO")}</span>
-            <button class="gasto-del" onclick="eliminarGasto(${gi})">✕</button>
-          </span>
-        </div>
-      `;
-    }
-  }
-
-  body.innerHTML = `
-    ${tabsHtml}
-
-    <div class="conta-kpi-grid">
-      <div class="kpi-card green">
-        <div class="kpi-label">Ingresos</div>
-        <div class="kpi-value" style="font-size:1.3rem">$${ingresos.toLocaleString("es-CO")}</div>
-        <div class="kpi-delta neutral">Ventas del mes</div>
-      </div>
-
-      <div class="kpi-card">
-        <div class="kpi-label">Gastos</div>
-        <div class="kpi-value" style="font-size:1.3rem;color:#f87171;">$${totalGastos.toLocaleString("es-CO")}</div>
-        <div class="kpi-delta neutral">${Array.isArray(gastosMemoria)?gastosMemoria.length:0} registros</div>
-      </div>
-
-      <div class="kpi-card ${utilidad >= 0 ? 'green' : ''}">
-        <div class="kpi-label">Utilidad</div>
-        <div class="kpi-value ${utilidad < 0 ? 'negative' : ''}" style="font-size:1.3rem;">
-          $${utilidad.toLocaleString("es-CO")}
-        </div>
-        <div class="kpi-delta neutral">Margen ${margen}%</div>
-      </div>
-
-      <div class="kpi-card blue">
-        <div class="kpi-label">Saldo cuentas</div>
-        <div class="kpi-value" style="font-size:1.3rem">$${saldoTotal.toLocaleString("es-CO")}</div>
-        <div class="kpi-delta neutral">Caja y bancos</div>
-      </div>
-    </div>
-
-    <div class="gasto-form">
-      <h3>Registrar gasto</h3>
-      <div class="gasto-row">
-        <input id="gastoDesc" placeholder="Descripción del gasto...">
-        <input id="gastoMonto" type="text" placeholder="Monto">
-        <select id="gastoCat">
-          <option value="General">General</option>
-          <option value="Servicios">Servicios</option>
-          <option value="Transporte">Transporte</option>
-          <option value="Nómina">Nómina</option>
-          <option value="Insumos">Insumos</option>
-        </select>
-        <select id="gastoCuenta">
-          <option value="-1">Sin descontar cuenta</option>
-          ${(Array.isArray(cuentasMemoria)?cuentasMemoria:[]).map(function(c,i){
-            return `<option value="${i}">${c.nombre}</option>`;
-          }).join("")}
-        </select>
-        <button class="btn-add-gasto" onclick="agregarGasto()">Agregar</button>
-      </div>
-    </div>
-
-    <div class="section-title">Gastos registrados</div>
-    <div class="gastos-list">${gastosHtml}</div>
-
-    <div class="utilidad-box">
-      <div class="utilidad-label">Utilidad neta</div>
-      <div class="utilidad-val ${utilidad < 0 ? 'negative' : ''}">
-        $${utilidad.toLocaleString("es-CO")}
-      </div>
-      <div class="utilidad-margen">Margen: ${margen}%</div>
-    </div>
-  `;
+  _dibujarConta(tab||"resumen", window._ingresosCache||0);
 }
 
-function renderCuentasEnContabilidad(body, tabsHtml){
-  var cuentas = Array.isArray(cuentasMemoria) ? cuentasMemoria : [];
-  var transferencias = Array.isArray(transferenciasMem) ? transferenciasMem : [];
-
-  var saldoTotal = cuentas.reduce(function(acc,c){
-    return acc + Number(c.saldo || 0);
-  }, 0);
-
-  var cuentasHtml = "";
-  if(!cuentas.length){
-    cuentasHtml = `<div class="empty-state"><p>No hay cuentas registradas todavía.</p></div>`;
-  }else{
-    cuentasHtml = cuentas.map(function(c,i){
-      var saldo = Number(c.saldo || 0);
-      var saldoClass = saldo === 0 ? "cero" : (saldo < 0 ? "negativo" : "");
-      return `
-        <div class="cuenta-card" data-color="${c.color || 'gray'}">
-          <div class="cuenta-header">
-            <div class="cuenta-header-row">
-              <div class="cuenta-tipo-badge">${c.tipo || 'CUENTA'}</div>
-            </div>
-            <div class="cuenta-nombre">${c.nombre || 'Sin nombre'}</div>
-          </div>
-          <div class="cuenta-body">
-            <div class="cuenta-saldo-label">Saldo actual</div>
-            <div class="cuenta-saldo-val ${saldoClass}">
-              $${saldo.toLocaleString("es-CO")}
-            </div>
-            <div class="cuenta-acciones">
-              <button class="btn-cuenta" onclick="abrirEditarCuenta(${i})">Editar</button>
-              <button class="btn-cuenta" onclick="abrirConciliar(${i})">Conciliar</button>
-              <button class="btn-cuenta peligro" onclick="eliminarCuenta(${i})">Eliminar</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }).join("");
-  }
-
-  var transfHtml = "";
-  if(!transferencias.length){
-    transfHtml = `<div class="empty-state"><p>Sin transferencias registradas.</p></div>`;
-  }else{
-    transfHtml = `<div class="transferencias-list">` + transferencias.slice().reverse().map(function(t){
-      return `
-        <div class="transferencia-item">
-          <div>
-            <div class="transf-ruta">${t.origen} <span>→</span> ${t.destino}</div>
-            <div class="transf-fecha">${t.fecha || ''}</div>
-          </div>
-          <div class="transf-monto">$${Number(t.monto || 0).toLocaleString("es-CO")}</div>
-        </div>
-      `;
-    }).join("") + `</div>`;
-  }
-
-  body.innerHTML = `
-    ${tabsHtml}
-
-    <div class="cuentas-page-header">
-      <div>
-        <div class="cuentas-page-title">Cuentas</div>
-        <div class="cuentas-page-subtitle">Control de bancos, efectivo y billeteras</div>
-      </div>
-      <div class="cuentas-header-btns">
-        <button class="btn-transferir" onclick="abrirModalTransferir()">Transferir</button>
-        <button class="btn-nueva-cuenta" onclick="abrirModalNuevaCuenta()">Nueva cuenta</button>
-      </div>
-    </div>
-
-    <div class="saldo-total-banner">
-      <div>
-        <div class="saldo-total-label">Saldo total disponible</div>
-        <div class="saldo-total-val">$${saldoTotal.toLocaleString("es-CO")}</div>
-      </div>
-    </div>
-
-    <div class="cuentas-grid">${cuentasHtml}</div>
-
-    <div class="section-title">Transferencias</div>
-    ${transfHtml}
-  `;
-}
-function renderFlujoCajaEnContabilidad(body, tabsHtml){
-  let meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-
-  let mesesBloqueados = [];
-  try{
-    mesesBloqueados = JSON.parse(localStorage.getItem("mesesBloqueados")) || [];
-  }catch(e){
-    mesesBloqueados = [];
-  }
-
-  let cierres = {};
-  try{
-    cierres = JSON.parse(localStorage.getItem("flujoCajaMesesCerradosData")) || {};
-  }catch(e){
-    cierres = {};
-  }
-
-  let saldoInicialBase = Array.isArray(cuentasMemoria)
-    ? cuentasMemoria.reduce((acc,c)=> acc + Number(c.saldo || 0), 0)
-    : 0;
-
-  let ingresosMes = Array(12).fill(0);
-  let gastosMes = Array(12).fill(0);
-
-  if(Array.isArray(movimientosContables)){
-    movimientosContables.forEach(m=>{
-      let fecha = new Date(m.fecha);
-      if(isNaN(fecha.getTime())) return;
-      let mes = fecha.getMonth();
-      let monto = Number(m.monto || 0);
-      let tipo = String(m.tipo || "").toLowerCase();
-
-      if(tipo.includes("ingreso")) ingresosMes[mes] += monto;
-      if(tipo.includes("gasto")) gastosMes[mes] += monto;
-    });
-  }
-
-  if(Array.isArray(gastosMemoria)){
-    gastosMemoria.forEach(g=>{
-      let fecha = new Date(g.fecha || new Date());
-      if(isNaN(fecha.getTime())) return;
-      let mes = fecha.getMonth();
-      gastosMes[mes] += Number(g.monto || g.valor || 0);
-    });
-  }
-
-  let filas = { saldoInicial:[], ingresos:[], gastos:[], ganancia:[], acumulado:[], rentabilidad:[] };
-  let saldoMes = saldoInicialBase;
-
-  for(let i=0;i<12;i++){
-    if(mesesBloqueados.includes(i) && cierres[i]){
-      filas.saldoInicial.push(Number(cierres[i].saldoInicial || 0));
-      filas.ingresos.push(Number(cierres[i].ingresos || 0));
-      filas.gastos.push(Number(cierres[i].gastos || 0));
-      filas.ganancia.push(Number(cierres[i].ganancia || 0));
-      filas.acumulado.push(Number(cierres[i].acumulado || 0));
-      filas.rentabilidad.push(Number(cierres[i].rentabilidad || 0));
-      saldoMes = Number(cierres[i].acumulado || 0);
-      continue;
-    }
-
-    let saldoIni = i === 0 ? saldoInicialBase : saldoMes;
-    let ing = Number(ingresosMes[i] || 0);
-    let gas = Number(gastosMes[i] || 0);
-    let gan = ing - gas;
-    let acu = saldoIni + gan;
-    let rent = ing > 0 ? (gan / ing) * 100 : 0;
-
-    filas.saldoInicial.push(saldoIni);
-    filas.ingresos.push(ing);
-    filas.gastos.push(gas);
-    filas.ganancia.push(gan);
-    filas.acumulado.push(acu);
-    filas.rentabilidad.push(rent);
-
-    saldoMes = acu;
-  }
-
-  function money(v){
-    return Number(v || 0).toLocaleString("es-CO", {style:"currency",currency:"COP",maximumFractionDigits:0});
-  }
-  function claseNum(v){
-    if(Number(v) > 0) return "flujo-pos";
-    if(Number(v) < 0) return "flujo-neg";
-    return "";
-  }
-  function totalArr(arr){
-    return arr.reduce((a,b)=>a+Number(b||0),0);
-  }
-  function filaTabla(nombre, arr, isPct=false, totalFinal=null, extraClass=""){
-    let html = `<tr class="${extraClass}"><th>${nombre}</th>`;
-    arr.forEach((v,idx)=>{
-      let val = isPct ? `${Number(v || 0).toFixed(1)}%` : money(v);
-      html += `<td class="${claseNum(v)}" ${mesesBloqueados.includes(idx)?'title="Mes cerrado"':''}>${val}</td>`;
-    });
-    let totalMostrar = totalFinal !== null ? totalFinal : (isPct ? (totalArr(filas.ingresos)>0 ? (totalArr(filas.ganancia)/totalArr(filas.ingresos))*100 : 0) : totalArr(arr));
-    html += `<td class="${claseNum(totalMostrar)}">${isPct ? `${Number(totalMostrar).toFixed(1)}%` : money(totalMostrar)}</td>`;
-    html += `</tr>`;
-    return html;
-  }
-
-  let totalIngresos = totalArr(filas.ingresos);
-  let totalGanancia = totalArr(filas.ganancia);
-  let acumuladoFinal = filas.acumulado[11] || 0;
-  let rentTotal = totalIngresos > 0 ? (totalGanancia / totalIngresos) * 100 : 0;
-  let headMeses = meses.map((m,i)=>`<th>${m}${mesesBloqueados.includes(i)?'<span class="flujo-lock">🔒</span>':''}</th>`).join("");
-
-  body.innerHTML = `
-    ${tabsHtml}
-    <div class="flujo-box">
-      <div class="flujo-head">
-        <div>
-          <div class="flujo-title">Flujo de Caja</div>
-          <div class="flujo-subtitle">Resumen financiero mensual con cierre contable por mes</div>
-        </div>
-        <div class="flujo-actions">
-          <button class="btn-transferir" onclick="cerrarMesFlujoCajaPrompt()">Cerrar mes</button>
-          <button class="btn-nueva-cuenta" onclick="resetearBloqueosFlujoCaja()">Resetear bloqueos</button>
-        </div>
-      </div>
-
-      <div class="flujo-table-wrap">
-        <table class="flujo-table">
-          <thead>
-            <tr>
-              <th>Concepto</th>
-              ${headMeses}
-              <th>Acumulado</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filaTabla("Saldo inicial", filas.saldoInicial, false, filas.saldoInicial[0] || 0)}
-            ${filaTabla("Ingresos", filas.ingresos)}
-            ${filaTabla("Gastos", filas.gastos)}
-            ${filaTabla("Ganancia / Pérdida", filas.ganancia, false, totalGanancia)}
-            ${filaTabla("Acumulado", filas.acumulado, false, acumuladoFinal, "flujo-total")}
-            ${filaTabla("Rentabilidad (%)", filas.rentabilidad, true, rentTotal)}
-          </tbody>
-        </table>
-      </div>
-
-      <div class="flujo-note">Los meses con candado están cerrados y conservan sus valores congelados.</div>
-    </div>
-  `;
-}
-
-function renderCajaEnContabilidad(body, tabsHtml){
-  body.innerHTML = `
-    ${tabsHtml}
-    <div class="empty-state">
-      <p>La vista de caja quedó lista para volver a conectarse sin romper el módulo.</p>
-    </div>
-  `;
-}
 async function cajaAbrir(){
   try{
     var ya = await cajaBuscarSesionAbierta();
@@ -3367,7 +2724,7 @@ function _dibujarConta(tabActiva, ingresos){
     '<div class="filter-tabs">'+
       '<button class="ftab '+(tabActiva==="resumen"?"active":"")+'" onclick="renderConta(\'resumen\')">📊 Resumen</button>'+
       '<button class="ftab '+(tabActiva==="cuentas"?"active":"")+'" onclick="renderConta(\'cuentas\')">🏦 Cuentas</button>'+
-      <button class="ftab ${tabActiva==='flujo'?'active':''}" onclick="renderConta('flujo')">Flujo de Caja</button>+
+      '<button class="ftab" onclick="renderConta(\'flujo\')">📊 Flujo de Caja</button>'+
       '<button class="ftab '+(tabActiva==="caja"?"active":"")+'" onclick="cajaCargarResumenDia().then(function(){renderConta(\'caja\');})">💵 Caja</button>'+
     '</div>';
 
@@ -3586,102 +2943,7 @@ function agregarGasto(){
   try{ sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria)); }catch(e){}
   renderConta("resumen");
 }
-function cerrarMesFlujoCajaPrompt(){
-  let entrada = prompt("¿Qué mes deseas cerrar?\nEscribe un número del 1 al 12\n(1=Enero, 12=Diciembre)");
-  if(entrada === null) return;
 
-  let mes = Number(entrada) - 1;
-  if(isNaN(mes) || mes < 0 || mes > 11){
-    alert("Mes inválido");
-    return;
-  }
-
-  let mesesBloqueados = [];
-  try{
-    mesesBloqueados = JSON.parse(localStorage.getItem("mesesBloqueados")) || [];
-  }catch(e){
-    mesesBloqueados = [];
-  }
-
-  let cierres = {};
-  try{
-    cierres = JSON.parse(localStorage.getItem("flujoCajaMesesCerradosData")) || {};
-  }catch(e){
-    cierres = {};
-  }
-
-  let saldoInicialBase = Array.isArray(cuentasMemoria)
-    ? cuentasMemoria.reduce((acc,c)=> acc + Number(c.saldo || 0), 0)
-    : 0;
-
-  let ingresosMes = Array(12).fill(0);
-  let gastosMes = Array(12).fill(0);
-
-  if(Array.isArray(movimientosContables)){
-    movimientosContables.forEach(m=>{
-      let fecha = new Date(m.fecha);
-      if(isNaN(fecha.getTime())) return;
-      let idx = fecha.getMonth();
-      let monto = Number(m.monto || 0);
-      let tipo = String(m.tipo || "").toLowerCase();
-      if(tipo.includes("ingreso")) ingresosMes[idx] += monto;
-      if(tipo.includes("gasto")) gastosMes[idx] += monto;
-    });
-  }
-
-  if(Array.isArray(gastosMemoria)){
-    gastosMemoria.forEach(g=>{
-      let fecha = new Date(g.fecha || new Date());
-      if(isNaN(fecha.getTime())) return;
-      let idx = fecha.getMonth();
-      gastosMes[idx] += Number(g.monto || g.valor || 0);
-    });
-  }
-
-  let saldoMes = saldoInicialBase;
-  for(let i=0;i<=mes;i++){
-    if(mesesBloqueados.includes(i) && cierres[i]){
-      saldoMes = Number(cierres[i].acumulado || 0);
-      continue;
-    }
-
-    let saldoIni = i === 0 ? saldoInicialBase : saldoMes;
-    let ing = Number(ingresosMes[i] || 0);
-    let gas = Number(gastosMes[i] || 0);
-    let gan = ing - gas;
-    let acu = saldoIni + gan;
-    let rent = ing > 0 ? (gan / ing) * 100 : 0;
-
-    if(i === mes){
-      cierres[i] = {
-        saldoInicial: saldoIni,
-        ingresos: ing,
-        gastos: gas,
-        ganancia: gan,
-        acumulado: acu,
-        rentabilidad: rent,
-        cerradoEn: new Date().toISOString()
-      };
-    }
-
-    saldoMes = acu;
-  }
-
-  if(!mesesBloqueados.includes(mes)) mesesBloqueados.push(mes);
-  mesesBloqueados.sort((a,b)=>a-b);
-
-  localStorage.setItem("mesesBloqueados", JSON.stringify(mesesBloqueados));
-  localStorage.setItem("flujoCajaMesesCerradosData", JSON.stringify(cierres));
-
-  renderConta("flujo");
-}
-
-function resetearBloqueosFlujoCaja(){
-  if(!confirm("¿Seguro que deseas resetear todos los cierres de meses?")) return;
-  localStorage.removeItem("mesesBloqueados");
-  localStorage.removeItem("flujoCajaMesesCerradosData");
-  renderConta("flujo");
-}
 function eliminarGasto(i){
   if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
   gastosMemoria.splice(i,1);
