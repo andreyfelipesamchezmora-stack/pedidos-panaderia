@@ -2439,39 +2439,37 @@ if(tab === "cuotas"){
   }
   return;
 }
-  if(tab === "flujo"){
+ if(tab === "flujo"){
  
-  let meses = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  var meses = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
  
-  // Saldo total de todas las cuentas
-  let saldoInicial = (Array.isArray(cuentasMemoria) ? cuentasMemoria : [])
-    .reduce((acc,c)=> acc + (Number(c.saldo)||0),0);
+  var saldoInicial = (Array.isArray(cuentasMemoria) ? cuentasMemoria : [])
+    .reduce(function(acc,c){ return acc + (Number(c.saldo)||0); },0);
  
-  let ingresosMes = Array(12).fill(0);
-  let gastosMes = Array(12).fill(0);
+  var ingresosMes = [0,0,0,0,0,0,0,0,0,0,0,0];
+  var gastosMes = [0,0,0,0,0,0,0,0,0,0,0,0];
  
-  // Ingresos desde movimientosContables
-  (Array.isArray(movimientosContables) ? movimientosContables : []).forEach(m=>{
-    let fecha = new Date(m.fecha);
-    let mes = fecha.getMonth();
-    if((m.tipo||"").toLowerCase().includes("ingreso")){
+  (Array.isArray(movimientosContables) ? movimientosContables : []).forEach(function(m){
+    var fecha = new Date(m.fecha);
+    if(isNaN(fecha.getTime())) return;
+    var mes = fecha.getMonth();
+    if((m.tipo||"").toLowerCase().indexOf("ingreso") > -1){
       ingresosMes[mes] += Number(m.monto||0);
     }
-    if((m.tipo||"").toLowerCase().includes("gasto")){
+    if((m.tipo||"").toLowerCase().indexOf("gasto") > -1){
       gastosMes[mes] += Number(m.monto||0);
     }
   });
  
-  // Gastos desde gastosMemoria
-  (Array.isArray(gastosMemoria) ? gastosMemoria : []).forEach(g=>{
-    let fecha = new Date(g.fecha);
+  (Array.isArray(gastosMemoria) ? gastosMemoria : []).forEach(function(g){
+    var fecha = new Date(g.fecha);
     if(!isNaN(fecha.getTime())){
-      let mes = fecha.getMonth();
+      var mes = fecha.getMonth();
       gastosMes[mes] += Number(g.monto||g.valor||0);
     }
   });
  
-  let filas = {
+  var filas = {
     saldoInicial: [],
     ingresos: [],
     gastos: [],
@@ -2479,16 +2477,16 @@ if(tab === "cuotas"){
     acumulado: []
   };
  
-  let saldo = saldoInicial;
-  let totalIngresosAnual = 0;
-  let totalGastosAnual = 0;
-  let totalGananciaAnual = 0;
+  var saldo = saldoInicial;
+  var totalIngresosAnual = 0;
+  var totalGastosAnual = 0;
+  var totalGananciaAnual = 0;
  
-  for(let i=0;i<12;i++){
+  for(var i=0;i<12;i++){
     filas.saldoInicial.push(saldo);
-    let ing = ingresosMes[i];
-    let gas = gastosMes[i];
-    let gan = ing - gas;
+    var ing = ingresosMes[i];
+    var gas = gastosMes[i];
+    var gan = ing - gas;
     saldo += gan;
     totalIngresosAnual += ing;
     totalGastosAnual += gas;
@@ -2500,28 +2498,21 @@ if(tab === "cuotas"){
   }
  
   function fcMoney(v){
-    let n = Number(v)||0;
+    var n = Number(v)||0;
     return "$" + n.toLocaleString("es-CO");
   }
  
-  function fcClass(v){
-    let n = Number(v)||0;
-    if(n > 0) return "fc-pos";
-    if(n < 0) return "fc-neg";
-    return "";
-  }
- 
-  // --- TABS del panel contabilidad (se mantienen) ---
+  // --- TABS ---
   var tabsHtml =
     '<div class="filter-tabs">'+
       '<button class="ftab" onclick="renderConta(\'resumen\')">📊 Resumen</button>'+
       '<button class="ftab" onclick="renderConta(\'cuentas\')">🏦 Cuentas</button>'+
       '<button class="ftab active" onclick="renderConta(\'flujo\')">📊 Flujo de Caja</button>'+
-      '<button class="ftab '+(tabActiva==="cuotas"?"active":"")+'" onclick="renderConta(\'cuotas\')">💳 Cuotas</button>'+
+      '<button class="ftab" onclick="renderConta(\'cuotas\')">💳 Cuotas</button>'+
       '<button class="ftab" onclick="cajaCargarResumenDia().then(function(){renderConta(\'caja\');})">💵 Caja</button>'+
     '</div>';
  
-  // --- KPIs del flujo ---
+  // --- KPIs ---
   var kpisHtml =
     '<div class="conta-kpi-grid">' +
       '<div class="kpi-card green"><div class="kpi-label">Ingresos anuales</div><div class="kpi-value" style="font-size:1.25rem;">' + fcMoney(totalIngresosAnual) + '</div><div class="kpi-delta neutral">Acumulado 12 meses</div></div>' +
@@ -2530,88 +2521,77 @@ if(tab === "cuotas"){
       '<div class="kpi-card blue"><div class="kpi-label">Saldo actual</div><div class="kpi-value" style="font-size:1.25rem;">' + fcMoney(saldo) + '</div><div class="kpi-delta neutral">Proyección acumulada</div></div>' +
     '</div>';
  
-  // --- Tabla de flujo de caja ---
+  // --- TABLA ---
   var tablaHtml =
     '<div class="section-title" style="margin-top:8px;">📊 Flujo de Caja Mensual</div>' +
     '<div style="overflow:auto;background:#0b1220;border:1px solid #1e293b;border-radius:14px;">' +
       '<table style="width:100%;min-width:1100px;border-collapse:collapse;color:#e2e8f0;font-size:13px;">' +
-        '<thead>' +
-          '<tr>' +
-            '<th style="padding:12px 10px;background:#0f172a;color:#fff;text-align:left;border-bottom:1px solid #1e293b;position:sticky;left:0;z-index:3;min-width:120px;">Concepto</th>';
+        '<thead><tr>' +
+          '<th style="padding:12px 10px;background:#0f172a;color:#fff;text-align:left;border-bottom:1px solid #1e293b;position:sticky;left:0;z-index:3;min-width:120px;">Concepto</th>';
  
   for(var mi=0; mi<12; mi++){
     tablaHtml += '<th style="padding:12px 10px;background:#0f172a;color:#fff;text-align:center;border-bottom:1px solid #1e293b;min-width:90px;">' + meses[mi] + '</th>';
   }
+  tablaHtml += '<th style="padding:12px 10px;background:#0f172a;color:#fbbf24;text-align:center;border-bottom:1px solid #1e293b;font-weight:800;min-width:100px;">TOTAL</th></tr></thead><tbody>';
  
-  tablaHtml +=
-            '<th style="padding:12px 10px;background:#0f172a;color:#fbbf24;text-align:center;border-bottom:1px solid #1e293b;font-weight:800;min-width:100px;">TOTAL</th>' +
-          '</tr>' +
-        '</thead>' +
-        '<tbody>';
- 
-  // Fila: Saldo Inicial
+  // Fila Saldo Inicial
   tablaHtml += '<tr><td style="padding:10px;border-bottom:1px solid #1e293b;color:#94a3b8;font-weight:600;position:sticky;left:0;background:#0b1220;z-index:2;">Saldo Inicial</td>';
-  for(var mi=0; mi<12; mi++){
-    tablaHtml += '<td style="padding:10px;border-bottom:1px solid #1e293b;text-align:right;' + (filas.saldoInicial[mi] !== 0 ? 'color:#e2e8f0;' : 'color:#475569;') + '">' + fcMoney(filas.saldoInicial[mi]) + '</td>';
+  for(var mi=0;mi<12;mi++){
+    tablaHtml += '<td style="padding:10px;border-bottom:1px solid #1e293b;text-align:right;color:'+(filas.saldoInicial[mi]!==0?'#e2e8f0':'#475569')+';">'+fcMoney(filas.saldoInicial[mi])+'</td>';
   }
   tablaHtml += '<td style="padding:10px;border-bottom:1px solid #1e293b;text-align:right;color:#94a3b8;">—</td></tr>';
  
-  // Fila: Ingresos
+  // Fila Ingresos
   tablaHtml += '<tr><td style="padding:10px;border-bottom:1px solid #1e293b;color:#4ade80;font-weight:700;position:sticky;left:0;background:#0b1220;z-index:2;">✅ Ingresos</td>';
-  for(var mi=0; mi<12; mi++){
-    tablaHtml += '<td style="padding:10px;border-bottom:1px solid #1e293b;text-align:right;font-weight:700;' + (filas.ingresos[mi] > 0 ? 'color:#4ade80;' : 'color:#475569;') + '">' + fcMoney(filas.ingresos[mi]) + '</td>';
+  for(var mi=0;mi<12;mi++){
+    tablaHtml += '<td style="padding:10px;border-bottom:1px solid #1e293b;text-align:right;font-weight:700;color:'+(filas.ingresos[mi]>0?'#4ade80':'#475569')+';">'+fcMoney(filas.ingresos[mi])+'</td>';
   }
-  tablaHtml += '<td style="padding:10px;border-bottom:1px solid #1e293b;text-align:right;font-weight:800;color:#4ade80;">' + fcMoney(totalIngresosAnual) + '</td></tr>';
+  tablaHtml += '<td style="padding:10px;border-bottom:1px solid #1e293b;text-align:right;font-weight:800;color:#4ade80;">'+fcMoney(totalIngresosAnual)+'</td></tr>';
  
-  // Fila: Gastos
+  // Fila Gastos
   tablaHtml += '<tr><td style="padding:10px;border-bottom:1px solid #1e293b;color:#f87171;font-weight:700;position:sticky;left:0;background:#0b1220;z-index:2;">🔴 Gastos</td>';
-  for(var mi=0; mi<12; mi++){
-    tablaHtml += '<td style="padding:10px;border-bottom:1px solid #1e293b;text-align:right;font-weight:700;' + (filas.gastos[mi] > 0 ? 'color:#f87171;' : 'color:#475569;') + '">' + fcMoney(filas.gastos[mi]) + '</td>';
+  for(var mi=0;mi<12;mi++){
+    tablaHtml += '<td style="padding:10px;border-bottom:1px solid #1e293b;text-align:right;font-weight:700;color:'+(filas.gastos[mi]>0?'#f87171':'#475569')+';">'+fcMoney(filas.gastos[mi])+'</td>';
   }
-  tablaHtml += '<td style="padding:10px;border-bottom:1px solid #1e293b;text-align:right;font-weight:800;color:#f87171;">' + fcMoney(totalGastosAnual) + '</td></tr>';
+  tablaHtml += '<td style="padding:10px;border-bottom:1px solid #1e293b;text-align:right;font-weight:800;color:#f87171;">'+fcMoney(totalGastosAnual)+'</td></tr>';
  
-  // Fila: Ganancia
+  // Fila Ganancia
   tablaHtml += '<tr style="background:rgba(22,163,74,0.08);"><td style="padding:10px;border-bottom:1px solid #1e293b;font-weight:800;color:#e2e8f0;position:sticky;left:0;background:rgba(22,163,74,0.12);z-index:2;">💰 Ganancia</td>';
-  for(var mi=0; mi<12; mi++){
-    var ganColor = filas.ganancia[mi] > 0 ? 'color:#4ade80;' : (filas.ganancia[mi] < 0 ? 'color:#f87171;' : 'color:#475569;');
-    tablaHtml += '<td style="padding:10px;border-bottom:1px solid #1e293b;text-align:right;font-weight:800;' + ganColor + '">' + fcMoney(filas.ganancia[mi]) + '</td>';
+  for(var mi=0;mi<12;mi++){
+    var ganColor = filas.ganancia[mi]>0?'#4ade80':(filas.ganancia[mi]<0?'#f87171':'#475569');
+    tablaHtml += '<td style="padding:10px;border-bottom:1px solid #1e293b;text-align:right;font-weight:800;color:'+ganColor+';">'+fcMoney(filas.ganancia[mi])+'</td>';
   }
-  var ganTotalColor = totalGananciaAnual >= 0 ? 'color:#4ade80;' : 'color:#f87171;';
-  tablaHtml += '<td style="padding:10px;border-bottom:1px solid #1e293b;text-align:right;font-weight:800;' + ganTotalColor + '">' + fcMoney(totalGananciaAnual) + '</td></tr>';
+  tablaHtml += '<td style="padding:10px;border-bottom:1px solid #1e293b;text-align:right;font-weight:800;color:'+(totalGananciaAnual>=0?'#4ade80':'#f87171')+';">'+fcMoney(totalGananciaAnual)+'</td></tr>';
  
-  // Fila: Acumulado
+  // Fila Acumulado
   tablaHtml += '<tr style="background:rgba(37,99,235,0.08);"><td style="padding:12px 10px;font-weight:800;color:#60a5fa;position:sticky;left:0;background:rgba(37,99,235,0.12);z-index:2;">📈 Acumulado</td>';
-  for(var mi=0; mi<12; mi++){
-    var acColor = filas.acumulado[mi] >= 0 ? 'color:#60a5fa;' : 'color:#f87171;';
-    tablaHtml += '<td style="padding:12px 10px;text-align:right;font-weight:800;' + acColor + '">' + fcMoney(filas.acumulado[mi]) + '</td>';
+  for(var mi=0;mi<12;mi++){
+    tablaHtml += '<td style="padding:12px 10px;text-align:right;font-weight:800;color:'+(filas.acumulado[mi]>=0?'#60a5fa':'#f87171')+';">'+fcMoney(filas.acumulado[mi])+'</td>';
   }
-  tablaHtml += '<td style="padding:12px 10px;text-align:right;font-weight:800;color:#fbbf24;">' + fcMoney(saldo) + '</td></tr>';
+  tablaHtml += '<td style="padding:12px 10px;text-align:right;font-weight:800;color:#fbbf24;">'+fcMoney(saldo)+'</td></tr>';
  
-  tablaHtml +=
-        '</tbody>' +
-      '</table>' +
-    '</div>';
+  tablaHtml += '</tbody></table></div>';
  
-  // --- Gráfico visual con barras ---
-  var maxVal = Math.max(1, ...filas.ingresos, ...filas.gastos);
+  // --- GRÁFICO BARRAS ---
+  var maxVal = Math.max(1, Math.max.apply(null, filas.ingresos), Math.max.apply(null, filas.gastos));
   var chartHtml =
     '<div class="section-title" style="margin-top:24px;">📊 Ingresos vs Gastos por mes</div>' +
     '<div style="background:#1e293b;border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:20px;overflow-x:auto;">' +
       '<div style="display:flex;gap:8px;align-items:flex-end;min-height:180px;min-width:700px;">';
  
-  for(var mi=0; mi<12; mi++){
-    var ingH = maxVal > 0 ? Math.max(4, Math.round((filas.ingresos[mi] / maxVal) * 150)) : 4;
-    var gasH = maxVal > 0 ? Math.max(4, Math.round((filas.gastos[mi] / maxVal) * 150)) : 4;
-    if(filas.ingresos[mi] === 0) ingH = 4;
-    if(filas.gastos[mi] === 0) gasH = 4;
+  for(var mi=0;mi<12;mi++){
+    var ingH = maxVal>0 ? Math.max(4, Math.round((filas.ingresos[mi]/maxVal)*150)) : 4;
+    var gasH = maxVal>0 ? Math.max(4, Math.round((filas.gastos[mi]/maxVal)*150)) : 4;
+    if(filas.ingresos[mi]===0) ingH=4;
+    if(filas.gastos[mi]===0) gasH=4;
  
     chartHtml +=
       '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">' +
         '<div style="display:flex;gap:3px;align-items:flex-end;">' +
-          '<div style="width:16px;height:' + ingH + 'px;background:#4ade80;border-radius:4px 4px 0 0;" title="Ingresos: ' + fcMoney(filas.ingresos[mi]) + '"></div>' +
-          '<div style="width:16px;height:' + gasH + 'px;background:#f87171;border-radius:4px 4px 0 0;" title="Gastos: ' + fcMoney(filas.gastos[mi]) + '"></div>' +
+          '<div style="width:16px;height:'+ingH+'px;background:#4ade80;border-radius:4px 4px 0 0;" title="Ingresos: '+fcMoney(filas.ingresos[mi])+'"></div>' +
+          '<div style="width:16px;height:'+gasH+'px;background:#f87171;border-radius:4px 4px 0 0;" title="Gastos: '+fcMoney(filas.gastos[mi])+'"></div>' +
         '</div>' +
-        '<div style="font-size:11px;color:#94a3b8;font-weight:600;">' + meses[mi] + '</div>' +
+        '<div style="font-size:11px;color:#94a3b8;font-weight:600;">'+meses[mi]+'</div>' +
       '</div>';
   }
  
@@ -2623,15 +2603,15 @@ if(tab === "cuotas"){
       '</div>' +
     '</div>';
  
-  // --- Resumen final ---
+  // --- RESUMEN ---
   var resumenHtml =
     '<div class="utilidad-box" style="margin-top:20px;">' +
       '<div class="utilidad-label">Resultado Anual Proyectado</div>' +
-      '<div class="utilidad-val' + (totalGananciaAnual < 0 ? ' negative' : '') + '">' + fcMoney(totalGananciaAnual) + '</div>' +
-      '<div class="utilidad-margen">Saldo acumulado final: ' + fcMoney(saldo) + '</div>' +
+      '<div class="utilidad-val'+(totalGananciaAnual<0?' negative':'')+'">'+fcMoney(totalGananciaAnual)+'</div>' +
+      '<div class="utilidad-margen">Saldo acumulado final: '+fcMoney(saldo)+'</div>' +
     '</div>';
  
-  // === CLAVE: Escribir en contaBody (dentro del panel), NO en contenidoContabilidad ===
+  // === ESCRIBIR EN contaBody (DENTRO del panel) ===
   var body = document.getElementById("contaBody");
   if(body){
     body.innerHTML = tabsHtml + kpisHtml + tablaHtml + chartHtml + resumenHtml;
