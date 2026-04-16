@@ -3422,25 +3422,12 @@ async function recaudoConstruirData(){
     row.resumen = recaudoClasificarResumen(row.deudaCliente, row.deudaMia);
     row.totalTransferencia = row.nequi + row.bancolombia;
  
-    // Efectivo neto SOLO de ventas (no de deudas)
-    let efectivoBase = row.subtotal - row.totalTransferencia - row.faltantes - row.salidas;
- 
-    // Si pagó deuda EN EFECTIVO → se suma al efectivo del día
-    if(row.deudaMetodo === 'efectivo'){
-      efectivoBase += row.deudasPagadas;
-    }
-    // Si pagó deuda POR TRANSFERENCIA → NO se suma al efectivo (va a columna "Pagos deuda")
- 
-    // Si le debo al cliente y descontó → se RESTA del efectivo
-    if(row.deudaMiaPagada > 0){
-      efectivoBase -= row.deudaMiaPagada;
-    }
- 
-    row.efectivoNeto = Math.max(efectivoBase, 0);
- 
-    // Nueva columna: pago de deuda por transferencia (separado)
-    row.pagoDeudaTransf = (row.deudaMetodo === 'transferencia') ? row.deudasPagadas : 0;
-    row.pagoDeudaEfe = (row.deudaMetodo === 'efectivo') ? row.deudasPagadas : 0;
+    // EFECTIVO NETO POR CLIENTE (solo lo que entregó en efectivo físico)
+    // Si marcaste recaudo domi, el cliente le dio al domiciliario el efectivo
+    // Si no, el efectivo es: subtotal - transferencias - faltantes - salidas - deudaMiaDescontada
+    let efectivoFila = row.subtotal - row.totalTransferencia - row.faltantes - row.salidas - row.deudaMiaPagada;
+    if(efectivoFila < 0) efectivoFila = 0;
+    row.efectivoNeto = efectivoFila;
  
     return row;
   });
@@ -3502,30 +3489,124 @@ async function renderRecaudo(){
   try{
     let rows = await recaudoConstruirData();
  
-    let bruto = rows.reduce((s,r)=>s + (Number(r.subtotal)||0), 0);
-    let recaudoDomi = rows.reduce((s,r)=>s + (Number(r.recaudoDomi)||0), 0);
-    let faltantes = rows.reduce((s,r)=>s + (Number(r.faltantes)||0), 0);
-    let salidas = rows.reduce((s,r)=>s + (Number(r.salidas)||0), 0);
+    // ============ CÁLCULOS GLOBALES ============
+    let bruto = 0;
+    let recaudoDomi = 0;
+    let nequiVentas = 0;
+    let bancolombiaVentas = 0;
+    let pagoDeudaEfectivo = 0;
+    let pagoDeudaNequi = 0;
+    let pagoDeudaBancolombia = 0;
+    let faltantes = 0;
+    let salidas = 0;
+    let deudasDescontadas = 0;
+    let efectivoVentasTotal = 0;  // Efectivo real de ventas
  
-    let desglose = recaudoCalcularDesgloseMetodos(rows);
+    rows.forEach(function(r){
+      bruto += r.subtotal;
+      recaudoDomi += r.recaudoDomi;
+      nequiVentas += r.nequi;
+      bancolombiaVentas += r.bancolombia;
+      faltantes += r.faltantes;
+      salidas += r.salidas;
+      deudasDescontadas += r.deudaMiaPagada;
+      efectivoVentasTotal += r.efectivoNeto;
+ 
+      // Clasificar pago de deuda
+      if(r.deudaMetodo === 'efectivo'){
+        pagoDeudaEfectivo += r.deudasPagadas;
+      } else if(r.deudaMetodo === 'transferencia'){
+        let bancoUp = (r.deudaBanco||'').toUpperCase();
+        if(bancoUp.indexOf('NEQUI') > -1){
+          pagoDeudaNequi += r.deudasPagadas;
+        } else {
+          pagoDeudaBancolombia += r.deudasPagadas;
+        }
+      }
+    });
+ 
+    // Efectivo TOTAL del día = efectivo de ventas + pagos de deuda en efectivo
+    let efectivoTotal = efectivoVentasTotal + pagoDeudaEfectivo;
+    let transferenciasVentas = nequiVentas + bancolombiaVentas;
+    let pagosDeudaTransf = pagoDeudaNequi + pagoDeudaBancolombia;
+    let totalRecaudado = efectivoTotal + transferenciasVentas + pagosDeudaTransf;
  
     window._recaudoCache = {
       fecha: cajaFechaHoy(),
       rows: rows,
       resumen: {
         bruto, recaudoDomi, faltantes, salidas,
-        netoEfectivo: desglose.efectivoTotal,
-        transferencias: desglose.nequi + desglose.bancolombia,
-        pagosDeudaTransf: desglose.pagosDeudaTransf,
-        desglose: desglose
+        netoEfectivo: efectivoTotal,
+        transferencias: transferenciasVentas,
+        pagosDeudaTransf: pagosDeudaTransf,
+        desglose: {
+          efectivoVentas: efectivoVentasTotal,
+          efectivoDeudas: pagoDeudaEfectivo,
+          efectivoTotal: efectivoTotal,
+          nequi: nequiVentas,
+          bancolombia: bancolombiaVentas,
+          pagoDeudaNequi: pagoDeudaNequi,
+          pagoDeudaBancolombia: pagoDeudaBancolombia,
+          pagosDeudaTransf: pagosDeudaTransf,
+          deudasDescontadas: deudasDescontadas,
+          totalRecaudado: totalRecaudado
+        }
       }
     };
  
+    // ============ HTML ============
+    // DESGLOSE COMPACTO ARRIBA (pequeño)
+    let desgloseCompactoHtml = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:14px;">
+        <div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:10px 12px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+            <span style="font-size:14px;">💵</span>
+            <span style="font-size:10px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:0.03em;">Efectivo</span>
+          </div>
+          <div style="font-size:16px;font-weight:800;color:white;font-variant-numeric:tabular-nums;">${recaudoMoney(efectivoTotal)}</div>
+        </div>
+ 
+        <div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.2);border-radius:10px;padding:10px 12px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+            <span style="font-size:14px;">📱</span>
+            <span style="font-size:10px;font-weight:700;color:#c084fc;text-transform:uppercase;letter-spacing:0.03em;">Nequi</span>
+          </div>
+          <div style="font-size:16px;font-weight:800;color:white;font-variant-numeric:tabular-nums;">${recaudoMoney(nequiVentas + pagoDeudaNequi)}</div>
+        </div>
+ 
+        <div style="background:rgba(6,182,212,0.08);border:1px solid rgba(6,182,212,0.2);border-radius:10px;padding:10px 12px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+            <span style="font-size:14px;">🏛️</span>
+            <span style="font-size:10px;font-weight:700;color:#22d3ee;text-transform:uppercase;letter-spacing:0.03em;">Bancolombia</span>
+          </div>
+          <div style="font-size:16px;font-weight:800;color:white;font-variant-numeric:tabular-nums;">${recaudoMoney(bancolombiaVentas + pagoDeudaBancolombia)}</div>
+        </div>
+ 
+        <div style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:10px;padding:10px 12px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+            <span style="font-size:14px;">🏦</span>
+            <span style="font-size:10px;font-weight:700;color:#fbbf24;text-transform:uppercase;letter-spacing:0.03em;">Pagos deuda</span>
+          </div>
+          <div style="font-size:16px;font-weight:800;color:white;font-variant-numeric:tabular-nums;">${recaudoMoney(pagosDeudaTransf)}</div>
+        </div>
+ 
+        <div style="background:linear-gradient(135deg,rgba(22,163,74,0.2),rgba(22,163,74,0.05));border:1px solid rgba(22,163,74,0.35);border-radius:10px;padding:10px 12px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+            <span style="font-size:14px;">✅</span>
+            <span style="font-size:10px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:0.03em;">Total recaudado</span>
+          </div>
+          <div style="font-size:18px;font-weight:800;color:#4ade80;font-variant-numeric:tabular-nums;">${recaudoMoney(totalRecaudado)}</div>
+        </div>
+      </div>
+    `;
+ 
     let html = `
+      ${desgloseCompactoHtml}
+ 
       <div class="recaudo-topbar">
         <div>
           <div class="cuentas-page-title">🧾 Recaudo Diario</div>
-          <div class="cuentas-page-subtitle">Clientes del panel principal + control diario de cobros y deudas</div>
+          <div class="cuentas-page-subtitle">Clientes del panel principal + control diario</div>
         </div>
         <div class="recaudo-btns">
           <span class="recaudo-chip">Fecha: ${cajaFechaHoy()}</span>
@@ -3538,87 +3619,22 @@ async function renderRecaudo(){
         <div class="kpi-card green">
           <div class="kpi-label">Bruto total</div>
           <div class="kpi-value" style="font-size:1.25rem;">${recaudoMoney(bruto)}</div>
-          <div class="kpi-delta neutral">Subtotal de pedidos del día</div>
+          <div class="kpi-delta neutral">Subtotal pedidos del día</div>
         </div>
         <div class="kpi-card orange">
-          <div class="kpi-label">Recaudo domiciliario</div>
+          <div class="kpi-label">Recaudo domi</div>
           <div class="kpi-value" style="font-size:1.25rem;">${recaudoMoney(recaudoDomi)}</div>
-          <div class="kpi-delta neutral">Lo que tú recaudas al domiciliario</div>
+          <div class="kpi-delta neutral">Confirmado con domiciliario</div>
+        </div>
+        <div class="kpi-card" style="border-left:3px solid #ef4444;">
+          <div class="kpi-label">Faltantes + Salidas</div>
+          <div class="kpi-value" style="font-size:1.25rem;color:#f87171;">${recaudoMoney(faltantes + salidas)}</div>
+          <div class="kpi-delta neutral">Descontado del día</div>
         </div>
         <div class="kpi-card blue">
-          <div class="kpi-label">Transferencias ventas</div>
-          <div class="kpi-value" style="font-size:1.25rem;">${recaudoMoney(desglose.nequi + desglose.bancolombia)}</div>
-          <div class="kpi-delta neutral">Nequi + Bancolombia (solo ventas)</div>
-        </div>
-        <div class="kpi-card purple">
-          <div class="kpi-label">Efectivo del día</div>
-          <div class="kpi-value" style="font-size:1.25rem;">${recaudoMoney(desglose.efectivoTotal)}</div>
-          <div class="kpi-delta neutral">Base física para Caja</div>
-        </div>
-      </div>
- 
-      <!-- DESGLOSE POR MÉTODO DE PAGO -->
-      <div style="background:linear-gradient(135deg,rgba(124,58,237,0.12),rgba(37,99,235,0.08));border:1px solid rgba(124,58,237,0.25);border-radius:14px;padding:18px;margin-bottom:20px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-          <span style="font-size:20px;">💰</span>
-          <div style="font-size:14px;font-weight:700;color:white;text-transform:uppercase;letter-spacing:0.05em;">Desglose por método de pago</div>
-        </div>
- 
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;">
- 
-          <!-- EFECTIVO -->
-          <div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:14px;">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
-              <span style="font-size:18px;">💵</span>
-              <span style="font-size:12px;font-weight:700;color:#4ade80;text-transform:uppercase;">Efectivo</span>
-            </div>
-            <div style="font-size:22px;font-weight:800;color:white;margin-bottom:8px;">${recaudoMoney(desglose.efectivoTotal)}</div>
-            <div style="font-size:11px;color:#94a3b8;line-height:1.6;">
-              <div>De ventas: <strong style="color:#86efac;">${recaudoMoney(desglose.efectivoVentas)}</strong></div>
-              ${desglose.efectivoDeudas > 0 ? '<div>De deudas: <strong style="color:#86efac;">'+recaudoMoney(desglose.efectivoDeudas)+'</strong></div>' : ''}
-              ${desglose.deudasDescontadas > 0 ? '<div style="color:#fca5a5;margin-top:4px;">Descontado a clientes: <strong>-'+recaudoMoney(desglose.deudasDescontadas)+'</strong></div>' : ''}
-            </div>
-          </div>
- 
-          <!-- NEQUI -->
-          <div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.2);border-radius:10px;padding:14px;">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
-              <span style="font-size:18px;">📱</span>
-              <span style="font-size:12px;font-weight:700;color:#c084fc;text-transform:uppercase;">Nequi</span>
-            </div>
-            <div style="font-size:22px;font-weight:800;color:white;">${recaudoMoney(desglose.nequi)}</div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Transferencias de ventas</div>
-          </div>
- 
-          <!-- BANCOLOMBIA -->
-          <div style="background:rgba(6,182,212,0.08);border:1px solid rgba(6,182,212,0.2);border-radius:10px;padding:14px;">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
-              <span style="font-size:18px;">🏛️</span>
-              <span style="font-size:12px;font-weight:700;color:#22d3ee;text-transform:uppercase;">Bancolombia</span>
-            </div>
-            <div style="font-size:22px;font-weight:800;color:white;">${recaudoMoney(desglose.bancolombia)}</div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Transferencias de ventas</div>
-          </div>
- 
-          <!-- PAGOS DE DEUDA (SIEMPRE VISIBLE, SEPARADO) -->
-          <div style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:10px;padding:14px;">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
-              <span style="font-size:18px;">🏦</span>
-              <span style="font-size:12px;font-weight:700;color:#fbbf24;text-transform:uppercase;">Pagos de Deuda</span>
-            </div>
-            <div style="font-size:22px;font-weight:800;color:white;">${recaudoMoney(desglose.pagosDeudaTransf)}</div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:6px;line-height:1.6;">
-              ${desglose.pagosDeudaNequi > 0 ? '<div>A Nequi: <strong style="color:#fcd34d;">'+recaudoMoney(desglose.pagosDeudaNequi)+'</strong></div>' : ''}
-              ${desglose.pagosDeudaBancolombia > 0 ? '<div>A Bancolombia: <strong style="color:#fcd34d;">'+recaudoMoney(desglose.pagosDeudaBancolombia)+'</strong></div>' : ''}
-              ${(desglose.pagosDeudaTransf === 0) ? '<div style="color:#64748b;">Sin pagos de deuda por transferencia</div>' : ''}
-            </div>
-          </div>
- 
-        </div>
- 
-        <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-          <div style="font-size:12px;color:#94a3b8;">Total recaudado (todos los métodos):</div>
-          <div style="font-size:24px;font-weight:800;color:#4ade80;font-variant-numeric:tabular-nums;">${recaudoMoney(desglose.totalRecaudado)}</div>
+          <div class="kpi-label">Descontado a clientes</div>
+          <div class="kpi-value" style="font-size:1.25rem;color:#60a5fa;">${recaudoMoney(deudasDescontadas)}</div>
+          <div class="kpi-delta neutral">Deudas mías descontadas</div>
         </div>
       </div>
  
@@ -3646,22 +3662,28 @@ async function renderRecaudo(){
           <tbody>
             ${rows.map(function(r){
               let safe = r.cliente.replace(/"/g, '&quot;');
-              let bgColor = '';
-              if(r.recibido) bgColor = 'rgba(34,197,94,0.10)';
-              else if(r.recaudoDomi > 0) bgColor = 'rgba(245,158,11,0.10)';
  
+              // COLOR DE FILA según estado
+              let bgColor = '';
+              if(r.recibido) {
+                bgColor = 'rgba(34,197,94,0.15)'; // VERDE si está recibido
+              } else if(r.recaudoDomi > 0) {
+                bgColor = 'rgba(245,158,11,0.15)'; // NARANJA si marcó recaudo domi
+              }
+ 
+              // HTML de deuda
               let deudaHtml = '';
               if(r.deudaCliente > 0 || r.deudaMia > 0){
                 if(r.deudasPagadas > 0 && r.deudaMetodo){
                   let metodoIcono = r.deudaMetodo === 'efectivo' ? '💵' : '🏦';
-                  let metodoLabel = r.deudaMetodo === 'efectivo' ? 'Efectivo' : (r.deudaBanco || 'Transferencia');
+                  let metodoLabel = r.deudaMetodo === 'efectivo' ? 'Efectivo' : (r.deudaBanco || 'Transf.');
                   deudaHtml = `
                     <div style="font-size:10px;color:#4ade80;font-weight:700;margin-bottom:3px;">
                       ✓ ${metodoIcono} ${metodoLabel}
                     </div>
                     <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox" checked
                       onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})"
-                      title="Click para revertir el pago">
+                      title="Click para revertir">
                   `;
                 } else if(r.deudaMiaPagada > 0){
                   deudaHtml = `
@@ -3674,11 +3696,11 @@ async function renderRecaudo(){
                 } else {
                   deudaHtml = `
                     <div style="font-size:11px;color:${r.deudaCliente > 0 ? '#fca5a5' : '#93c5fd'};font-weight:700;margin-bottom:3px;">
-                      ${r.deudaCliente > 0 ? '⚠️ Te debe: ' + recaudoMoney(r.deudaCliente) : '💙 Le debes: ' + recaudoMoney(r.deudaMia)}
+                      ${r.deudaCliente > 0 ? '⚠️ ' + recaudoMoney(r.deudaCliente) : '💙 ' + recaudoMoney(r.deudaMia)}
                     </div>
                     <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox"
                       onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})"
-                      title="${r.deudaCliente > 0 ? 'Marcar pago' : 'Descontar de la factura'}">
+                      title="${r.deudaCliente > 0 ? 'Marcar pago' : 'Descontar'}">
                   `;
                 }
               } else {
@@ -3694,19 +3716,19 @@ async function renderRecaudo(){
                   <td style="text-align:center;">
                     <input id="rec_domi_${safe}" class="recaudo-check" type="checkbox"
                       ${r.recaudoDomi > 0 ? 'checked' : ''}
-                      onchange="recaudoMarcarDomi('${safe}', ${r.subtotal});renderRecaudo();">
+                      onchange="recaudoToggleDomi('${safe}', ${r.subtotal})">
                   </td>
                   <td style="text-align:center;">
                     <input id="rec_rec_${safe}" class="recaudo-check" type="checkbox"
                       ${r.recibido ? 'checked' : ''}
-                      onchange="recaudoGuardarFila('${safe}');renderRecaudo();">
+                      onchange="recaudoToggleRecibido('${safe}')">
                   </td>
-                  <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.nequi}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
-                  <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.bancolombia}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.nequi > 0 ? r.nequi.toLocaleString('es-CO') : ''}" data-raw="${r.nequi}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
+                  <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.bancolombia > 0 ? r.bancolombia.toLocaleString('es-CO') : ''}" data-raw="${r.bancolombia}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
                   <td><input id="rec_dc_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudaCliente > 0 ? r.deudaCliente.toLocaleString('es-CO') : ''}" data-raw="${r.deudaCliente}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}');"></td>
                   <td><input id="rec_dm_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudaMia > 0 ? r.deudaMia.toLocaleString('es-CO') : ''}" data-raw="${r.deudaMia}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}');"></td>
-                  <td><input id="rec_fal_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.faltantes}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
-                  <td><input id="rec_sal_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.salidas}" onblur="recaudoGuardarFila('${safe}');renderRecaudo();"></td>
+                  <td><input id="rec_fal_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.faltantes > 0 ? r.faltantes.toLocaleString('es-CO') : ''}" data-raw="${r.faltantes}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
+                  <td><input id="rec_sal_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.salidas > 0 ? r.salidas.toLocaleString('es-CO') : ''}" data-raw="${r.salidas}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
                   <td><div class="recaudo-resumen ${r.resumen.clase}">${r.resumen.texto}</div></td>
                   <td style="font-weight:800;">${recaudoMoney(r.efectivoNeto)}</td>
                   <td><input id="rec_obs_${safe}" class="recaudo-text-input" value="${(r.observacion||'').replace(/"/g,'&quot;')}" oninput="recaudoGuardarFila('${safe}')"></td>
@@ -3724,34 +3746,32 @@ async function renderRecaudo(){
             <div class="val">${recaudoMoney(bruto)}</div>
           </div>
           <div class="recaudo-mini">
-            <div class="lab">💵 Efectivo final</div>
-            <div class="val" style="color:#4ade80;">${recaudoMoney(desglose.efectivoTotal)}</div>
+            <div class="lab">💵 Efectivo</div>
+            <div class="val" style="color:#4ade80;">${recaudoMoney(efectivoTotal)}</div>
           </div>
           <div class="recaudo-mini">
             <div class="lab">📱 Nequi</div>
-            <div class="val" style="color:#c084fc;">${recaudoMoney(desglose.nequi + desglose.pagosDeudaNequi)}</div>
+            <div class="val" style="color:#c084fc;">${recaudoMoney(nequiVentas + pagoDeudaNequi)}</div>
           </div>
           <div class="recaudo-mini">
             <div class="lab">🏛️ Bancolombia</div>
-            <div class="val" style="color:#22d3ee;">${recaudoMoney(desglose.bancolombia + desglose.pagosDeudaBancolombia)}</div>
+            <div class="val" style="color:#22d3ee;">${recaudoMoney(bancolombiaVentas + pagoDeudaBancolombia)}</div>
           </div>
           <div class="recaudo-mini">
-            <div class="lab">🏦 Pagos de deuda</div>
-            <div class="val" style="color:#fbbf24;">${recaudoMoney(desglose.pagosDeudaTransf)}</div>
+            <div class="lab">🏦 Pagos deuda transf.</div>
+            <div class="val" style="color:#fbbf24;">${recaudoMoney(pagosDeudaTransf)}</div>
           </div>
           <div class="recaudo-mini">
-            <div class="lab">Faltantes + Salidas</div>
-            <div class="val" style="color:#fca5a5;">${recaudoMoney(faltantes + salidas)}</div>
+            <div class="lab">Faltantes</div>
+            <div class="val" style="color:#fca5a5;">${recaudoMoney(faltantes)}</div>
           </div>
-          ${desglose.deudasDescontadas > 0 ? `
           <div class="recaudo-mini">
-            <div class="lab">Descontado a clientes</div>
-            <div class="val" style="color:#93c5fd;">-${recaudoMoney(desglose.deudasDescontadas)}</div>
+            <div class="lab">Salidas</div>
+            <div class="val" style="color:#fca5a5;">${recaudoMoney(salidas)}</div>
           </div>
-          ` : ''}
           <div class="recaudo-mini" style="background:linear-gradient(135deg,rgba(22,163,74,0.2),rgba(22,163,74,0.05));border:1px solid rgba(22,163,74,0.3);">
-            <div class="lab">✅ Total recaudado</div>
-            <div class="val" style="color:#4ade80;font-size:26px;">${recaudoMoney(desglose.totalRecaudado)}</div>
+            <div class="lab">✅ TOTAL</div>
+            <div class="val" style="color:#4ade80;font-size:24px;">${recaudoMoney(totalRecaudado)}</div>
           </div>
         </div>
       </div>
@@ -3760,10 +3780,60 @@ async function renderRecaudo(){
     body.innerHTML = html;
   }catch(e){
     console.error("Error en recaudo:", e);
-    body.innerHTML = `<div class="empty-state"><p>No se pudo cargar el módulo de recaudo.</p></div>`;
+    body.innerHTML = `<div class="empty-state"><p>Error: ${e.message}</p></div>`;
   }
 }
 
+function recaudoGuardarFila(nombre){
+  let estado = recaudoLeerEstado();
+  let base = estado[nombre] || {};
+ 
+  let q = function(id){ return document.getElementById(id); };
+ 
+  estado[nombre] = Object.assign({}, base, {
+    recaudoDomi: getRawRecaudo(q("rec_domi_" + nombre)) || (base.recaudoDomi || 0),
+    nequi: getRawRecaudo(q("rec_nequi_" + nombre)),
+    bancolombia: getRawRecaudo(q("rec_banco_" + nombre)),
+    deudaCliente: getRawRecaudo(q("rec_dc_" + nombre)),
+    deudaMia: getRawRecaudo(q("rec_dm_" + nombre)),
+    faltantes: getRawRecaudo(q("rec_fal_" + nombre)),
+    salidas: getRawRecaudo(q("rec_sal_" + nombre)),
+    observacion: (q("rec_obs_" + nombre) && q("rec_obs_" + nombre).value || "").trim()
+  });
+ 
+  recaudoGuardarEstado(estado);
+}
+ 
+ 
+// =====================================================
+// FUNCIONES AUXILIARES NUEVAS — AGREGAR AL FINAL
+// =====================================================
+ 
+// Toggle recaudo domi: marca/desmarca y guarda el subtotal como recaudoDomi
+function recaudoToggleDomi(nombre, subtotal){
+  let cb = document.getElementById('rec_domi_' + nombre);
+  let estado = recaudoLeerEstado();
+  if(!estado[nombre]) estado[nombre] = {};
+ 
+  if(cb && cb.checked){
+    estado[nombre].recaudoDomi = subtotal;
+  } else {
+    estado[nombre].recaudoDomi = 0;
+  }
+ 
+  recaudoGuardarEstado(estado);
+  renderRecaudo();
+}
+ 
+// Toggle recibido
+function recaudoToggleRecibido(nombre){
+  let cb = document.getElementById('rec_rec_' + nombre);
+  let estado = recaudoLeerEstado();
+  if(!estado[nombre]) estado[nombre] = {};
+  estado[nombre].recibido = !!(cb && cb.checked);
+  recaudoGuardarEstado(estado);
+  renderRecaudo();
+}
 
 async function abrirRecaudo(){
   let panel = document.getElementById("panelRecaudo");
@@ -4336,11 +4406,15 @@ function recaudoMarcarDeudaSaldada(nombre, deudaCliente, deudaMia) {
  
   if(estaChecked){
     if(deudaCliente > 0){
-      recaudoAbrirModalMetodoPago(nombre, deudaCliente);
+      // Abrir modal pequeño para preguntar método
+      recaudoModalMetodoPago(nombre, deudaCliente);
       checkbox.checked = false;
     } else if(deudaMia > 0){
-      recaudoConfirmarDescuentoDeuda(nombre, deudaMia);
-      checkbox.checked = false;
+      if(confirm('Le debes $' + Number(deudaMia).toLocaleString("es-CO") + ' a ' + nombre + '.\n¿Descontar de la factura del día?')){
+        r3t24NpUrJMNunMMASmhAM953bFGeLXzN7(nombre, deudaMia);
+      } else {
+        checkbox.checked = false;
+      }
     }
   } else {
     if(confirm('¿Revertir el pago de deuda de ' + nombre + '?')){
@@ -4351,7 +4425,9 @@ function recaudoMarcarDeudaSaldada(nombre, deudaCliente, deudaMia) {
   }
 }
  
-function recaudoAbrirModalMetodoPago(nombre, deudaCliente){
+// Modal pequeño emergente
+function recaudoModalMetodoPago(nombre, monto){
+  // Construir opciones de cuentas bancarias (no efectivo)
   let cuentasOpts = '';
   if(Array.isArray(cuentasMemoria)){
     cuentasMemoria.forEach(function(c, i){
@@ -4361,48 +4437,47 @@ function recaudoAbrirModalMetodoPago(nombre, deudaCliente){
     });
   }
  
+  // Modal pequeño y limpio
   mostrarMC(
-    '<h3>💳 ¿Cómo te pagó '+nombre+'?</h3>'+
-    '<div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:10px 14px;margin-bottom:14px;">'+
-      '<div style="font-size:11px;color:#fcd34d;text-transform:uppercase;font-weight:600;margin-bottom:3px;">Monto a registrar</div>'+
-      '<div style="font-size:22px;font-weight:800;color:#fbbf24;">$'+Number(deudaCliente).toLocaleString("es-CO")+'</div>'+
+    '<h3 style="text-align:center;margin-bottom:6px;">💳 Método de pago</h3>'+
+    '<div style="text-align:center;font-size:12px;color:#94a3b8;margin-bottom:14px;">'+nombre+'</div>'+
+ 
+    '<div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:10px;margin-bottom:14px;text-align:center;">'+
+      '<div style="font-size:11px;color:#fcd34d;font-weight:600;margin-bottom:3px;">Monto</div>'+
+      '<div style="font-size:22px;font-weight:800;color:#fbbf24;">$'+Number(monto).toLocaleString("es-CO")+'</div>'+
     '</div>'+
  
-    '<div style="margin-bottom:14px;">'+
-      '<label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;margin-bottom:8px;">Método de pago</label>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap;">'+
-        '<button id="recPagoMetEfe" onclick="recaudoSeleccionarMetPago(\'efectivo\')" style="flex:1;min-width:90px;padding:12px;border-radius:10px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body);">'+
-          '<div style="font-size:22px;margin-bottom:4px;">💵</div>'+
-          'Efectivo'+
-        '</button>'+
-        '<button id="recPagoMetTra" onclick="recaudoSeleccionarMetPago(\'transferencia\')" style="flex:1;min-width:90px;padding:12px;border-radius:10px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body);">'+
-          '<div style="font-size:22px;margin-bottom:4px;">🏦</div>'+
-          'Transferencia'+
-        '</button>'+
-      '</div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:12px;">'+
+      '<button id="recMetEfe" onclick="recaudoSelMetodo(\'efectivo\')" style="flex:1;padding:14px 8px;border-radius:10px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-weight:700;cursor:pointer;font-family:var(--font-body);font-size:13px;">'+
+        '<div style="font-size:22px;margin-bottom:3px;">💵</div>'+
+        'Efectivo'+
+      '</button>'+
+      '<button id="recMetTra" onclick="recaudoSelMetodo(\'transferencia\')" style="flex:1;padding:14px 8px;border-radius:10px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-weight:700;cursor:pointer;font-family:var(--font-body);font-size:13px;">'+
+        '<div style="font-size:22px;margin-bottom:3px;">🏦</div>'+
+        'Transferencia'+
+      '</button>'+
     '</div>'+
  
-    '<div id="recPagoCuentaBox" style="display:none;margin-bottom:14px;">'+
-      '<label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;margin-bottom:5px;">¿A qué cuenta?</label>'+
-      '<select id="recPagoCuenta" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:10px 12px;font-size:13px;font-family:var(--font-body);font-weight:600;">'+
+    '<div id="recCuentaBox" style="display:none;margin-bottom:12px;">'+
+      '<select id="recCuentaSel" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px;font-size:13px;font-family:var(--font-body);font-weight:600;">'+
         cuentasOpts+
       '</select>'+
     '</div>'+
  
-    '<div class="mc-btns">'+
-      '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
-      '<button class="mc-btn-ok verde" onclick="recaudoConfirmarPagoMetodo(\''+nombre.replace(/'/g,"\\'")+'\', '+deudaCliente+')">✓ Confirmar pago</button>'+
-    '</div>'
+    '<button id="recBtnConfirmar" onclick="recaudoConfirmarPago(\''+nombre.replace(/'/g,"\\'")+'\','+monto+')" disabled style="width:100%;padding:12px;background:rgba(22,163,74,0.3);border:none;border-radius:10px;color:white;font-weight:800;cursor:not-allowed;font-family:var(--font-body);font-size:14px;opacity:0.5;">'+
+      '✓ Confirmar pago'+
+    '</button>'
   );
  
-  window._recaudoMetPagoSel = '';
+  window._recMetSel = '';
 }
  
-function recaudoSeleccionarMetPago(metodo){
-  window._recaudoMetPagoSel = metodo;
-  let btnEfe = document.getElementById('recPagoMetEfe');
-  let btnTra = document.getElementById('recPagoMetTra');
-  let cuentaBox = document.getElementById('recPagoCuentaBox');
+function recaudoSelMetodo(metodo){
+  window._recMetSel = metodo;
+  let btnEfe = document.getElementById('recMetEfe');
+  let btnTra = document.getElementById('recMetTra');
+  let cuentaBox = document.getElementById('recCuentaBox');
+  let btnConfirmar = document.getElementById('recBtnConfirmar');
  
   if(btnEfe && btnTra){
     btnEfe.style.border = '2px solid rgba(255,255,255,0.10)';
@@ -4420,11 +4495,19 @@ function recaudoSeleccionarMetPago(metodo){
       if(cuentaBox) cuentaBox.style.display = 'block';
     }
   }
+ 
+  // Habilitar botón confirmar
+  if(btnConfirmar){
+    btnConfirmar.disabled = false;
+    btnConfirmar.style.background = '#16a34a';
+    btnConfirmar.style.cursor = 'pointer';
+    btnConfirmar.style.opacity = '1';
+  }
 }
  
-function recaudoConfirmarPagoMetodo(nombre, monto){
-  let metodo = window._recaudoMetPagoSel || '';
-  if(!metodo){ alert('Selecciona un método de pago'); return; }
+function recaudoConfirmarPago(nombre, monto){
+  let metodo = window._recMetSel || '';
+  if(!metodo){ alert('Selecciona un método'); return; }
  
   let cuentaIdx = -1;
   let nombreBanco = '';
@@ -4433,17 +4516,17 @@ function recaudoConfirmarPagoMetodo(nombre, monto){
     cuentaIdx = cuentasMemoria.findIndex(function(c){ return c.tipo === 'EFECTIVO'; });
     nombreBanco = 'Efectivo';
   } else {
-    let sel = document.getElementById('recPagoCuenta');
+    let sel = document.getElementById('recCuentaSel');
     cuentaIdx = sel ? Number(sel.value) : -1;
     if(cuentaIdx < 0 || !cuentasMemoria[cuentaIdx]){
-      alert('Selecciona una cuenta'); return;
+      alert('Selecciona cuenta'); return;
     }
     nombreBanco = cuentasMemoria[cuentaIdx].nombre;
   }
  
   let hoy = new Date().toLocaleDateString('es-CO', {day:'numeric', month:'long', year:'numeric'});
  
-  // 1. Estado del recaudo
+  // 1. Estado del recaudo del día
   let estado = recaudoLeerEstado();
   if(!estado[nombre]) estado[nombre] = {};
   estado[nombre].deudasPagadas = monto;
@@ -4453,7 +4536,7 @@ function recaudoConfirmarPagoMetodo(nombre, monto){
   estado[nombre].fechaPago = hoy;
   recaudoGuardarEstado(estado);
  
-  // 2. Cartera permanente
+  // 2. Cartera permanente (se sincroniza con el módulo Cartera)
   let cartera = {};
   try { cartera = JSON.parse(localStorage.getItem('cartera_deudas') || '{}'); } catch(e){}
   if(!cartera[nombre]) cartera[nombre] = {};
@@ -4463,13 +4546,28 @@ function recaudoConfirmarPagoMetodo(nombre, monto){
   cartera[nombre].banco = nombreBanco;
   localStorage.setItem('cartera_deudas', JSON.stringify(cartera));
  
-  // 3. Acreditar cuenta
+  // 3. Historial de pagos de cartera (para que aparezca en módulo Cartera)
+  let historial = [];
+  try { historial = JSON.parse(localStorage.getItem('cartera_pagos_historial') || '[]'); } catch(e){ historial = []; }
+  historial.push({
+    cliente: nombre,
+    monto: monto,
+    metodo: metodo,
+    banco: nombreBanco,
+    cuentaIdx: cuentaIdx,
+    nota: 'Desde recaudo diario',
+    fecha: hoy
+  });
+  localStorage.setItem('cartera_pagos_historial', JSON.stringify(historial));
+ 
+  // 4. Acreditar la cuenta
   if(cuentaIdx >= 0 && cuentasMemoria[cuentaIdx]){
     cuentasMemoria[cuentaIdx].saldo += monto;
     cuentasGuardar();
   }
  
-  // 4. Movimientos contables
+  // 5. Movimientos contables
+  if(!Array.isArray(movimientosContables)) movimientosContables = [];
   movimientosContables.push({
     tipo: 'ingreso',
     monto: monto,
@@ -4478,19 +4576,17 @@ function recaudoConfirmarPagoMetodo(nombre, monto){
     fecha: new Date().toISOString()
   });
  
+  // Cerrar modal y refrescar
   cerrarMC();
   renderRecaudo();
 }
  
-function recaudoConfirmarDescuentoDeuda(nombre, deudaMia){
-  if(!confirm('Le debes $' + Number(deudaMia).toLocaleString("es-CO") + ' a ' + nombre + '. ¿Descontar de la factura del día?')) return;
- 
+function r3t24NpUrJMNunMMASmhAM953bFGeLXzN7(nombre, deudaMia){
   let hoy = new Date().toLocaleDateString('es-CO', {day:'numeric', month:'long', year:'numeric'});
  
   let estado = recaudoLeerEstado();
   if(!estado[nombre]) estado[nombre] = {};
   estado[nombre].deudaMiaPagada = deudaMia;
-  estado[nombre].deudaMiaDescontada = true;
   estado[nombre].fechaDescuento = hoy;
   recaudoGuardarEstado(estado);
  
@@ -4511,11 +4607,13 @@ function recaudoRevertirPagoDeuda(nombre){
   let pagoAnterior = Number(estado[nombre] && estado[nombre].deudasPagadas || 0);
   let cuentaIdx = Number(estado[nombre] && estado[nombre].deudaCuentaIdx);
  
+  // Revertir saldo
   if(pagoAnterior > 0 && cuentaIdx >= 0 && cuentasMemoria[cuentaIdx]){
     cuentasMemoria[cuentaIdx].saldo -= pagoAnterior;
     cuentasGuardar();
   }
  
+  // Limpiar estado
   if(estado[nombre]){
     estado[nombre].deudasPagadas = 0;
     estado[nombre].deudaMetodo = null;
@@ -4523,7 +4621,6 @@ function recaudoRevertirPagoDeuda(nombre){
     estado[nombre].deudaBanco = null;
     estado[nombre].fechaPago = null;
     estado[nombre].deudaMiaPagada = 0;
-    estado[nombre].deudaMiaDescontada = false;
   }
   recaudoGuardarEstado(estado);
  
@@ -4533,6 +4630,17 @@ function recaudoRevertirPagoDeuda(nombre){
     cartera[nombre].deudaMiaPagada = 0;
   }
   localStorage.setItem('cartera_deudas', JSON.stringify(cartera));
+ 
+  // Quitar del historial el último pago
+  let historial = [];
+  try { historial = JSON.parse(localStorage.getItem('cartera_pagos_historial') || '[]'); } catch(e){}
+  for(let i = historial.length - 1; i >= 0; i--){
+    if(historial[i].cliente === nombre && historial[i].nota === 'Desde recaudo diario'){
+      historial.splice(i, 1);
+      break;
+    }
+  }
+  localStorage.setItem('cartera_pagos_historial', JSON.stringify(historial));
  
   renderRecaudo();
 }
