@@ -3803,28 +3803,7 @@ function recaudoGuardarFila(nombre){
  
   recaudoGuardarEstado(estado);
 }
- 
- 
-// =====================================================
-// FUNCIONES AUXILIARES NUEVAS — AGREGAR AL FINAL
-// =====================================================
- 
-// Toggle recaudo domi: marca/desmarca y guarda el subtotal como recaudoDomi
-function recaudoToggleDomi(nombre, subtotal){
-  let cb = document.getElementById('rec_domi_' + nombre);
-  let estado = recaudoLeerEstado();
-  if(!estado[nombre]) estado[nombre] = {};
- 
-  if(cb && cb.checked){
-    estado[nombre].recaudoDomi = subtotal;
-  } else {
-    estado[nombre].recaudoDomi = 0;
-  }
- 
-  recaudoGuardarEstado(estado);
-  renderRecaudo();
-}
- 
+  
 // Toggle recibido
 function recaudoToggleRecibido(nombre){
   let cb = document.getElementById('rec_rec_' + nombre);
@@ -5332,6 +5311,22 @@ function recaudoCalcularDesgloseMetodos(rows){
   desglose.totalRecaudado = desglose.efectivoTotal + desglose.nequi + desglose.bancolombia + desglose.pagosDeudaTransf;
  
   return desglose;
+}
+// Toggle recaudo domi: marca/desmarca y guarda el subtotal como recaudoDomi
+
+  function recaudoToggleDomi(nombre, subtotal){
+  let cb = document.getElementById('rec_domi_' + nombre);
+  let estado = recaudoLeerEstado();
+  if(!estado[nombre]) estado[nombre] = {};
+ 
+  if(cb && cb.checked){
+    estado[nombre].recaudoDomi = subtotal;
+  } else {
+    estado[nombre].recaudoDomi = 0;
+  }
+ 
+  recaudoGuardarEstado(estado);
+  renderRecaudo();
 }
 </script>
 <!-- MODAL GLOBAL CONTABILIDAD -->
