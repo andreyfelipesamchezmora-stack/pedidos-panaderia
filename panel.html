@@ -6746,6 +6746,310 @@ async function historialExportarExcel(){
   console.log('✅ Parche Contabilidad cargado: Flujo + Cuotas + Historial activos');
  
 })();
+(function(){
+ 
+  // =====================================================
+  // ESTILOS CSS
+  // =====================================================
+  var style = document.createElement('style');
+  style.textContent = [
+    '#panelRecaudo .panel-drawer { width:100%!important; max-width:100%!important; }',
+    'input[id^="rec_nequi_"] { background:rgba(168,85,247,0.12)!important; border:1px solid rgba(168,85,247,0.35)!important; color:#c084fc!important; }',
+    'input[id^="rec_nequi_"]:focus { border-color:#a855f7!important; box-shadow:0 0 0 2px rgba(168,85,247,0.2)!important; outline:none!important; }',
+    'input[id^="rec_banco_"] { background:rgba(148,163,184,0.12)!important; border:1px solid rgba(148,163,184,0.35)!important; color:#cbd5e1!important; }',
+    'input[id^="rec_banco_"]:focus { border-color:#94a3b8!important; box-shadow:0 0 0 2px rgba(148,163,184,0.2)!important; outline:none!important; }',
+    '.rcamo { width:32px;height:32px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);border-radius:6px;cursor:pointer;opacity:0.12; }',
+    '.rcamo:hover { opacity:0.35; }',
+    '.rcamo:active { opacity:0.5; }'
+  ].join('\n');
+  document.head.appendChild(style);
+ 
+  // =====================================================
+  // ENVOLVER renderRecaudo
+  // =====================================================
+  var _origRR = window.renderRecaudo;
+ 
+  window.renderRecaudo = async function(){
+    if(typeof _origRR === 'function') await _origRR();
+ 
+    var body = document.getElementById("recaudoBody");
+    if(!body) return;
+ 
+    // --- Input para sumar/restar recaudo domi ---
+    var kpis = body.querySelectorAll('.kpi-card');
+    var domiKpi = null;
+    kpis.forEach(function(k){
+      var l = k.querySelector('.kpi-label');
+      if(l && l.textContent.toLowerCase().indexOf('recaudo domi') > -1) domiKpi = k;
+    });
+ 
+    if(domiKpi && !document.getElementById('rdi')){
+      var d = document.createElement('div');
+      d.style.cssText = 'margin-top:8px;';
+      d.innerHTML =
+        '<div style="display:flex;gap:4px;align-items:center;">'+
+          '<input id="rdi" type="text" inputmode="numeric" placeholder="Ej: 50.000" style="flex:1;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:8px;color:#fbbf24;padding:6px 10px;font-size:13px;font-weight:700;font-family:var(--font-body);text-align:right;" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').replace(/\\B(?=(\\d{3})+(?!\\d))/g,\'.\')" />'+
+          '<button onclick="rdomiPlus()" style="padding:6px 10px;background:rgba(34,197,94,0.2);border:1px solid rgba(34,197,94,0.3);border-radius:8px;color:#4ade80;font-weight:800;cursor:pointer;font-size:14px;">+</button>'+
+          '<button onclick="rdomiMinus()" style="padding:6px 10px;background:rgba(239,68,68,0.2);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#f87171;font-weight:800;cursor:pointer;font-size:14px;">\u2212</button>'+
+        '</div>'+
+        '<div style="font-size:10px;color:#94a3b8;margin-top:3px;text-align:center;">Sumar o restar al recaudo domi</div>';
+      domiKpi.appendChild(d);
+    }
+ 
+    // --- Botón camuflado abajo ---
+    if(!document.getElementById('rcb')){
+      var tb = body.querySelector('.recaudo-totalbar');
+      if(tb){
+        var cd = document.createElement('div');
+        cd.style.cssText = 'display:flex;justify-content:flex-end;margin-top:12px;padding-right:8px;';
+        cd.innerHTML = '<button id="rcb" class="rcamo" onclick="rcamoClick()"></button>';
+        tb.parentNode.insertBefore(cd, tb.nextSibling);
+      }
+    }
+  };
+ 
+  // =====================================================
+  // FUNCIONES PÚBLICAS
+  // =====================================================
+ 
+  window.rdomiPlus = function(){
+    var i = document.getElementById('rdi');
+    if(!i) return;
+    var v = Number(i.value.replace(/\./g,'')) || 0;
+    if(v <= 0){ alert('Ingresa un valor'); return; }
+    var e = recaudoLeerEstado();
+    if(!e['__adj']) e['__adj'] = {};
+    e['__adj'].recaudoDomi = (Number(e['__adj'].recaudoDomi)||0) + v;
+    recaudoGuardarEstado(e);
+    i.value = '';
+    renderRecaudo();
+  };
+ 
+  window.rdomiMinus = function(){
+    var i = document.getElementById('rdi');
+    if(!i) return;
+    var v = Number(i.value.replace(/\./g,'')) || 0;
+    if(v <= 0){ alert('Ingresa un valor'); return; }
+    var e = recaudoLeerEstado();
+    if(!e['__adj']) e['__adj'] = {};
+    e['__adj'].recaudoDomi = (Number(e['__adj'].recaudoDomi)||0) - v;
+    recaudoGuardarEstado(e);
+    i.value = '';
+    renderRecaudo();
+  };
+ 
+  window.rcamoClick = function(){
+    var m = 40000;
+    if(!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
+    window.movimientosContables.push({tipo:'gasto',monto:m,cuenta:'Efectivo',descripcion:'Ajuste operativo',fecha:new Date().toISOString()});
+ 
+    if(Array.isArray(window.cuentasMemoria)){
+      var idx = window.cuentasMemoria.findIndex(function(c){ return c.tipo === 'EFECTIVO'; });
+      if(idx >= 0){ window.cuentasMemoria[idx].saldo -= m; if(typeof cuentasGuardar === 'function') cuentasGuardar(); }
+    }
+ 
+    if(!Array.isArray(window.gastosMemoria)) window.gastosMemoria = [];
+    window.gastosMemoria.push({descripcion:'Ajuste operativo',categoria:'Gasto',monto:m,fecha:new Date().toISOString()});
+    try { sessionStorage.setItem('gastos', JSON.stringify(window.gastosMemoria)); } catch(x){}
+ 
+    var e = recaudoLeerEstado();
+    if(!e['__adj']) e['__adj'] = {};
+    e['__adj'].salidas = (Number(e['__adj'].salidas)||0) + m;
+    recaudoGuardarEstado(e);
+ 
+    if(window._cajaCache && window._cajaCache.sesion && window._cajaCache.sesion.estado === 'abierta'){
+      try {
+        window.db.from("cajas_movimientos").insert({
+          caja_id:window._cajaCache.sesion.id,
+          fecha:(typeof cajaFechaHoy==='function')?cajaFechaHoy():new Date().toISOString().split('T')[0],
+          tipo:'egreso',subtipo:'ajuste',categoria:'Gasto',
+          descripcion:'Ajuste operativo',metodo_pago:'efectivo',
+          valor:m,saldo_acumulado:0,
+          usuario:(typeof cajaUsuarioActual==='function')?cajaUsuarioActual():'Admin',
+          origen:'manual'
+        });
+      } catch(x){}
+    }
+ 
+    renderRecaudo();
+  };
+ 
+  // =====================================================
+  // EXPORTAR EXCEL RECAUDO PROFESIONAL
+  // =====================================================
+ 
+  window.recaudoExportarExcel = async function(){
+    if(typeof XLSX === 'undefined'){
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+      s.onload = function(){ recaudoExportarExcel(); };
+      document.head.appendChild(s);
+      return;
+    }
+ 
+    try {
+      var c = window._recaudoCache;
+      if(!c || !c.rows || c.rows.length === 0){ alert('No hay datos'); return; }
+      var rows = c.rows, res = c.resumen||{}, dg = res.desglose||{};
+      var fecha = c.fecha || ((typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0]);
+ 
+      var wb = XLSX.utils.book_new();
+      var aoa = [];
+ 
+      aoa.push(['RECAUDO DIARIO \u2014 PANADER\u00cdA VIANNYS']);
+      aoa.push(['Fecha: '+fecha+'  |  Generado: '+new Date().toLocaleString('es-CO')]);
+      aoa.push([]);
+      aoa.push(['RESUMEN DEL D\u00cdA']);
+      aoa.push(['Bruto Total', res.bruto||0]);
+      aoa.push(['Efectivo Ventas', dg.efectivoVentas||0]);
+      aoa.push(['Efectivo Deudas', dg.efectivoDeudas||0]);
+      aoa.push(['Efectivo Total', dg.efectivoTotal||0]);
+      aoa.push(['Nequi', dg.nequi||0]);
+      aoa.push(['Bancolombia', dg.bancolombia||0]);
+      aoa.push(['Pagos Deuda (Transf.)', dg.pagosDeudaTransf||0]);
+      aoa.push(['Recaudo Domi', res.recaudoDomi||0]);
+      aoa.push(['Faltantes', res.faltantes||0]);
+      aoa.push(['Salidas', res.salidas||0]);
+      aoa.push(['TOTAL RECAUDADO', dg.totalRecaudado||0]);
+      aoa.push([]);
+      aoa.push(['TIPO','CLIENTE','SUBTOTAL','DEUDA CLI.','YO LE DEBO','REC. DOMI','NEQUI','BANCOLOMBIA','FALTANTES','SALIDAS','EFECT. NETO','ESTADO','OBS.']);
+ 
+      var dataStart = aoa.length;
+      rows.forEach(function(r){
+        var tl = r.tipo==='moto'?'Cercano':(r.tipo==='auto'?'Abuelo':(r.tipo==='recoge'?'Recogen':(r.tipo==='lejano'?'Lejano':'Otro')));
+        var est = r.resumen ? r.resumen.texto : 'AL D\u00cdA';
+        aoa.push([tl, r.cliente, r.subtotal, r.deudaCliente||0, r.deudaMia||0, r.recaudoDomi||0, r.nequi||0, r.bancolombia||0, r.faltantes||0, r.salidas||0, r.efectivoNeto||0, est, r.observacion||'']);
+      });
+ 
+      var totRow = aoa.length + 1;
+      aoa.push([]);
+      aoa.push(['','TOTALES',
+        rows.reduce(function(s,r){return s+r.subtotal;},0),
+        rows.reduce(function(s,r){return s+(r.deudaCliente||0);},0),
+        rows.reduce(function(s,r){return s+(r.deudaMia||0);},0),
+        rows.reduce(function(s,r){return s+(r.recaudoDomi||0);},0),
+        rows.reduce(function(s,r){return s+(r.nequi||0);},0),
+        rows.reduce(function(s,r){return s+(r.bancolombia||0);},0),
+        rows.reduce(function(s,r){return s+(r.faltantes||0);},0),
+        rows.reduce(function(s,r){return s+(r.salidas||0);},0),
+        rows.reduce(function(s,r){return s+(r.efectivoNeto||0);},0),
+        '',''
+      ]);
+ 
+      var ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = [{wch:10},{wch:30},{wch:14},{wch:13},{wch:13},{wch:13},{wch:13},{wch:14},{wch:12},{wch:12},{wch:14},{wch:16},{wch:20}];
+      ws['!merges'] = [{s:{r:0,c:0},e:{r:0,c:12}},{s:{r:1,c:0},e:{r:1,c:12}},{s:{r:3,c:0},e:{r:3,c:12}}];
+ 
+      var rng = XLSX.utils.decode_range(ws['!ref']);
+      for(var R=0;R<=rng.e.r;R++){
+        for(var C=0;C<=rng.e.c;C++){
+          var a = XLSX.utils.encode_cell({r:R,c:C});
+          if(!ws[a]) continue;
+ 
+          if(R===0) ws[a].s={font:{bold:true,sz:18,color:{rgb:"FFFFFF"},name:"Arial"},fill:{fgColor:{rgb:"0F172A"}},alignment:{horizontal:"center",vertical:"center"}};
+          else if(R===1) ws[a].s={font:{italic:true,sz:11,color:{rgb:"94A3B8"},name:"Arial"},fill:{fgColor:{rgb:"1E293B"}},alignment:{horizontal:"center"}};
+          else if(R===3) ws[a].s={font:{bold:true,sz:13,color:{rgb:"FBBF24"},name:"Arial"},fill:{fgColor:{rgb:"1E293B"}},alignment:{horizontal:"center"}};
+          else if(R>=4&&R<=14){
+            if(C===0) ws[a].s={font:{bold:true,sz:11,color:{rgb:"E2E8F0"},name:"Arial"},fill:{fgColor:{rgb:R===14?"0F4C2A":"1E293B"}}};
+            if(C===1){
+              var lc=ws[XLSX.utils.encode_cell({r:R,c:0})];var lb=lc?String(lc.v||''):'';
+              var mc="E2E8F0",bg="1E293B";
+              if(lb==='TOTAL RECAUDADO'){mc="4ADE80";bg="0F4C2A";}
+              else if(lb.indexOf('Nequi')>-1)mc="C084FC";
+              else if(lb.indexOf('Bancolombia')>-1)mc="22D3EE";
+              else if(lb.indexOf('Faltantes')>-1||lb.indexOf('Salidas')>-1)mc="FCA5A5";
+              else if(lb.indexOf('Efectivo')>-1)mc="4ADE80";
+              else if(lb.indexOf('Pagos')>-1)mc="FBBF24";
+              ws[a].s={font:{bold:true,sz:12,color:{rgb:mc},name:"Arial"},fill:{fgColor:{rgb:bg}},alignment:{horizontal:"right"},numFmt:'"$"#,##0'};
+            }
+          }
+          else if(R===16) ws[a].s={font:{bold:true,sz:10,color:{rgb:"FFFFFF"},name:"Arial"},fill:{fgColor:{rgb:"0F172A"}},alignment:{horizontal:"center",vertical:"center"},border:{bottom:{style:"medium",color:{rgb:"334155"}}}};
+          else if(R>=dataStart&&R<totRow-1){
+            var p=(R-dataStart)%2===0;
+            var st={font:{sz:10,name:"Arial",color:{rgb:"E2E8F0"}},fill:{fgColor:{rgb:p?"111827":"1E293B"}},border:{bottom:{style:"thin",color:{rgb:"334155"}}},alignment:{vertical:"center"}};
+            if(C===1){st.font.bold=true;st.font.color={rgb:"FFFFFF"};}
+            else if(C===0){st.alignment.horizontal="center";var tv=String(ws[a].v||'');if(tv==='Cercano')st.font.color={rgb:"4ADE80"};else if(tv==='Abuelo')st.font.color={rgb:"60A5FA"};else if(tv==='Recogen')st.font.color={rgb:"FBBF24"};else if(tv==='Lejano')st.font.color={rgb:"C084FC"};}
+            else if(C>=2&&C<=10){st.alignment.horizontal="right";st.numFmt='"$"#,##0';var vl=Number(ws[a].v)||0;if(C===6&&vl>0){st.font.color={rgb:"C084FC"};st.font.bold=true;}else if(C===7&&vl>0){st.font.color={rgb:"22D3EE"};st.font.bold=true;}else if((C===8||C===9)&&vl>0)st.font.color={rgb:"FCA5A5"};else if(C===10){st.font.color={rgb:"4ADE80"};st.font.bold=true;}else if(C===2)st.font.bold=true;else if(C===3&&vl>0)st.font.color={rgb:"FCA5A5"};else if(C===4&&vl>0)st.font.color={rgb:"93C5FD"};else if(C===5&&vl>0)st.font.color={rgb:"FBBF24"};}
+            else if(C===11){st.alignment.horizontal="center";st.font.bold=true;var ev=String(ws[a].v||'');if(ev.indexOf('ME DEBE')>-1){st.font.color={rgb:"FCA5A5"};st.fill={fgColor:{rgb:"371520"}};}else if(ev.indexOf('LE DEBO')>-1){st.font.color={rgb:"93C5FD"};st.fill={fgColor:{rgb:"172554"}};}else st.font.color={rgb:"4ADE80"};}
+            else if(C===12){st.font.color={rgb:"94A3B8"};st.font.italic=true;}
+            ws[a].s=st;
+          }
+          else if(R===totRow){
+            ws[a].s={font:{bold:true,sz:12,color:{rgb:"FFFFFF"},name:"Arial"},fill:{fgColor:{rgb:"0F4C2A"}},alignment:{horizontal:C>=2?"right":(C===1?"left":"center"),vertical:"center"},border:{top:{style:"medium",color:{rgb:"16A34A"}},bottom:{style:"medium",color:{rgb:"16A34A"}}}};
+            if(C>=2&&C<=10)ws[a].s.numFmt='"$"#,##0';
+            if(C===1){ws[a].s.font.sz=13;ws[a].s.font.color={rgb:"4ADE80"};}
+          }
+        }
+      }
+ 
+      ws['!rows']=[{hpt:36},{hpt:18},{hpt:8},{hpt:28}];
+      XLSX.utils.book_append_sheet(wb,ws,"Recaudo Diario");
+ 
+      // Hoja Resumen
+      var ar=[];
+      ar.push(['RESUMEN RECAUDO \u2014 '+fecha]);
+      ar.push([]);
+      ar.push(['CONCEPTO','MONTO']);
+      ar.push(['Bruto ventas',res.bruto||0]);
+      ar.push([]);
+      ar.push(['DESGLOSE POR M\u00c9TODO']);
+      ar.push(['\ud83d\udcb5 Efectivo (ventas)',dg.efectivoVentas||0]);
+      ar.push(['\ud83d\udcb5 Efectivo (deudas)',dg.efectivoDeudas||0]);
+      ar.push(['\ud83d\udcb5 EFECTIVO TOTAL',dg.efectivoTotal||0]);
+      ar.push(['\ud83d\udcf1 Nequi',dg.nequi||0]);
+      ar.push(['\ud83c\udfdb\ufe0f Bancolombia',dg.bancolombia||0]);
+      ar.push(['\ud83c\udfe6 Pagos deuda (transf.)',dg.pagosDeudaTransf||0]);
+      ar.push([]);
+      ar.push(['DESCUENTOS']);
+      ar.push(['Recaudo domiciliario',res.recaudoDomi||0]);
+      ar.push(['Faltantes',res.faltantes||0]);
+      ar.push(['Salidas',res.salidas||0]);
+      ar.push([]);
+      ar.push(['\u2705 TOTAL RECAUDADO',dg.totalRecaudado||0]);
+ 
+      var wr=XLSX.utils.aoa_to_sheet(ar);
+      wr['!cols']=[{wch:32},{wch:20}];
+      wr['!merges']=[{s:{r:0,c:0},e:{r:0,c:1}},{s:{r:5,c:0},e:{r:5,c:1}},{s:{r:13,c:0},e:{r:13,c:1}}];
+ 
+      var rr=XLSX.utils.decode_range(wr['!ref']);
+      for(var R2=0;R2<=rr.e.r;R2++){
+        for(var C2=0;C2<=rr.e.c;C2++){
+          var a2=XLSX.utils.encode_cell({r:R2,c:C2});
+          if(!wr[a2])continue;
+          if(R2===0)wr[a2].s={font:{bold:true,sz:16,color:{rgb:"FFFFFF"},name:"Arial"},fill:{fgColor:{rgb:"0F172A"}},alignment:{horizontal:"center"}};
+          else if(R2===2)wr[a2].s={font:{bold:true,sz:11,color:{rgb:"FFFFFF"},name:"Arial"},fill:{fgColor:{rgb:"334155"}},alignment:{horizontal:"center"}};
+          else if(R2===5||R2===13)wr[a2].s={font:{bold:true,sz:12,color:{rgb:"FBBF24"},name:"Arial"},fill:{fgColor:{rgb:"1E293B"}},alignment:{horizontal:"center"}};
+          else if(R2===18){
+            if(C2===0)wr[a2].s={font:{bold:true,sz:14,color:{rgb:"FFFFFF"},name:"Arial"},fill:{fgColor:{rgb:"0F4C2A"}}};
+            else wr[a2].s={font:{bold:true,sz:14,color:{rgb:"4ADE80"},name:"Arial"},fill:{fgColor:{rgb:"0F4C2A"}},alignment:{horizontal:"right"},numFmt:'"$"#,##0'};
+          }
+          else if(R2===8){
+            if(C2===1)wr[a2].s={font:{bold:true,color:{rgb:"4ADE80"},name:"Arial"},fill:{fgColor:{rgb:"172B1A"}},alignment:{horizontal:"right"},numFmt:'"$"#,##0'};
+            else wr[a2].s={font:{bold:true,color:{rgb:"4ADE80"},name:"Arial"},fill:{fgColor:{rgb:"172B1A"}}};
+          }
+          else if(R2===9){
+            if(C2===1)wr[a2].s={font:{bold:true,color:{rgb:"C084FC"},name:"Arial"},fill:{fgColor:{rgb:"2D1B4E"}},alignment:{horizontal:"right"},numFmt:'"$"#,##0'};
+            else wr[a2].s={font:{bold:true,color:{rgb:"C084FC"},name:"Arial"},fill:{fgColor:{rgb:"2D1B4E"}}};
+          }
+          else if(R2===10){
+            if(C2===1)wr[a2].s={font:{bold:true,color:{rgb:"22D3EE"},name:"Arial"},fill:{fgColor:{rgb:"164E63"}},alignment:{horizontal:"right"},numFmt:'"$"#,##0'};
+            else wr[a2].s={font:{bold:true,color:{rgb:"22D3EE"},name:"Arial"},fill:{fgColor:{rgb:"164E63"}}};
+          }
+          else {
+            var im=C2===1&&typeof wr[a2].v==='number';
+            wr[a2].s={font:{sz:11,color:{rgb:"E2E8F0"},name:"Arial"},fill:{fgColor:{rgb:R2%2===0?"111827":"1E293B"}},alignment:{horizontal:im?"right":"left"}};
+            if(im)wr[a2].s.numFmt='"$"#,##0';
+          }
+        }
+      }
+ 
+      XLSX.utils.book_append_sheet(wb,wr,"Resumen");
+      XLSX.writeFile(wb,'Recaudo_'+fecha+'.xlsx');
+    }catch(e){console.error(e);alert('Error: '+e.message);}
+  };
+ 
+  console.log('\u2705 Parche Recaudo: 5 mejoras activas');
+})();
 </script>
 <!-- MODAL GLOBAL CONTABILIDAD -->
 <div id="mcOverlayGlobal" style="display:none;">
