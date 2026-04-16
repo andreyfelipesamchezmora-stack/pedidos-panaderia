@@ -3663,74 +3663,184 @@ async function carteraCargarDatos() {
 
 
 
-async function renderCartera(filtroMora='todos', filtroNombre='') {
+async function renderCartera(filtroMora, filtroNombre) {
   let body = document.getElementById('carteraBody');
-  body.innerHTML = `<div class="loading-skeleton"><div class="skel skel-h"></div><div class="skel skel-c"></div></div>`;
-
+  body.innerHTML = '<div class="loading-skeleton"><div class="skel skel-h"></div><div class="skel skel-c"></div></div>';
+ 
+  filtroMora = filtroMora || 'todos';
+  filtroNombre = filtroNombre || '';
+ 
   let lista = await carteraCargarDatos();
-
-  // Filtros
-  if (filtroMora === '0-30')  lista = lista.filter(c => c.diasMora <= 30);
-  if (filtroMora === '31-60') lista = lista.filter(c => c.diasMora > 30 && c.diasMora <= 60);
-  if (filtroMora === '61+')   lista = lista.filter(c => c.diasMora > 60);
-  if (filtroNombre) lista = lista.filter(c => c.nombre.toLowerCase().includes(filtroNombre.toLowerCase()));
-
-  // KPIs
-  let totalCartera  = lista.reduce((s,c) => s+c.deuda, 0);
-  let carteraVencida= lista.filter(c=>c.diasMora>30).reduce((s,c)=>s+c.deuda,0);
-  let cartVencer    = lista.filter(c=>c.diasMora<=30).reduce((s,c)=>s+c.deuda,0);
+ 
+  // Filtros para la tabla general
+  let listaFiltrada = lista.slice();
+  if (filtroMora === '0-30')  listaFiltrada = listaFiltrada.filter(c => c.diasMora <= 30);
+  if (filtroMora === '31-60') listaFiltrada = listaFiltrada.filter(c => c.diasMora > 30 && c.diasMora <= 60);
+  if (filtroMora === '61+')   listaFiltrada = listaFiltrada.filter(c => c.diasMora > 60);
+  if (filtroNombre) listaFiltrada = listaFiltrada.filter(c => c.nombre.toLowerCase().includes(filtroNombre.toLowerCase()));
+ 
+  // KPIs generales
+  let totalCartera   = lista.reduce((s,c) => s+c.deuda, 0);
+  let carteraVencida  = lista.filter(c=>c.diasMora>30).reduce((s,c)=>s+c.deuda,0);
+  let cartVencer      = lista.filter(c=>c.diasMora<=30).reduce((s,c)=>s+c.deuda,0);
   let totalPedidosTodos = lista.reduce((s,c)=>s+c.totalPedidos,0);
   let pctRecuperacion = totalPedidosTodos > 0 ? Math.round(((totalPedidosTodos - totalCartera)/totalPedidosTodos)*100) : 0;
-
-  // Edades de cartera
-  let e0  = lista.filter(c=>c.diasMora<=30).reduce((s,c)=>s+c.deuda,0);
-  let e31 = lista.filter(c=>c.diasMora>30&&c.diasMora<=60).reduce((s,c)=>s+c.deuda,0);
-  let e61 = lista.filter(c=>c.diasMora>60&&c.diasMora<=90).reduce((s,c)=>s+c.deuda,0);
-  let e91 = lista.filter(c=>c.diasMora>90).reduce((s,c)=>s+c.deuda,0);
-  let eMax= Math.max(e0,e31,e61,e91,1);
-
-  body.innerHTML = `
-    <div class="cartera-kpis">
-      <div class="kpi-card green"><div class="kpi-label">Cartera total</div><div class="kpi-value" style="font-size:1.2rem">${recaudoMoney(totalCartera)}</div></div>
-      <div class="kpi-card red" style="--c:#e11d48"><div class="kpi-label">Cartera vencida</div><div class="kpi-value" style="font-size:1.2rem;color:#f87171">${recaudoMoney(carteraVencida)}</div></div>
-      <div class="kpi-card orange"><div class="kpi-label">Por vencer</div><div class="kpi-value" style="font-size:1.2rem">${recaudoMoney(cartVencer)}</div></div>
-      <div class="kpi-card blue"><div class="kpi-label">% Recuperación</div><div class="kpi-value" style="font-size:1.2rem">${pctRecuperacion}%</div></div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+ 
+  // ========== DATOS DE TIBERIO ==========
+  let tiberioNombre = "MARKET DEL RIO - TIBERIO";
+  let tiberioData = lista.find(c => c.nombre === tiberioNombre);
+ 
+  // Leer historial de pagos de Tiberio
+  let pagosTiberio = [];
+  try {
+    pagosTiberio = JSON.parse(localStorage.getItem('cartera_pagos_historial') || '[]');
+    pagosTiberio = pagosTiberio.filter(p => p.cliente === tiberioNombre);
+  } catch(e) { pagosTiberio = []; }
+ 
+  // Leer deudas acumuladas de recaudo de TODOS los días
+  let deudaInfo = recaudoGetDeudaHistorica(tiberioNombre);
+  let deudaTotalTiberio = deudaInfo.deudaCliente;
+  let leDeboTiberio = deudaInfo.deudaMia;
+  let pagadoTiberio = deudaInfo.deudasPagadas;
+  let saldoPendiente = Math.max(deudaTotalTiberio - pagadoTiberio, 0);
+ 
+  // Total pagado desde el historial
+  let totalPagadoHistorial = pagosTiberio.reduce((s,p) => s + (Number(p.monto)||0), 0);
+ 
+  // ========== HTML CUADRO 1: DEUDAS DE TIBERIO ==========
+  let cuadro1Html = '';
+ 
+  if (deudaTotalTiberio <= 0 && leDeboTiberio <= 0 && pagosTiberio.length === 0) {
+    cuadro1Html = `
       <div class="chart-card">
-        <div class="chart-title">📊 Clasificación por edades</div>
-        ${[['0–30 días',e0,'#4ade80'],['31–60 días',e31,'#fbbf24'],['61–90 días',e61,'#f97316'],['90+ días',e91,'#f87171']].map(([lbl,val,color])=>`
-          <div style="margin-bottom:10px;">
-            <div style="display:flex;justify-content:space-between;font-size:12px;color:#cbd5e1;margin-bottom:3px;">
-              <span>${lbl}</span><span style="font-weight:700">${recaudoMoney(val)}</span>
-            </div>
-            <div class="edad-bar"><div class="edad-bar-fill" style="width:${Math.round((val/eMax)*100)}%;background:${color}"></div></div>
-          </div>`).join('')}
+        <div class="chart-title">📋 Deudas — ${tiberioNombre}</div>
+        <div style="padding:30px;text-align:center;">
+          <div style="font-size:40px;margin-bottom:12px;">✅</div>
+          <div style="color:#4ade80;font-size:16px;font-weight:700;margin-bottom:6px;">Sin deudas pendientes</div>
+          <div style="color:#94a3b8;font-size:13px;">Este cliente está al día con todos sus pagos.</div>
+        </div>
       </div>
+    `;
+  } else {
+    cuadro1Html = `
       <div class="chart-card">
-        <div class="chart-title">🏆 Top 5 deudores</div>
-        <div class="top-list">
-          ${lista.slice(0,5).map((c,i)=>`
-            <div class="top-item">
-              <div class="top-rank ${i===0?'gold':''}">${i+1}</div>
-              <div class="top-name">${c.nombre}</div>
-              <div class="top-val">${recaudoMoney(c.deuda)}</div>
-            </div>`).join('')}
+        <div class="chart-title">📋 Deudas — ${tiberioNombre}</div>
+ 
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px;">
+          <div style="background:rgba(220,38,38,0.12);border:1px solid rgba(220,38,38,0.25);border-radius:10px;padding:12px;text-align:center;">
+            <div style="font-size:11px;color:#fca5a5;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:4px;">Me debe</div>
+            <div style="font-size:20px;font-weight:800;color:#f87171;">${recaudoMoney(deudaTotalTiberio)}</div>
+          </div>
+          <div style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);border-radius:10px;padding:12px;text-align:center;">
+            <div style="font-size:11px;color:#86efac;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:4px;">Ya pagó</div>
+            <div style="font-size:20px;font-weight:800;color:#4ade80;">${recaudoMoney(pagadoTiberio + totalPagadoHistorial)}</div>
+          </div>
+          <div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:12px;text-align:center;">
+            <div style="font-size:11px;color:#fcd34d;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:4px;">Saldo pendiente</div>
+            <div style="font-size:20px;font-weight:800;color:#fbbf24;">${recaudoMoney(Math.max(deudaTotalTiberio - pagadoTiberio - totalPagadoHistorial, 0))}</div>
+          </div>
+        </div>
+ 
+        ${leDeboTiberio > 0 ? `
+        <div style="background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:18px;">💙</span>
+          <span style="color:#93c5fd;font-size:13px;font-weight:600;">Tú le debes a este cliente: ${recaudoMoney(leDeboTiberio)}</span>
+        </div>
+        ` : ''}
+ 
+        <div style="font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.06);">Historial de pagos registrados</div>
+ 
+        ${pagosTiberio.length === 0 ? `
+          <div style="padding:16px;text-align:center;color:#64748b;font-size:13px;">No hay pagos registrados aún</div>
+        ` : `
+          <div style="max-height:220px;overflow-y:auto;">
+            ${pagosTiberio.map((p, idx) => `
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:13px;">
+                <div>
+                  <div style="color:#e2e8f0;font-weight:600;">${p.metodo === 'efectivo' ? '💵' : '🏦'} ${p.metodo === 'efectivo' ? 'Efectivo' : 'Transferencia'}</div>
+                  <div style="color:#94a3b8;font-size:11px;">${p.fecha || '—'} ${p.nota ? '· ' + p.nota : ''}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <div style="font-weight:800;color:#4ade80;">+${recaudoMoney(p.monto)}</div>
+                  <button onclick="carteraEliminarPago(${idx})" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;" title="Eliminar pago">✕</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `}
+      </div>
+    `;
+  }
+ 
+  // ========== HTML CUADRO 2: FORMULARIO DE PAGO ==========
+  let cuadro2Html = `
+    <div class="chart-card">
+      <div class="chart-title">💳 Registrar Pago — ${tiberioNombre}</div>
+ 
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">Monto del pago</label>
+        <input id="carteraPagoMonto" type="number" placeholder="Ej: 50000" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:12px 14px;font-size:15px;font-family:var(--font-body);font-weight:700;">
+      </div>
+ 
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Método de pago</label>
+        <div style="display:flex;gap:10px;">
+          <button id="carteraMetodoEfectivo" onclick="carteraSeleccionarMetodo('efectivo')" style="flex:1;padding:14px;border-radius:12px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-size:14px;font-weight:700;cursor:pointer;transition:all 180ms;font-family:var(--font-body);display:flex;flex-direction:column;align-items:center;gap:6px;">
+            <span style="font-size:28px;">💵</span>
+            Efectivo
+          </button>
+          <button id="carteraMetodoTransferencia" onclick="carteraSeleccionarMetodo('transferencia')" style="flex:1;padding:14px;border-radius:12px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-size:14px;font-weight:700;cursor:pointer;transition:all 180ms;font-family:var(--font-body);display:flex;flex-direction:column;align-items:center;gap:6px;">
+            <span style="font-size:28px;">🏦</span>
+            Transferencia
+          </button>
+        </div>
+      </div>
+ 
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">Nota (opcional)</label>
+        <input id="carteraPagoNota" type="text" placeholder="Ej: Abono parcial, Pago completo..." style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:10px 14px;font-size:13px;font-family:var(--font-body);">
+      </div>
+ 
+      <button onclick="carteraRegistrarPagoTiberio()" style="width:100%;padding:14px;background:linear-gradient(135deg,#16a34a,#22c55e);border:none;border-radius:12px;color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-body);transition:all 180ms;letter-spacing:0.02em;">
+        ✅ Registrar Pago
+      </button>
+ 
+      <div style="margin-top:14px;padding:12px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.15);border-radius:10px;">
+        <div style="font-size:11px;color:#60a5fa;font-weight:600;margin-bottom:4px;">ℹ️ ¿Qué pasa al registrar?</div>
+        <div style="font-size:12px;color:#94a3b8;line-height:1.5;">
+          • Se actualiza la deuda en <strong style="color:#e2e8f0;">Recaudo</strong><br>
+          • Si es efectivo, se acredita en la cuenta <strong style="color:#e2e8f0;">Efectivo</strong><br>
+          • Si es transferencia, se acredita en <strong style="color:#e2e8f0;">Bancolombia</strong><br>
+          • Se registra en el historial de pagos de <strong style="color:#e2e8f0;">Cartera</strong>
         </div>
       </div>
     </div>
-
+  `;
+ 
+  // ========== HTML COMPLETO ==========
+  body.innerHTML = `
+    <div class="cartera-kpis">
+      <div class="kpi-card green"><div class="kpi-label">Cartera total</div><div class="kpi-value" style="font-size:1.2rem">${recaudoMoney(totalCartera)}</div></div>
+      <div class="kpi-card" style="border-left:3px solid #e11d48;"><div class="kpi-label">Cartera vencida</div><div class="kpi-value" style="font-size:1.2rem;color:#f87171">${recaudoMoney(carteraVencida)}</div></div>
+      <div class="kpi-card orange"><div class="kpi-label">Por vencer</div><div class="kpi-value" style="font-size:1.2rem">${recaudoMoney(cartVencer)}</div></div>
+      <div class="kpi-card blue"><div class="kpi-label">% Recuperación</div><div class="kpi-value" style="font-size:1.2rem">${pctRecuperacion}%</div></div>
+    </div>
+ 
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+      ${cuadro1Html}
+      ${cuadro2Html}
+    </div>
+ 
     <div class="cartera-filtros">
-      <input type="text" placeholder="🔍 Buscar cliente..." oninput="renderCartera(document.getElementById('filtroMora').value, this.value)" style="min-width:200px">
-      <select id="filtroMora" onchange="renderCartera(this.value, '')">
-        <option value="todos">Todos los días</option>
-        <option value="0-30">0–30 días</option>
-        <option value="31-60">31–60 días</option>
-        <option value="61+">Más de 60 días</option>
+      <input type="text" placeholder="🔍 Buscar cliente..." value="${filtroNombre}" oninput="renderCartera(document.getElementById('filtroMoraCartera').value, this.value)" style="min-width:200px">
+      <select id="filtroMoraCartera" onchange="renderCartera(this.value, '')">
+        <option value="todos" ${filtroMora==='todos'?'selected':''}>Todos los días</option>
+        <option value="0-30" ${filtroMora==='0-30'?'selected':''}>0–30 días</option>
+        <option value="31-60" ${filtroMora==='31-60'?'selected':''}>31–60 días</option>
+        <option value="61+" ${filtroMora==='61+'?'selected':''}>Más de 60 días</option>
       </select>
     </div>
-
+ 
     <div class="cartera-table-wrap">
       <table class="cartera-table">
         <thead>
@@ -3745,7 +3855,7 @@ async function renderCartera(filtroMora='todos', filtroNombre='') {
           </tr>
         </thead>
         <tbody>
-          ${lista.map(c=>`
+          ${listaFiltrada.map(c => `
             <tr onclick="carteraVerPerfil('${c.nombre.replace(/'/g,"\\'")}')">
               <td style="font-weight:700">${c.nombre}</td>
               <td style="font-weight:800;color:white">${recaudoMoney(c.deuda)}</td>
@@ -3755,10 +3865,194 @@ async function renderCartera(filtroMora='todos', filtroNombre='') {
               <td><span class="ranking-badge ranking-${c.ranking}">${c.ranking==='bueno'?'✅ Buen pagador':c.ranking==='ocasional'?'⚠️ Ocasional':'🔴 Crítico'}</span></td>
               <td><button class="btn-transferir" style="padding:5px 12px;font-size:12px" onclick="event.stopPropagation();carteraVerPerfil('${c.nombre.replace(/'/g,"\\'")}')">Ver perfil</button></td>
             </tr>`).join('')}
+          ${listaFiltrada.length === 0 ? '<tr><td colspan="7" style="text-align:center;padding:30px;color:#64748b;">Sin clientes con deuda pendiente</td></tr>' : ''}
         </tbody>
       </table>
     </div>
   `;
+ 
+  // Restaurar método seleccionado si hay alguno guardado en sesión
+  window._carteraMetodoSeleccionado = window._carteraMetodoSeleccionado || '';
+  if (window._carteraMetodoSeleccionado) {
+    carteraSeleccionarMetodo(window._carteraMetodoSeleccionado);
+  }
+}
+ 
+// ===== SELECCIONAR MÉTODO DE PAGO =====
+function carteraSeleccionarMetodo(metodo) {
+  window._carteraMetodoSeleccionado = metodo;
+ 
+  let btnEf = document.getElementById('carteraMetodoEfectivo');
+  let btnTr = document.getElementById('carteraMetodoTransferencia');
+  if (!btnEf || !btnTr) return;
+ 
+  // Reset ambos
+  btnEf.style.border = '2px solid rgba(255,255,255,0.10)';
+  btnEf.style.background = 'rgba(255,255,255,0.04)';
+  btnTr.style.border = '2px solid rgba(255,255,255,0.10)';
+  btnTr.style.background = 'rgba(255,255,255,0.04)';
+ 
+  if (metodo === 'efectivo') {
+    btnEf.style.border = '2px solid #16a34a';
+    btnEf.style.background = 'rgba(22,163,74,0.15)';
+  } else {
+    btnTr.style.border = '2px solid #2563eb';
+    btnTr.style.background = 'rgba(37,99,235,0.15)';
+  }
+}
+ 
+// ===== REGISTRAR PAGO DE TIBERIO =====
+function carteraRegistrarPagoTiberio() {
+  let tiberioNombre = "MARKET DEL RIO - TIBERIO";
+  let montoInput = document.getElementById('carteraPagoMonto');
+  let notaInput = document.getElementById('carteraPagoNota');
+  let monto = Number(montoInput ? montoInput.value : 0) || 0;
+  let nota = notaInput ? notaInput.value.trim() : '';
+  let metodo = window._carteraMetodoSeleccionado || '';
+ 
+  if (monto <= 0) { alert('Ingresa un monto válido mayor a 0'); return; }
+  if (!metodo) { alert('Selecciona un método de pago (Efectivo o Transferencia)'); return; }
+ 
+  let hoy = new Date().toLocaleDateString('es-CO', { day:'numeric', month:'long', year:'numeric' });
+ 
+  // 1. GUARDAR EN HISTORIAL DE PAGOS DE CARTERA
+  let historial = [];
+  try { historial = JSON.parse(localStorage.getItem('cartera_pagos_historial') || '[]'); } catch(e) { historial = []; }
+  historial.push({
+    cliente: tiberioNombre,
+    monto: monto,
+    metodo: metodo,
+    nota: nota,
+    fecha: hoy
+  });
+  localStorage.setItem('cartera_pagos_historial', JSON.stringify(historial));
+ 
+  // 2. ACTUALIZAR DEUDAS EN CARTERA_DEUDAS (permanente)
+  let carteraDeudas = {};
+  try { carteraDeudas = JSON.parse(localStorage.getItem('cartera_deudas') || '{}'); } catch(e) {}
+  if (!carteraDeudas[tiberioNombre]) carteraDeudas[tiberioNombre] = {};
+  let pagosPrevios = Number(carteraDeudas[tiberioNombre].deudasPagadas) || 0;
+  carteraDeudas[tiberioNombre].deudasPagadas = pagosPrevios + monto;
+  carteraDeudas[tiberioNombre].fechaPago = hoy;
+  localStorage.setItem('cartera_deudas', JSON.stringify(carteraDeudas));
+ 
+  // 3. ACTUALIZAR EN RECAUDO del día actual
+  let estadoRecaudo = recaudoLeerEstado();
+  if (!estadoRecaudo[tiberioNombre]) estadoRecaudo[tiberioNombre] = {};
+  let dpPrevio = Number(estadoRecaudo[tiberioNombre].deudasPagadas) || 0;
+  estadoRecaudo[tiberioNombre].deudasPagadas = dpPrevio + monto;
+  estadoRecaudo[tiberioNombre].fechaPago = hoy;
+ 
+  // Si es transferencia, sumar a bancolombia en recaudo
+  if (metodo === 'transferencia') {
+    let bancoPrev = Number(estadoRecaudo[tiberioNombre].bancolombia) || 0;
+    estadoRecaudo[tiberioNombre].bancolombia = bancoPrev + monto;
+  }
+ 
+  recaudoGuardarEstado(estadoRecaudo);
+ 
+  // 4. ACREDITAR EN CUENTAS (módulo contabilidad)
+  if (metodo === 'efectivo') {
+    // Buscar cuenta tipo EFECTIVO
+    let idxEfectivo = cuentasMemoria.findIndex(c => c.tipo === 'EFECTIVO');
+    if (idxEfectivo >= 0) {
+      cuentasMemoria[idxEfectivo].saldo += monto;
+      cuentasGuardar();
+    }
+  } else if (metodo === 'transferencia') {
+    // Buscar cuenta Bancolombia o tipo CUENTA CORRIENTE
+    let idxBanco = cuentasMemoria.findIndex(c =>
+      c.nombre.toUpperCase().includes('BANCOLOMBIA') ||
+      c.tipo === 'CUENTA CORRIENTE'
+    );
+    if (idxBanco >= 0) {
+      cuentasMemoria[idxBanco].saldo += monto;
+      cuentasGuardar();
+    }
+  }
+ 
+  // 5. REGISTRAR EN MOVIMIENTOS CONTABLES
+  movimientosContables.push({
+    tipo: 'ingreso',
+    monto: monto,
+    cuenta: metodo === 'efectivo' ? 'Efectivo' : 'CUENTA BANCOLOMBIA',
+    descripcion: 'Pago deuda ' + tiberioNombre + (nota ? ' - ' + nota : ''),
+    fecha: new Date().toISOString()
+  });
+ 
+  // Limpiar el formulario
+  window._carteraMetodoSeleccionado = '';
+ 
+  // Refrescar la vista
+  renderCartera();
+}
+ 
+// ===== ELIMINAR PAGO DEL HISTORIAL =====
+function carteraEliminarPago(idx) {
+  let tiberioNombre = "MARKET DEL RIO - TIBERIO";
+ 
+  let historial = [];
+  try { historial = JSON.parse(localStorage.getItem('cartera_pagos_historial') || '[]'); } catch(e) { historial = []; }
+ 
+  // Encontrar el pago que corresponde a Tiberio por índice
+  let pagosTiberio = [];
+  let indicesGlobal = [];
+  historial.forEach((p, gi) => {
+    if (p.cliente === tiberioNombre) {
+      pagosTiberio.push(p);
+      indicesGlobal.push(gi);
+    }
+  });
+ 
+  if (idx < 0 || idx >= pagosTiberio.length) return;
+  if (!confirm('¿Eliminar este pago de ' + recaudoMoney(pagosTiberio[idx].monto) + '?')) return;
+ 
+  let pago = pagosTiberio[idx];
+  let globalIdx = indicesGlobal[idx];
+ 
+  // Revertir del historial
+  historial.splice(globalIdx, 1);
+  localStorage.setItem('cartera_pagos_historial', JSON.stringify(historial));
+ 
+  // Revertir de cartera_deudas
+  let carteraDeudas = {};
+  try { carteraDeudas = JSON.parse(localStorage.getItem('cartera_deudas') || '{}'); } catch(e) {}
+  if (carteraDeudas[tiberioNombre]) {
+    carteraDeudas[tiberioNombre].deudasPagadas = Math.max(0, (Number(carteraDeudas[tiberioNombre].deudasPagadas)||0) - (Number(pago.monto)||0));
+    localStorage.setItem('cartera_deudas', JSON.stringify(carteraDeudas));
+  }
+ 
+  // Revertir del recaudo
+  let estadoRecaudo = recaudoLeerEstado();
+  if (estadoRecaudo[tiberioNombre]) {
+    estadoRecaudo[tiberioNombre].deudasPagadas = Math.max(0, (Number(estadoRecaudo[tiberioNombre].deudasPagadas)||0) - (Number(pago.monto)||0));
+ 
+    if (pago.metodo === 'transferencia') {
+      estadoRecaudo[tiberioNombre].bancolombia = Math.max(0, (Number(estadoRecaudo[tiberioNombre].bancolombia)||0) - (Number(pago.monto)||0));
+    }
+ 
+    recaudoGuardarEstado(estadoRecaudo);
+  }
+ 
+  // Revertir de cuentas
+  if (pago.metodo === 'efectivo') {
+    let idxEf = cuentasMemoria.findIndex(c => c.tipo === 'EFECTIVO');
+    if (idxEf >= 0) {
+      cuentasMemoria[idxEf].saldo -= (Number(pago.monto)||0);
+      cuentasGuardar();
+    }
+  } else if (pago.metodo === 'transferencia') {
+    let idxBa = cuentasMemoria.findIndex(c =>
+      c.nombre.toUpperCase().includes('BANCOLOMBIA') ||
+      c.tipo === 'CUENTA CORRIENTE'
+    );
+    if (idxBa >= 0) {
+      cuentasMemoria[idxBa].saldo -= (Number(pago.monto)||0);
+      cuentasGuardar();
+    }
+  }
+ 
+  renderCartera();
 }
 
 async function carteraVerPerfil(nombre) {
