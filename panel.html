@@ -8554,6 +8554,568 @@ async function historialExportarExcel(){
   console.log('✅ Parche Contabilidad: Categorías + Ingresos + Dashboard activos');
  
 })();
+(function(){
+ 
+  // =====================================================
+  // 1. MARQUESINA DE OBSERVACIONES
+  // =====================================================
+ 
+  // CSS
+  var style = document.createElement('style');
+  style.textContent = `
+    #obsMarquee {
+      position: relative;
+      width: 100%;
+      overflow: hidden;
+      background: linear-gradient(90deg, #fbbf24, #f59e0b, #d97706);
+      border-radius: 10px;
+      margin-bottom: 10px;
+      min-height: 0;
+      transition: min-height 0.3s;
+    }
+    #obsMarquee.visible {
+      min-height: 36px;
+    }
+    #obsTrack {
+      display: inline-flex;
+      gap: 60px;
+      white-space: nowrap;
+      animation: obsScroll 30s linear infinite;
+      padding: 8px 20px;
+      align-items: center;
+    }
+    @keyframes obsScroll {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-100%); }
+    }
+    #obsTrack:hover {
+      animation-play-state: paused;
+    }
+    .obs-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #1a1a1a;
+      font-family: var(--font-body, Arial);
+    }
+    .obs-item .obs-nombre {
+      background: rgba(0,0,0,0.15);
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-weight: 800;
+      font-size: 12px;
+    }
+    .obs-item .obs-texto {
+      font-weight: 600;
+    }
+    .obs-item .obs-del {
+      background: rgba(0,0,0,0.12);
+      border: none;
+      color: #7c2d12;
+      cursor: pointer;
+      font-size: 14px;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 180ms;
+    }
+    .obs-item .obs-del:hover {
+      background: rgba(220,38,38,0.3);
+      color: white;
+    }
+  `;
+  document.head.appendChild(style);
+ 
+  // Crear el contenedor de la marquesina
+  function crearMarquee(){
+    if(document.getElementById('obsMarquee')) return;
+ 
+    var main = document.querySelector('.main');
+    if(!main) return;
+ 
+    var searchInput = main.querySelector('input[placeholder*="Buscar"]');
+    if(!searchInput) return;
+ 
+    var marquee = document.createElement('div');
+    marquee.id = 'obsMarquee';
+    marquee.innerHTML = '<div id="obsTrack"></div>';
+ 
+    searchInput.parentNode.insertBefore(marquee, searchInput);
+  }
+ 
+  // Actualizar el contenido de la marquesina
+  function actualizarMarquee(){
+    crearMarquee();
+ 
+    var track = document.getElementById('obsTrack');
+    var marquee = document.getElementById('obsMarquee');
+    if(!track || !marquee) return;
+ 
+    // Leer observaciones del recaudo del día
+    var obsKey = 'obs_marquee';
+    var obs = [];
+    try { obs = JSON.parse(localStorage.getItem(obsKey) || '[]'); } catch(e){ obs = []; }
+ 
+    // También leer del estado del recaudo actual
+    try {
+      var fechaKey = 'recaudo_' + ((typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0]);
+      var estado = JSON.parse(localStorage.getItem(fechaKey) || '{}');
+      Object.keys(estado).forEach(function(nombre){
+        if(nombre.startsWith('__')) return;
+        var o = estado[nombre];
+        if(o && o.observacion && o.observacion.trim()){
+          var yaExiste = obs.some(function(x){ return x.nombre === nombre && x.texto === o.observacion; });
+          if(!yaExiste){
+            obs.push({
+              nombre: nombre,
+              texto: o.observacion.trim(),
+              fecha: (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0]
+            });
+          }
+        }
+      });
+    } catch(e){}
+ 
+    // Guardar
+    localStorage.setItem(obsKey, JSON.stringify(obs));
+ 
+    if(obs.length === 0){
+      marquee.classList.remove('visible');
+      track.innerHTML = '';
+      return;
+    }
+ 
+    marquee.classList.add('visible');
+ 
+    // Duplicar para loop continuo
+    var items = obs.concat(obs);
+    track.innerHTML = items.map(function(o, i){
+      var realIdx = i % obs.length;
+      return '<span class="obs-item">'+
+        '<span class="obs-nombre">'+o.nombre+'</span>'+
+        '<span class="obs-texto">'+o.texto+'</span>'+
+        '<button class="obs-del" onclick="event.stopPropagation();eliminarObsMarquee('+realIdx+')" title="Eliminar">\u00d7</button>'+
+      '</span>';
+    }).join('');
+ 
+    // Ajustar velocidad según cantidad
+    var duracion = Math.max(15, obs.length * 8);
+    track.style.animationDuration = duracion + 's';
+  }
+ 
+  window.eliminarObsMarquee = function(idx){
+    var obsKey = 'obs_marquee';
+    var obs = [];
+    try { obs = JSON.parse(localStorage.getItem(obsKey) || '[]'); } catch(e){ obs = []; }
+ 
+    if(idx >= 0 && idx < obs.length){
+      // También limpiar de recaudo si existe
+      var o = obs[idx];
+      try {
+        var fechaKey = 'recaudo_' + ((typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0]);
+        var estado = JSON.parse(localStorage.getItem(fechaKey) || '{}');
+        if(estado[o.nombre] && estado[o.nombre].observacion === o.texto){
+          estado[o.nombre].observacion = '';
+          localStorage.setItem(fechaKey, JSON.stringify(estado));
+        }
+      } catch(e){}
+ 
+      obs.splice(idx, 1);
+      localStorage.setItem(obsKey, JSON.stringify(obs));
+    }
+ 
+    actualizarMarquee();
+  };
+ 
+  // Interceptar renderRecaudo para capturar observaciones nuevas
+  var _origRR2 = window.renderRecaudo;
+  window.renderRecaudo = async function(){
+    if(typeof _origRR2 === 'function') await _origRR2();
+    // Después de renderizar, actualizar marquesina
+    setTimeout(actualizarMarquee, 200);
+  };
+ 
+  // Interceptar recaudoGuardarFila para detectar observaciones nuevas
+  var _origGF = window.recaudoGuardarFila;
+  window.recaudoGuardarFila = function(nombre){
+    if(typeof _origGF === 'function') _origGF(nombre);
+ 
+    // Verificar si hay observación nueva
+    var obsInput = document.getElementById('rec_obs_' + nombre);
+    if(obsInput && obsInput.value.trim()){
+      var obsKey = 'obs_marquee';
+      var obs = [];
+      try { obs = JSON.parse(localStorage.getItem(obsKey) || '[]'); } catch(e){ obs = []; }
+ 
+      var texto = obsInput.value.trim();
+      var yaExiste = obs.some(function(x){ return x.nombre === nombre && x.texto === texto; });
+ 
+      if(!yaExiste){
+        // Quitar observación anterior de este cliente
+        obs = obs.filter(function(x){ return x.nombre !== nombre; });
+        obs.push({
+          nombre: nombre,
+          texto: texto,
+          fecha: (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0]
+        });
+        localStorage.setItem(obsKey, JSON.stringify(obs));
+        actualizarMarquee();
+      }
+    }
+  };
+ 
+  // Inicializar marquesina al cargar
+  setTimeout(actualizarMarquee, 1000);
+  // Actualizar cada 30 segundos
+  setInterval(actualizarMarquee, 30000);
+ 
+ 
+  // =====================================================
+  // 2. OPERACIONES ESPECIALES DE CAJA
+  // =====================================================
+  // Se inyecta en la pestaña Caja de Contabilidad
+ 
+  var _origDibujarConta = window._dibujarConta;
+  if(typeof _origDibujarConta === 'function'){
+    window._dibujarConta = function(tab, ingresos){
+      _origDibujarConta(tab, ingresos);
+ 
+      if(tab === 'caja'){
+        setTimeout(function(){
+          _inyectarOperacionesCaja();
+        }, 100);
+      }
+    };
+  }
+ 
+  // También interceptar renderConta para inyectar en caja
+  var _prevRC2 = window.renderConta;
+  var _lastRCTab = '';
+  window.renderConta = function(tab){
+    _lastRCTab = tab;
+    if(typeof _prevRC2 === 'function') _prevRC2(tab);
+ 
+    if(tab === 'caja'){
+      setTimeout(function(){
+        _inyectarOperacionesCaja();
+      }, 150);
+    }
+  };
+ 
+  function _inyectarOperacionesCaja(){
+    var body = document.getElementById('contaBody');
+    if(!body || document.getElementById('opsCajaSection')) return;
+ 
+    // Buscar dónde insertar (después de los formularios de ingreso/egreso)
+    var chartsGrids = body.querySelectorAll('.charts-grid');
+    var insertPoint = chartsGrids.length >= 2 ? chartsGrids[1] : null;
+ 
+    if(!insertPoint) return;
+ 
+    var cuentasOpts = '';
+    if(Array.isArray(window.cuentasMemoria)){
+      window.cuentasMemoria.forEach(function(c, i){
+        var emoji = (typeof tipoEmoji === 'function') ? tipoEmoji(c.tipo) : '🏦';
+        cuentasOpts += '<option value="'+i+'">'+emoji+' '+c.nombre+' — $'+(Number(c.saldo)||0).toLocaleString('es-CO')+'</option>';
+      });
+    }
+ 
+    var section = document.createElement('div');
+    section.id = 'opsCajaSection';
+    section.innerHTML =
+      '<p class="section-title">🔄 Operaciones Especiales</p>'+
+      '<div class="charts-grid">'+
+ 
+        // VUELTA DE PAGO DE DEUDA
+        '<div class="chart-card">'+
+          '<div class="chart-title">💸 Vuelta por pago de deuda</div>'+
+          '<div style="font-size:12px;color:#94a3b8;margin-bottom:12px;line-height:1.5;">'+
+            'Cuando un cliente te paga una deuda de días anteriores y tienes que sacarle vuelta de la caja del negocio.'+
+          '</div>'+
+          '<div class="gasto-row">'+
+            '<input id="vueltaCliente" placeholder="Cliente (ej: JAMES)">'+
+            '<input id="vueltaMonto" type="number" placeholder="Vuelta a dar">'+
+          '</div>'+
+          '<div class="gasto-row" style="margin-top:6px;">'+
+            '<select id="vueltaOrigen">'+
+              '<option value="caja">💵 Sacar de Caja (efectivo)</option>'+
+              cuentasOpts+
+            '</select>'+
+            '<input id="vueltaNota" placeholder="Nota (ej: Vuelta de $50.000)">'+
+            '<button class="btn-add-gasto" style="background:#d97706;" onclick="cajaRegistrarVuelta()">Dar vuelta</button>'+
+          '</div>'+
+          '<div style="font-size:11px;color:#64748b;margin-top:8px;">'+
+            '→ Resta del efectivo de caja<br>'+
+            '→ Se registra como egreso en caja<br>'+
+            '→ Se descuenta de la cuenta seleccionada'+
+          '</div>'+
+        '</div>'+
+ 
+        // CAMBIO DE DINERO
+        '<div class="chart-card">'+
+          '<div class="chart-title">🔄 Cambio de dinero</div>'+
+          '<div style="font-size:12px;color:#94a3b8;margin-bottom:12px;line-height:1.5;">'+
+            'Cuando alguien te paga por transferencia y le das efectivo (o al revés). No es ingreso ni gasto, es un intercambio.'+
+          '</div>'+
+          '<div style="display:flex;gap:8px;margin-bottom:10px;">'+
+            '<button id="cambioTipoA" onclick="cambioSelTipo(\'trans_a_efec\')" style="flex:1;padding:12px;border-radius:10px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-weight:700;cursor:pointer;font-size:12px;font-family:var(--font-body);">'+
+              '<div style="font-size:18px;margin-bottom:3px;">🏦→💵</div>'+
+              'Me transfieren<br>Doy efectivo'+
+            '</button>'+
+            '<button id="cambioTipoB" onclick="cambioSelTipo(\'efec_a_trans\')" style="flex:1;padding:12px;border-radius:10px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-weight:700;cursor:pointer;font-size:12px;font-family:var(--font-body);">'+
+              '<div style="font-size:18px;margin-bottom:3px;">💵→🏦</div>'+
+              'Me dan efectivo<br>Transfiero yo'+
+            '</button>'+
+          '</div>'+
+          '<div class="gasto-row">'+
+            '<input id="cambioMonto" type="number" placeholder="Monto del cambio">'+
+            '<input id="cambioPersona" placeholder="Persona">'+
+          '</div>'+
+          '<div id="cambioCuentaBox" class="gasto-row" style="margin-top:6px;display:none;">'+
+            '<select id="cambioCuenta" style="flex:1;">'+
+              cuentasOpts+
+            '</select>'+
+          '</div>'+
+          '<div class="gasto-row" style="margin-top:6px;">'+
+            '<button class="btn-add-gasto" style="background:#2563eb;flex:1;" onclick="cajaRegistrarCambio()">✓ Registrar cambio</button>'+
+          '</div>'+
+          '<div style="font-size:11px;color:#64748b;margin-top:8px;">'+
+            '→ Suma en una cuenta, resta en otra<br>'+
+            '→ Balance total no cambia<br>'+
+            '→ Queda registrado como transferencia interna'+
+          '</div>'+
+        '</div>'+
+ 
+      '</div>';
+ 
+    insertPoint.parentNode.insertBefore(section, insertPoint.nextSibling);
+  }
+ 
+  window._cambioTipo = '';
+ 
+  window.cambioSelTipo = function(tipo){
+    window._cambioTipo = tipo;
+    var btnA = document.getElementById('cambioTipoA');
+    var btnB = document.getElementById('cambioTipoB');
+    var cBox = document.getElementById('cambioCuentaBox');
+ 
+    if(btnA && btnB){
+      btnA.style.border = '2px solid rgba(255,255,255,0.10)';
+      btnA.style.background = 'rgba(255,255,255,0.04)';
+      btnB.style.border = '2px solid rgba(255,255,255,0.10)';
+      btnB.style.background = 'rgba(255,255,255,0.04)';
+ 
+      if(tipo === 'trans_a_efec'){
+        btnA.style.border = '2px solid #2563eb';
+        btnA.style.background = 'rgba(37,99,235,0.15)';
+      } else {
+        btnB.style.border = '2px solid #16a34a';
+        btnB.style.background = 'rgba(22,163,74,0.15)';
+      }
+    }
+    if(cBox) cBox.style.display = 'flex';
+  };
+ 
+  // =====================================================
+  // VUELTA POR PAGO DE DEUDA
+  // =====================================================
+ 
+  window.cajaRegistrarVuelta = function(){
+    var cliente = (document.getElementById('vueltaCliente').value||'').trim();
+    var monto = Number(document.getElementById('vueltaMonto').value)||0;
+    var nota = (document.getElementById('vueltaNota').value||'').trim();
+    var origenSel = document.getElementById('vueltaOrigen');
+    var origenVal = origenSel ? origenSel.value : 'caja';
+ 
+    if(!cliente){ alert('Ingresa el nombre del cliente'); return; }
+    if(monto <= 0){ alert('Ingresa el monto de la vuelta'); return; }
+ 
+    var desc = 'Vuelta a ' + cliente + (nota ? ' — ' + nota : '');
+ 
+    if(!confirm('¿Sacar $' + monto.toLocaleString('es-CO') + ' de caja como vuelta para ' + cliente + '?')) return;
+ 
+    // 1. Descontar de cuenta Efectivo (siempre, porque sale de la caja física)
+    var idxEf = -1;
+    if(Array.isArray(window.cuentasMemoria)){
+      idxEf = window.cuentasMemoria.findIndex(function(c){ return c.tipo === 'EFECTIVO'; });
+      if(idxEf >= 0){
+        window.cuentasMemoria[idxEf].saldo -= monto;
+        if(typeof cuentasGuardar === 'function') cuentasGuardar();
+      }
+    }
+ 
+    // 2. Registrar egreso en caja si está abierta
+    if(window._cajaCache && window._cajaCache.sesion && window._cajaCache.sesion.estado === 'abierta'){
+      try {
+        window.db.from("cajas_movimientos").insert({
+          caja_id: window._cajaCache.sesion.id,
+          fecha: (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0],
+          tipo: 'egreso',
+          subtipo: 'vuelta',
+          categoria: 'Vuelta',
+          descripcion: desc,
+          metodo_pago: 'efectivo',
+          valor: monto,
+          saldo_acumulado: 0,
+          usuario: (typeof cajaUsuarioActual === 'function') ? cajaUsuarioActual() : 'Admin',
+          origen: 'caja'
+        });
+      } catch(e){ console.error(e); }
+    }
+ 
+    // 3. Registrar en movimientos contables (NO como gasto, sino como egreso operativo)
+    if(!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
+    window.movimientosContables.push({
+      tipo: 'gasto',
+      monto: monto,
+      cuenta: 'Efectivo',
+      descripcion: desc,
+      categoria: 'Vuelta',
+      fecha: new Date().toISOString()
+    });
+ 
+    // Limpiar
+    document.getElementById('vueltaCliente').value = '';
+    document.getElementById('vueltaMonto').value = '';
+    document.getElementById('vueltaNota').value = '';
+ 
+    // Refrescar caja
+    if(typeof cajaCargarResumenDia === 'function'){
+      cajaCargarResumenDia().then(function(){
+        if(typeof renderConta === 'function') renderConta('caja');
+      });
+    }
+ 
+    alert('✅ Vuelta de $' + monto.toLocaleString('es-CO') + ' registrada para ' + cliente);
+  };
+ 
+  // =====================================================
+  // CAMBIO DE DINERO
+  // =====================================================
+ 
+  window.cajaRegistrarCambio = function(){
+    var tipo = window._cambioTipo;
+    var monto = Number(document.getElementById('cambioMonto').value)||0;
+    var persona = (document.getElementById('cambioPersona').value||'').trim();
+    var cuentaSel = document.getElementById('cambioCuenta');
+    var cuentaIdx = cuentaSel ? Number(cuentaSel.value) : -1;
+ 
+    if(!tipo){ alert('Selecciona el tipo de cambio'); return; }
+    if(monto <= 0){ alert('Ingresa el monto'); return; }
+    if(!persona){ alert('Ingresa el nombre de la persona'); return; }
+    if(cuentaIdx < 0 || !window.cuentasMemoria[cuentaIdx]){ alert('Selecciona la cuenta bancaria'); return; }
+ 
+    var nombreCuenta = window.cuentasMemoria[cuentaIdx].nombre;
+    var idxEfectivo = window.cuentasMemoria.findIndex(function(c){ return c.tipo === 'EFECTIVO'; });
+ 
+    if(tipo === 'trans_a_efec'){
+      // Me transfieren → doy efectivo
+      // + a la cuenta bancaria (recibí transferencia)
+      // - del efectivo (entregué cash)
+      var desc = 'Cambio: ' + persona + ' transfirió a ' + nombreCuenta + ', se le dio efectivo';
+ 
+      if(!confirm('Cambio de $' + monto.toLocaleString('es-CO') + ':\n\n' +
+        '📥 +$' + monto.toLocaleString('es-CO') + ' a ' + nombreCuenta + ' (transferencia recibida)\n' +
+        '📤 -$' + monto.toLocaleString('es-CO') + ' de Efectivo (cash entregado)\n\n' +
+        '¿Confirmar?')) return;
+ 
+      // Sumar a cuenta bancaria
+      window.cuentasMemoria[cuentaIdx].saldo += monto;
+      // Restar de efectivo
+      if(idxEfectivo >= 0) window.cuentasMemoria[idxEfectivo].saldo -= monto;
+      if(typeof cuentasGuardar === 'function') cuentasGuardar();
+ 
+      // Registrar como transferencia interna
+      if(!Array.isArray(window.transferenciasMem)) window.transferenciasMem = [];
+      window.transferenciasMem.push({
+        origen: 'Efectivo',
+        destino: nombreCuenta,
+        monto: monto,
+        fecha: new Date().toLocaleDateString('es-CO',{day:'numeric',month:'long',year:'numeric'})
+      });
+      localStorage.setItem('transferenciasMem', JSON.stringify(window.transferenciasMem));
+ 
+      // Registrar egreso de caja (sale efectivo)
+      if(window._cajaCache && window._cajaCache.sesion && window._cajaCache.sesion.estado === 'abierta'){
+        try {
+          window.db.from("cajas_movimientos").insert({
+            caja_id: window._cajaCache.sesion.id,
+            fecha: (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0],
+            tipo: 'egreso', subtipo: 'cambio', categoria: 'Cambio dinero',
+            descripcion: desc, metodo_pago: 'efectivo',
+            valor: monto, saldo_acumulado: 0,
+            usuario: (typeof cajaUsuarioActual === 'function') ? cajaUsuarioActual() : 'Admin',
+            origen: 'caja'
+          });
+        } catch(e){}
+      }
+ 
+    } else {
+      // Me dan efectivo → yo transfiero
+      // + al efectivo (recibí cash)
+      // - de la cuenta bancaria (hice transferencia)
+      var desc = 'Cambio: ' + persona + ' dio efectivo, se le transfirió por ' + nombreCuenta;
+ 
+      if(!confirm('Cambio de $' + monto.toLocaleString('es-CO') + ':\n\n' +
+        '📥 +$' + monto.toLocaleString('es-CO') + ' a Efectivo (cash recibido)\n' +
+        '📤 -$' + monto.toLocaleString('es-CO') + ' de ' + nombreCuenta + ' (transferencia enviada)\n\n' +
+        '¿Confirmar?')) return;
+ 
+      // Sumar a efectivo
+      if(idxEfectivo >= 0) window.cuentasMemoria[idxEfectivo].saldo += monto;
+      // Restar de cuenta bancaria
+      window.cuentasMemoria[cuentaIdx].saldo -= monto;
+      if(typeof cuentasGuardar === 'function') cuentasGuardar();
+ 
+      // Registrar como transferencia interna
+      if(!Array.isArray(window.transferenciasMem)) window.transferenciasMem = [];
+      window.transferenciasMem.push({
+        origen: nombreCuenta,
+        destino: 'Efectivo',
+        monto: monto,
+        fecha: new Date().toLocaleDateString('es-CO',{day:'numeric',month:'long',year:'numeric'})
+      });
+      localStorage.setItem('transferenciasMem', JSON.stringify(window.transferenciasMem));
+ 
+      // Registrar ingreso de caja (entra efectivo)
+      if(window._cajaCache && window._cajaCache.sesion && window._cajaCache.sesion.estado === 'abierta'){
+        try {
+          window.db.from("cajas_movimientos").insert({
+            caja_id: window._cajaCache.sesion.id,
+            fecha: (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0],
+            tipo: 'ingreso', subtipo: 'cambio', categoria: 'Cambio dinero',
+            descripcion: desc, metodo_pago: 'efectivo',
+            valor: monto, saldo_acumulado: 0,
+            usuario: (typeof cajaUsuarioActual === 'function') ? cajaUsuarioActual() : 'Admin',
+            origen: 'caja'
+          });
+        } catch(e){}
+      }
+    }
+ 
+    // Limpiar
+    document.getElementById('cambioMonto').value = '';
+    document.getElementById('cambioPersona').value = '';
+    window._cambioTipo = '';
+ 
+    // Refrescar
+    if(typeof cajaCargarResumenDia === 'function'){
+      cajaCargarResumenDia().then(function(){
+        if(typeof renderConta === 'function') renderConta('caja');
+      });
+    }
+ 
+    alert('✅ Cambio de dinero registrado con ' + persona);
+  };
+ 
+  console.log('✅ Parche Marquesina + Operaciones Caja activo');
+ 
+})();
 </script>
 <!-- MODAL GLOBAL CONTABILIDAD -->
 <div id="mcOverlayGlobal" style="display:none;">
