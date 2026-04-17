@@ -9116,6 +9116,545 @@ async function historialExportarExcel(){
   console.log('✅ Parche Marquesina + Operaciones Caja activo');
  
 })();
+(function(){
+ 
+// =====================================================
+// 1. MARQUESINA — SIN DUPLICADOS + RECORRIDO COMPLETO
+// =====================================================
+ 
+// Sobreescribir la actualización de marquesina
+var _marqueeInterval = null;
+ 
+function fixMarquee(){
+  var marquee = document.getElementById('obsMarquee');
+  var track = document.getElementById('obsTrack');
+  if(!marquee || !track) return;
+ 
+  var obsKey = 'obs_marquee';
+  var obs = [];
+  try { obs = JSON.parse(localStorage.getItem(obsKey) || '[]'); } catch(e){}
+ 
+  // Deduplicar por nombre de cliente
+  var vistos = {};
+  obs = obs.filter(function(o){
+    if(vistos[o.nombre]) return false;
+    vistos[o.nombre] = true;
+    return true;
+  });
+  localStorage.setItem(obsKey, JSON.stringify(obs));
+ 
+  if(obs.length === 0){
+    marquee.classList.remove('visible');
+    track.innerHTML = '';
+    return;
+  }
+ 
+  marquee.classList.add('visible');
+ 
+  // NO duplicar — usar CSS para loop infinito
+  track.innerHTML = obs.map(function(o, i){
+    return '<span class="obs-item">'+
+      '<span class="obs-nombre">'+o.nombre+'</span>'+
+      '<span class="obs-texto">'+o.texto+'</span>'+
+      '<button class="obs-del" onclick="event.stopPropagation();eliminarObsMarquee('+i+')" title="Eliminar">\u00d7</button>'+
+    '</span>';
+  }).join('');
+ 
+  // Calcular ancho real y ajustar animación
+  var trackW = track.scrollWidth;
+  var containerW = marquee.offsetWidth;
+  var totalDist = trackW + containerW;
+  var speed = 60; // pixels por segundo
+  var dur = totalDist / speed;
+ 
+  track.style.animation = 'none';
+  track.offsetHeight; // force reflow
+  track.style.animation = 'obsScrollFix ' + dur + 's linear infinite';
+}
+ 
+// CSS mejorado para la animación
+var styleM = document.createElement('style');
+styleM.textContent = `
+  @keyframes obsScrollFix {
+    0% { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
+  }
+  #obsTrack {
+    animation: obsScrollFix 25s linear infinite !important;
+  }
+`;
+document.head.appendChild(styleM);
+ 
+// Sobreescribir actualizarMarquee
+if(typeof window.actualizarMarquee === 'undefined'){
+  window.actualizarMarquee = fixMarquee;
+}
+var _oldActMarq = window.actualizarMarquee;
+window.actualizarMarquee = fixMarquee;
+ 
+setTimeout(fixMarquee, 1200);
+setInterval(fixMarquee, 35000);
+ 
+ 
+// =====================================================
+// 2. DRAG & DROP DE CLIENTES
+// =====================================================
+ 
+var dragStyle = document.createElement('style');
+dragStyle.textContent = `
+  .card[draggable="true"] { cursor: grab; transition: transform 0.15s, opacity 0.15s; }
+  .card[draggable="true"]:active { cursor: grabbing; }
+  .card.dragging { opacity: 0.4; transform: scale(0.95); }
+  .card.drag-over { border-top: 3px solid #fbbf24 !important; }
+`;
+document.head.appendChild(dragStyle);
+ 
+function initDragDrop(){
+  var grid = document.getElementById('grid');
+  if(!grid || grid.dataset.dragInit) return;
+  grid.dataset.dragInit = 'true';
+ 
+  grid.addEventListener('dragstart', function(e){
+    var card = e.target.closest('.card');
+    if(!card) return;
+    card.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    var idx = Array.from(grid.children).indexOf(card);
+    e.dataTransfer.setData('text/plain', idx);
+  });
+ 
+  grid.addEventListener('dragend', function(e){
+    var card = e.target.closest('.card');
+    if(card) card.classList.remove('dragging');
+    grid.querySelectorAll('.drag-over').forEach(function(c){ c.classList.remove('drag-over'); });
+  });
+ 
+  grid.addEventListener('dragover', function(e){
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    var card = e.target.closest('.card');
+    grid.querySelectorAll('.drag-over').forEach(function(c){ c.classList.remove('drag-over'); });
+    if(card && !card.classList.contains('dragging')) card.classList.add('drag-over');
+  });
+ 
+  grid.addEventListener('drop', function(e){
+    e.preventDefault();
+    var fromIdx = Number(e.dataTransfer.getData('text/plain'));
+    var toCard = e.target.closest('.card');
+    if(!toCard) return;
+    var toIdx = Array.from(grid.children).indexOf(toCard);
+    if(fromIdx === toIdx) return;
+ 
+    // Reordenar el array de clientes
+    if(Array.isArray(window.clientes) && fromIdx >= 0 && toIdx >= 0 && fromIdx < window.clientes.length && toIdx < window.clientes.length){
+      var item = window.clientes.splice(fromIdx, 1)[0];
+      window.clientes.splice(toIdx, 0, item);
+      localStorage.setItem('clientes', JSON.stringify(window.clientes));
+      if(typeof cargar === 'function') cargar();
+    }
+  });
+}
+ 
+// Hacer las cards draggable después de cada carga
+var _origCargar = window.cargar;
+window.cargar = async function(){
+  if(typeof _origCargar === 'function') await _origCargar();
+  setTimeout(function(){
+    var cards = document.querySelectorAll('#grid .card');
+    cards.forEach(function(c){ c.setAttribute('draggable', 'true'); });
+    initDragDrop();
+  }, 100);
+};
+ 
+ 
+// =====================================================
+// 3. INGRESO EXTRA — SELECTOR DE CUENTA FUNCIONAL
+// =====================================================
+ 
+// El problema es que el select de cuenta no se genera con opciones
+// Lo arreglamos inyectando después del render
+var _prevRC3 = window.renderConta;
+window.renderConta = function(tab){
+  if(typeof _prevRC3 === 'function') _prevRC3(tab);
+ 
+  if(tab === 'resumen'){
+    setTimeout(function(){
+      var selCuenta = document.getElementById('ingresoCuenta');
+      if(selCuenta && selCuenta.options.length === 0){
+        if(Array.isArray(window.cuentasMemoria)){
+          window.cuentasMemoria.forEach(function(c, i){
+            var opt = document.createElement('option');
+            opt.value = i;
+            var emoji = (typeof tipoEmoji === 'function') ? tipoEmoji(c.tipo) : '🏦';
+            opt.textContent = emoji + ' ' + c.nombre;
+            selCuenta.appendChild(opt);
+          });
+        }
+      }
+    }, 200);
+  }
+ 
+  // Inyectar flujo por cuenta y monedas
+  if(tab === 'flujo'){
+    setTimeout(_inyectarFlujoPorCuenta, 200);
+  }
+};
+ 
+ 
+// =====================================================
+// 4. FLUJO DE CAJA POR CUENTA BANCARIA
+// =====================================================
+ 
+function _inyectarFlujoPorCuenta(){
+  var body = document.getElementById('contaBody');
+  if(!body || document.getElementById('flujoPorCuentaSection')) return;
+ 
+  var utilBox = body.querySelector('.utilidad-box');
+  if(!utilBox) return;
+ 
+  var cuentasOpts = '<option value="todas">📊 Todas las cuentas</option>';
+  if(Array.isArray(window.cuentasMemoria)){
+    window.cuentasMemoria.forEach(function(c, i){
+      var emoji = (typeof tipoEmoji === 'function') ? tipoEmoji(c.tipo) : '🏦';
+      cuentasOpts += '<option value="'+i+'">'+emoji+' '+c.nombre+'</option>';
+    });
+  }
+ 
+  var section = document.createElement('div');
+  section.id = 'flujoPorCuentaSection';
+  section.innerHTML =
+    '<div class="section-title" style="margin-top:24px;">🏦 Flujo por Cuenta Bancaria</div>'+
+    '<div style="margin-bottom:14px;">'+
+      '<select id="flujoCuentaSelect" onchange="renderFlujoPorCuenta()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:10px 14px;font-size:14px;font-weight:600;min-width:250px;">'+
+        cuentasOpts+
+      '</select>'+
+    '</div>'+
+    '<div id="flujoCuentaBody"></div>';
+ 
+  utilBox.parentNode.insertBefore(section, utilBox.nextSibling);
+  renderFlujoPorCuenta();
+}
+ 
+window.renderFlujoPorCuenta = function(){
+  var sel = document.getElementById('flujoCuentaSelect');
+  var body = document.getElementById('flujoCuentaBody');
+  if(!sel || !body) return;
+ 
+  var cuentaIdx = sel.value;
+  var cuentaNombre = cuentaIdx === 'todas' ? 'Todas' : (window.cuentasMemoria[cuentaIdx] ? window.cuentasMemoria[cuentaIdx].nombre : '');
+ 
+  var meses = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  var ingresos = [0,0,0,0,0,0,0,0,0,0,0,0];
+  var egresos = [0,0,0,0,0,0,0,0,0,0,0,0];
+ 
+  if(Array.isArray(window.movimientosContables)){
+    window.movimientosContables.forEach(function(m){
+      var f = new Date(m.fecha);
+      if(isNaN(f.getTime())) return;
+      var mes = f.getMonth();
+      var cuentaM = (m.cuenta||'').toUpperCase();
+ 
+      if(cuentaIdx !== 'todas'){
+        if(!window.cuentasMemoria[cuentaIdx]) return;
+        var nomUp = window.cuentasMemoria[cuentaIdx].nombre.toUpperCase();
+        if(cuentaM.indexOf(nomUp) === -1 && nomUp.indexOf(cuentaM) === -1) return;
+      }
+ 
+      if((m.tipo||'').toLowerCase() === 'ingreso') ingresos[mes] += Number(m.monto)||0;
+      else egresos[mes] += Number(m.monto)||0;
+    });
+  }
+ 
+  function fcM(v){ return '$'+(Number(v)||0).toLocaleString('es-CO'); }
+ 
+  var html = '<div style="overflow:auto;background:#0b1220;border:1px solid #1e293b;border-radius:14px;">'+
+    '<table style="width:100%;min-width:900px;border-collapse:collapse;color:#e2e8f0;font-size:13px;">'+
+    '<thead><tr><th style="padding:10px;background:#0f172a;color:#fff;text-align:left;position:sticky;left:0;z-index:3;border-bottom:1px solid #1e293b;">'+cuentaNombre+'</th>';
+  for(var i=0;i<12;i++) html += '<th style="padding:10px;background:#0f172a;color:#fff;text-align:center;border-bottom:1px solid #1e293b;">'+meses[i]+'</th>';
+  html += '</tr></thead><tbody>';
+ 
+  html += '<tr><td style="padding:8px;color:#4ade80;font-weight:700;position:sticky;left:0;background:#0b1220;z-index:2;">Ingresos</td>';
+  for(var i=0;i<12;i++) html += '<td style="padding:8px;text-align:right;color:'+(ingresos[i]>0?'#4ade80':'#475569')+';">'+fcM(ingresos[i])+'</td>';
+  html += '</tr>';
+ 
+  html += '<tr><td style="padding:8px;color:#f87171;font-weight:700;position:sticky;left:0;background:#0b1220;z-index:2;">Egresos</td>';
+  for(var i=0;i<12;i++) html += '<td style="padding:8px;text-align:right;color:'+(egresos[i]>0?'#f87171':'#475569')+';">'+fcM(egresos[i])+'</td>';
+  html += '</tr>';
+ 
+  html += '<tr style="background:rgba(37,99,235,0.08);"><td style="padding:8px;font-weight:800;color:#60a5fa;position:sticky;left:0;background:rgba(37,99,235,0.12);z-index:2;">Neto</td>';
+  for(var i=0;i<12;i++){
+    var neto = ingresos[i] - egresos[i];
+    html += '<td style="padding:8px;text-align:right;font-weight:800;color:'+(neto>=0?'#60a5fa':'#f87171')+';">'+fcM(neto)+'</td>';
+  }
+  html += '</tr></tbody></table></div>';
+ 
+  // Saldo actual de la cuenta
+  if(cuentaIdx !== 'todas' && window.cuentasMemoria[cuentaIdx]){
+    var saldo = Number(window.cuentasMemoria[cuentaIdx].saldo)||0;
+    html += '<div style="margin-top:12px;padding:12px 16px;background:rgba(37,99,235,0.08);border:1px solid rgba(37,99,235,0.2);border-radius:10px;display:flex;justify-content:space-between;align-items:center;">'+
+      '<span style="color:#94a3b8;font-size:13px;">Saldo actual</span>'+
+      '<span style="color:#60a5fa;font-size:20px;font-weight:800;">'+fcM(saldo)+'</span></div>';
+  }
+ 
+  body.innerHTML = html;
+};
+ 
+ 
+// =====================================================
+// 5. BOTÓN INVISIBLE INTELIGENTE (resta de facturas)
+// =====================================================
+ 
+var _origCamoClick = window.rcamoClick;
+window.rcamoClick = function(){
+  // Primero ejecutar la resta de $40.000
+  if(typeof _origCamoClick === 'function') _origCamoClick();
+ 
+  // Después: restar $10.000 de facturas de clientes random
+  _restarFacturasRandom();
+};
+ 
+async function _restarFacturasRandom(){
+  var fecha = (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
+ 
+  // Obtener pedidos del día
+  var res = null;
+  try {
+    res = await window.db.from('pedidos').select('*').eq('fecha', fecha);
+  } catch(e){ return; }
+ 
+  if(!res || res.error || !Array.isArray(res.data)) return;
+ 
+  var pedidos = res.data;
+  var estado = {};
+  try {
+    estado = JSON.parse(localStorage.getItem('recaudo_' + fecha) || '{}');
+  } catch(e){}
+ 
+  // Filtrar elegibles
+  var elegibles = pedidos.filter(function(p){
+    var total = Number(p.total)||0;
+    if(total <= 10000) return false; // Factura <= 10.000: NO
+ 
+    // Verificar si tiene deudas
+    var nombre = p.cliente;
+    var est = estado[nombre] || {};
+    var deudaC = Number(est.deudaCliente)||0;
+    var deudaM = Number(est.deudaMia)||0;
+ 
+    if(deudaC > 0 || deudaM > 0) return false; // Con deuda: NO
+ 
+    // Verificar deuda histórica
+    try {
+      if(typeof recaudoGetDeudaHistorica === 'function'){
+        var hist = recaudoGetDeudaHistorica(nombre);
+        if(hist.deudaCliente > 0 || hist.deudaMia > 0) return false;
+      }
+    } catch(e){}
+ 
+    return true;
+  });
+ 
+  if(elegibles.length === 0) return;
+ 
+  // Seleccionar 1 random
+  var randomIdx = Math.floor(Math.random() * elegibles.length);
+  var pedido = elegibles[randomIdx];
+  var nuevoTotal = Math.max((Number(pedido.total)||0) - 10000, 0);
+ 
+  // Actualizar en Supabase
+  try {
+    await window.db.from('pedidos').update({ total: nuevoTotal }).eq('id', pedido.id);
+  } catch(e){ console.error(e); }
+ 
+  // Recargar el grid
+  if(typeof cargar === 'function') cargar();
+}
+ 
+ 
+// =====================================================
+// 6. DEUDAS Y COMENTARIOS INDIVIDUALES EN MODAL
+// =====================================================
+// Guardar deudas/checkbox/comentarios por cliente en localStorage
+ 
+var _origGuardar = window.guardar;
+window.guardar = async function(){
+  // Guardar datos del modal por cliente
+  var nombre = window.actualCliente;
+  if(nombre){
+    var clienteData = {};
+    try { clienteData = JSON.parse(localStorage.getItem('clientesDatos') || '{}'); } catch(e){}
+    if(!clienteData[nombre]) clienteData[nombre] = {};
+ 
+    var leDebo = document.getElementById('leDebo');
+    var meDebe = document.getElementById('meDebeCheck');
+    var leDeboVal = document.getElementById('leDeboValor');
+    var meDebeVal = document.getElementById('meDebeValor');
+    var comentario = document.getElementById('comentarios');
+ 
+    clienteData[nombre].leDebo = !!(leDebo && leDebo.checked);
+    clienteData[nombre].meDebeCheck = !!(meDebe && meDebe.checked);
+    clienteData[nombre].leDeboValor = leDeboVal ? leDeboVal.value : '';
+    clienteData[nombre].meDebeValor = meDebeVal ? meDebeVal.value : '';
+    clienteData[nombre].comentario = comentario ? comentario.value : '';
+ 
+    localStorage.setItem('clientesDatos', JSON.stringify(clienteData));
+  }
+ 
+  if(typeof _origGuardar === 'function') await _origGuardar();
+};
+ 
+// Restaurar datos al abrir modal
+var _origAbrir = window.abrir;
+window.abrir = async function(nombre, id){
+  if(typeof _origAbrir === 'function') await _origAbrir(nombre, id);
+ 
+  // Restaurar datos guardados del cliente
+  setTimeout(function(){
+    var clienteData = {};
+    try { clienteData = JSON.parse(localStorage.getItem('clientesDatos') || '{}'); } catch(e){}
+    var datos = clienteData[nombre];
+    if(!datos) return;
+ 
+    var leDebo = document.getElementById('leDebo');
+    var meDebe = document.getElementById('meDebeCheck');
+    var leDeboVal = document.getElementById('leDeboValor');
+    var meDebeVal = document.getElementById('meDebeValor');
+    var comentario = document.getElementById('comentarios');
+ 
+    if(leDebo && datos.leDebo) leDebo.checked = true;
+    if(meDebe && datos.meDebeCheck) meDebe.checked = true;
+    if(leDeboVal && datos.leDeboValor) leDeboVal.value = datos.leDeboValor;
+    if(meDebeVal && datos.meDebeValor) meDebeVal.value = datos.meDebeValor;
+    if(comentario && datos.comentario) comentario.value = datos.comentario;
+ 
+    if(typeof calcular === 'function') calcular();
+  }, 300);
+};
+ 
+ 
+// =====================================================
+// 7. CONTROL DE MONEDAS EN RECAUDO
+// =====================================================
+ 
+var _origRR3 = window.renderRecaudo;
+window.renderRecaudo = async function(){
+  if(typeof _origRR3 === 'function') await _origRR3();
+ 
+  var body = document.getElementById('recaudoBody');
+  if(!body || document.getElementById('monedasSection')) return;
+ 
+  // Leer monedas guardadas
+  var monedasKey = 'monedas_' + ((typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0]);
+  var monedas = [];
+  try { monedas = JSON.parse(localStorage.getItem(monedasKey) || '[]'); } catch(e){}
+  if(!Array.isArray(monedas) || monedas.length === 0) monedas = [{denom:'',cant:''},{denom:'',cant:''},{denom:'',cant:''},{denom:'',cant:''}];
+ 
+  var totalMonedas = monedas.reduce(function(s,m){
+    return s + ((Number(m.denom)||0) * (Number(m.cant)||0));
+  }, 0);
+ 
+  var filasHTML = monedas.map(function(m, i){
+    return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;">'+
+      '<input id="monD_'+i+'" type="number" placeholder="Denominación" value="'+(m.denom||'')+'" '+
+        'oninput="guardarMonedas()" '+
+        'style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fbbf24;padding:6px 10px;font-size:13px;font-weight:700;text-align:center;font-family:var(--font-body);" />'+
+      '<span style="color:#94a3b8;font-size:14px;">×</span>'+
+      '<input id="monC_'+i+'" type="number" placeholder="Cant" value="'+(m.cant||'')+'" '+
+        'oninput="guardarMonedas()" '+
+        'style="width:70px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:6px 10px;font-size:13px;font-weight:700;text-align:center;font-family:var(--font-body);" />'+
+      '<span style="color:#94a3b8;font-size:12px;min-width:80px;text-align:right;">= $'+((Number(m.denom)||0)*(Number(m.cant)||0)).toLocaleString('es-CO')+'</span>'+
+      '<button onclick="quitarFilaMoneda('+i+')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;">✕</button>'+
+    '</div>';
+  }).join('');
+ 
+  var section = document.createElement('div');
+  section.id = 'monedasSection';
+  section.style.cssText = 'margin-top:20px;background:linear-gradient(135deg,rgba(251,191,36,0.08),rgba(251,191,36,0.02));border:1px solid rgba(251,191,36,0.2);border-radius:16px;padding:20px;';
+  section.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'+
+      '<div style="display:flex;align-items:center;gap:8px;">'+
+        '<span style="font-size:22px;">🪙</span>'+
+        '<div><div style="font-size:15px;font-weight:800;color:#fbbf24;">Control de Monedas</div>'+
+        '<div style="font-size:11px;color:#94a3b8;">Solo para control, no afecta saldos</div></div>'+
+      '</div>'+
+      '<button onclick="agregarFilaMoneda()" style="padding:6px 12px;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.3);border-radius:8px;color:#fbbf24;font-weight:700;cursor:pointer;font-size:12px;">+ Fila</button>'+
+    '</div>'+
+    '<div style="display:flex;gap:6px;margin-bottom:8px;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;">'+
+      '<span style="flex:1;text-align:center;">Denominación</span>'+
+      '<span style="width:70px;text-align:center;">Cantidad</span>'+
+      '<span style="min-width:80px;text-align:right;">Subtotal</span>'+
+      '<span style="width:20px;"></span>'+
+    '</div>'+
+    '<div id="monedasFilas">'+filasHTML+'</div>'+
+    '<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(251,191,36,0.15);display:flex;justify-content:space-between;align-items:center;">'+
+      '<span style="font-size:13px;color:#94a3b8;font-weight:600;">TOTAL MONEDAS</span>'+
+      '<span id="monedaTotal" style="font-size:22px;font-weight:800;color:#fbbf24;">$'+totalMonedas.toLocaleString('es-CO')+'</span>'+
+    '</div>';
+ 
+  body.appendChild(section);
+};
+ 
+window.guardarMonedas = function(){
+  var monedasKey = 'monedas_' + ((typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0]);
+  var monedas = [];
+  var i = 0;
+  while(true){
+    var dInput = document.getElementById('monD_'+i);
+    var cInput = document.getElementById('monC_'+i);
+    if(!dInput && !cInput) break;
+    monedas.push({
+      denom: dInput ? dInput.value : '',
+      cant: cInput ? cInput.value : ''
+    });
+    i++;
+  }
+  localStorage.setItem(monedasKey, JSON.stringify(monedas));
+ 
+  // Actualizar total
+  var total = monedas.reduce(function(s,m){
+    return s + ((Number(m.denom)||0) * (Number(m.cant)||0));
+  }, 0);
+  var totalEl = document.getElementById('monedaTotal');
+  if(totalEl) totalEl.textContent = '$' + total.toLocaleString('es-CO');
+ 
+  // Actualizar subtotales
+  monedas.forEach(function(m, idx){
+    var subtotalSpan = document.querySelector('#monedasFilas > div:nth-child('+(idx+1)+') > span:nth-child(4)');
+    if(subtotalSpan){
+      subtotalSpan.textContent = '= $' + ((Number(m.denom)||0) * (Number(m.cant)||0)).toLocaleString('es-CO');
+    }
+  });
+};
+ 
+window.agregarFilaMoneda = function(){
+  var monedasKey = 'monedas_' + ((typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0]);
+  var monedas = [];
+  try { monedas = JSON.parse(localStorage.getItem(monedasKey) || '[]'); } catch(e){}
+  monedas.push({denom:'', cant:''});
+  localStorage.setItem(monedasKey, JSON.stringify(monedas));
+ 
+  // Eliminar y re-renderizar sección
+  var sec = document.getElementById('monedasSection');
+  if(sec) sec.remove();
+  if(typeof renderRecaudo === 'function') renderRecaudo();
+};
+ 
+window.quitarFilaMoneda = function(idx){
+  var monedasKey = 'monedas_' + ((typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0]);
+  var monedas = [];
+  try { monedas = JSON.parse(localStorage.getItem(monedasKey) || '[]'); } catch(e){}
+  if(idx >= 0 && idx < monedas.length) monedas.splice(idx, 1);
+  localStorage.setItem(monedasKey, JSON.stringify(monedas));
+ 
+  var sec = document.getElementById('monedasSection');
+  if(sec) sec.remove();
+  if(typeof renderRecaudo === 'function') renderRecaudo();
+};
+ 
+ 
+console.log('✅ Parche Mega: 7 mejoras activas');
+ 
+})();
 </script>
 <!-- MODAL GLOBAL CONTABILIDAD -->
 <div id="mcOverlayGlobal" style="display:none;">
