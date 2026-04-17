@@ -7619,6 +7619,941 @@ async function historialExportarExcel(){
   console.log('✅ Módulo Nómina cargado');
  
 })();
+(function(){
+ 
+  var _origRenderNomina = window.renderNomina;
+ 
+  window.renderNomina = function(){
+    if(typeof _origRenderNomina === 'function') _origRenderNomina();
+ 
+    var body = document.getElementById('nominaBody');
+    if(!body) return;
+ 
+    var data = _nomLeer();
+ 
+    // --- Agregar botones editar/eliminar a cada empleado ---
+    data.empleados.forEach(function(e, idx){
+      var cards = body.querySelectorAll('[data-nom-idx="'+idx+'"]');
+      // Inyectamos data attributes desde el render override
+    });
+ 
+    // --- Agregar botón reset adelantos ---
+    // Se inyecta en cada tarjeta después de "+ Adelanto"
+    var adelantoBtns = body.querySelectorAll('[id^="nq_adm_"], [id^="ns_adm_"]');
+    adelantoBtns.forEach(function(inp){
+      var idx = inp.id.replace('nq_adm_','').replace('ns_adm_','');
+      var parent = inp.parentElement;
+      if(parent && !parent.querySelector('.nom-reset-btn')){
+        var btn = document.createElement('button');
+        btn.className = 'nom-reset-btn';
+        btn.innerHTML = '🗑️';
+        btn.title = 'Borrar todos los adelantos';
+        btn.style.cssText = 'padding:5px 10px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.25);border-radius:8px;color:#f87171;cursor:pointer;font-size:13px;';
+        btn.onclick = function(){ nominaResetAdelantos(Number(idx)); };
+        parent.appendChild(btn);
+      }
+    });
+ 
+    // --- Hacer adelantos editables (clic en el monto) ---
+    var adelantoItems = body.querySelectorAll('.nom-adelanto-item');
+    // Los manejamos en el render override
+  };
+ 
+  function _nomLeer(){
+    try {
+      var raw = localStorage.getItem('nomina_data');
+      return raw ? JSON.parse(raw) : {};
+    } catch(e){ return {}; }
+  }
+ 
+  function _nomGuardar(d){
+    try { localStorage.setItem('nomina_data', JSON.stringify(d)); } catch(e){}
+  }
+ 
+  // 1. ELIMINAR PAGO CONFIRMADO
+  window.nominaEliminarPago = function(idx){
+    var data = _nomLeer();
+    if(!data.historialPagos || !data.historialPagos[idx]) return;
+    var pago = data.historialPagos[idx];
+ 
+    if(!confirm('¿Eliminar pago de $' + (Number(pago.total)||0).toLocaleString('es-CO') + '?\nSe revertirá del ecosistema contable.')) return;
+ 
+    // Revertir del ecosistema
+    var monto = Number(pago.total)||0;
+ 
+    // Revertir cuenta
+    if(Array.isArray(window.cuentasMemoria)){
+      var cuentaNombre = (pago.cuenta || 'Efectivo').toUpperCase();
+      var cIdx = window.cuentasMemoria.findIndex(function(c){
+        return c.nombre.toUpperCase().indexOf(cuentaNombre) > -1 || (cuentaNombre === 'EFECTIVO' && c.tipo === 'EFECTIVO');
+      });
+      if(cIdx < 0) cIdx = window.cuentasMemoria.findIndex(function(c){ return c.tipo === 'EFECTIVO'; });
+      if(cIdx >= 0){
+        window.cuentasMemoria[cIdx].saldo += monto;
+        if(typeof cuentasGuardar === 'function') cuentasGuardar();
+      }
+    }
+ 
+    // Revertir gastos
+    if(Array.isArray(window.gastosMemoria)){
+      for(var i = window.gastosMemoria.length - 1; i >= 0; i--){
+        if(window.gastosMemoria[i].descripcion && window.gastosMemoria[i].descripcion.indexOf('mina') > -1 && Number(window.gastosMemoria[i].monto) === monto){
+          window.gastosMemoria.splice(i, 1);
+          break;
+        }
+      }
+      try { sessionStorage.setItem('gastos', JSON.stringify(window.gastosMemoria)); } catch(e){}
+    }
+ 
+    // Revertir movimientos contables
+    if(Array.isArray(window.movimientosContables)){
+      for(var j = window.movimientosContables.length - 1; j >= 0; j--){
+        if(window.movimientosContables[j].descripcion && window.movimientosContables[j].descripcion.indexOf('mina') > -1 && Number(window.movimientosContables[j].monto) === monto){
+          window.movimientosContables.splice(j, 1);
+          break;
+        }
+      }
+    }
+ 
+    data.historialPagos.splice(idx, 1);
+    _nomGuardar(data);
+    renderNomina();
+  };
+ 
+  // 2. EDITAR ADELANTO
+  window.nominaEditarAdelanto = function(empIdx, adIdx){
+    var data = _nomLeer();
+    var e = data.empleados[empIdx];
+    if(!e || !e.adelantos || !e.adelantos[adIdx]) return;
+    var a = e.adelantos[adIdx];
+ 
+    if(typeof mostrarMC !== 'function') return;
+    mostrarMC(
+      '<h3>✏️ Editar adelanto</h3>'+
+      '<div class="mc-field"><label>Monto</label><input id="nomEAM" type="number" value="'+(Number(a.monto)||0)+'"></div>'+
+      '<div class="mc-field"><label>Razón</label><input id="nomEAR" value="'+(a.razon||'').replace(/"/g,'&quot;')+'"></div>'+
+      '<div class="mc-btns">'+
+        '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
+        '<button class="mc-btn-ok" onclick="nominaGuardarEdAdelanto('+empIdx+','+adIdx+')">Guardar</button>'+
+      '</div>'
+    );
+  };
+ 
+  window.nominaGuardarEdAdelanto = function(empIdx, adIdx){
+    var monto = Number(document.getElementById('nomEAM').value)||0;
+    var razon = (document.getElementById('nomEAR').value||'').trim();
+    if(monto <= 0){ alert('Ingresa monto válido'); return; }
+ 
+    var data = _nomLeer();
+    if(!data.empleados[empIdx] || !data.empleados[empIdx].adelantos[adIdx]) return;
+    data.empleados[empIdx].adelantos[adIdx].monto = monto;
+    data.empleados[empIdx].adelantos[adIdx].razon = razon;
+    _nomGuardar(data);
+    if(typeof cerrarMC === 'function') cerrarMC();
+    renderNomina();
+  };
+ 
+  // 4. RESET ADELANTOS
+  window.nominaResetAdelantos = function(idx){
+    var data = _nomLeer();
+    if(!data.empleados[idx]) return;
+    if(!confirm('¿Borrar TODOS los adelantos de ' + data.empleados[idx].nombre + '?')) return;
+    data.empleados[idx].adelantos = [];
+    _nomGuardar(data);
+    renderNomina();
+  };
+ 
+  // 5. EDITAR EMPLEADO
+  window.nominaEditarEmpleado = function(idx){
+    var data = _nomLeer();
+    var e = data.empleados[idx];
+    if(!e) return;
+ 
+    if(typeof mostrarMC !== 'function') return;
+    mostrarMC(
+      '<h3>✏️ Editar empleado</h3>'+
+      '<div class="mc-field"><label>Nombre</label><input id="nomEN" value="'+e.nombre+'"></div>'+
+      '<div class="mc-field"><label>Color</label><select id="nomEC">'+
+        '<option value="#16a34a"'+(e.color==='#16a34a'?' selected':'')+'>Verde</option>'+
+        '<option value="#2563eb"'+(e.color==='#2563eb'?' selected':'')+'>Azul</option>'+
+        '<option value="#7c3aed"'+(e.color==='#7c3aed'?' selected':'')+'>Morado</option>'+
+        '<option value="#eab308"'+(e.color==='#eab308'?' selected':'')+'>Amarillo</option>'+
+        '<option value="#f59e0b"'+(e.color==='#f59e0b'?' selected':'')+'>Naranja</option>'+
+        '<option value="#e11d48"'+(e.color==='#e11d48'?' selected':'')+'>Rojo</option>'+
+        '<option value="#06b6d4"'+(e.color==='#06b6d4'?' selected':'')+'>Cyan</option>'+
+      '</select></div>'+
+      '<div class="mc-btns">'+
+        '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
+        '<button class="mc-btn-ok" style="background:#dc2626;" onclick="nominaEliminarEmpleado('+idx+')">🗑️ Eliminar</button>'+
+        '<button class="mc-btn-ok" onclick="nominaGuardarEdEmpleado('+idx+')">Guardar</button>'+
+      '</div>'
+    );
+  };
+ 
+  window.nominaGuardarEdEmpleado = function(idx){
+    var nom = (document.getElementById('nomEN').value||'').trim().toUpperCase();
+    var color = document.getElementById('nomEC').value;
+    if(!nom){ alert('Ingresa nombre'); return; }
+ 
+    var data = _nomLeer();
+    if(!data.empleados[idx]) return;
+    data.empleados[idx].nombre = nom;
+    data.empleados[idx].color = color;
+    _nomGuardar(data);
+    if(typeof cerrarMC === 'function') cerrarMC();
+    renderNomina();
+  };
+ 
+  window.nominaEliminarEmpleado = function(idx){
+    var data = _nomLeer();
+    if(!data.empleados[idx]) return;
+    if(!confirm('¿Eliminar a ' + data.empleados[idx].nombre + ' de la nómina?')) return;
+    data.empleados.splice(idx, 1);
+    _nomGuardar(data);
+    if(typeof cerrarMC === 'function') cerrarMC();
+    renderNomina();
+  };
+ 
+  // 3. OPCIÓN DE PAGO (efectivo/transferencia)
+  // Override de los registros para preguntar método
+  var _origRegSem = window.nominaRegistrarSemanal;
+  window.nominaRegistrarSemanal = function(){
+    var data = _nomLeer();
+    var semanales = (data.empleados||[]).filter(function(e){ return e.tipo === 'semanal'; });
+    var totalPagar = 0;
+    var detalle = [];
+ 
+    semanales.forEach(function(e){
+      var diasTrab = (e.asistencia||[]).filter(function(a){ return a; }).length;
+      var bruto = diasTrab * (Number(e.salarioDia)||0);
+      var adel = (e.adelantos||[]).reduce(function(s,a){ return s + (Number(a.monto)||0); }, 0);
+      var neto = Math.max(bruto - adel, 0);
+      totalPagar += neto;
+      detalle.push(e.nombre + ': $' + neto.toLocaleString('es-CO'));
+    });
+ 
+    if(totalPagar <= 0){ alert('No hay nómina semanal'); return; }
+ 
+    _nominaModalPago('semanal', totalPagar, detalle);
+  };
+ 
+  var _origRegQuin = window.nominaRegistrarQuincena;
+  window.nominaRegistrarQuincena = function(){
+    var data = _nomLeer();
+    var quincenales = (data.empleados||[]).filter(function(e){ return e.tipo === 'quincenal'; });
+    var totalPagar = 0;
+    var detalle = [];
+ 
+    quincenales.forEach(function(e){
+      var bruto = Number(e.salarioQuincena)||0;
+      var adel = (e.adelantos||[]).reduce(function(s,a){ return s + (Number(a.monto)||0); }, 0);
+      var neto = Math.max(bruto - adel, 0);
+      totalPagar += neto;
+      detalle.push(e.nombre + ': $' + neto.toLocaleString('es-CO'));
+    });
+ 
+    if(totalPagar <= 0){ alert('No hay nómina quincenal'); return; }
+ 
+    _nominaModalPago('quincenal', totalPagar, detalle);
+  };
+ 
+  function _nominaModalPago(tipo, total, detalle){
+    var cuentasOpts = '';
+    if(Array.isArray(window.cuentasMemoria)){
+      window.cuentasMemoria.forEach(function(c,i){
+        if(c.tipo !== 'EFECTIVO'){
+          var emoji = (typeof tipoEmoji === 'function') ? tipoEmoji(c.tipo) : '🏦';
+          cuentasOpts += '<option value="'+i+'">'+emoji+' '+c.nombre+'</option>';
+        }
+      });
+    }
+ 
+    if(typeof mostrarMC !== 'function') return;
+    mostrarMC(
+      '<h3 style="text-align:center;margin-bottom:6px;">'+(tipo==='semanal'?'📋':'💰')+' Registrar '+(tipo==='semanal'?'Semanal':'Quincena')+'</h3>'+
+      '<div style="background:rgba(22,163,74,0.12);border:1px solid rgba(22,163,74,0.25);border-radius:10px;padding:12px;margin-bottom:12px;text-align:center;">'+
+        '<div style="font-size:11px;color:#86efac;font-weight:600;margin-bottom:4px;">Total a pagar</div>'+
+        '<div style="font-size:24px;font-weight:800;color:#4ade80;">$'+total.toLocaleString('es-CO')+'</div>'+
+      '</div>'+
+      '<div style="font-size:12px;color:#94a3b8;margin-bottom:12px;line-height:1.6;">'+detalle.join('<br>')+'</div>'+
+      '<div style="font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase;margin-bottom:8px;">Método de pago</div>'+
+      '<div style="display:flex;gap:8px;margin-bottom:12px;">'+
+        '<button id="nomMetEfe" onclick="nominaSelMetPago(\'efectivo\')" style="flex:1;padding:12px;border-radius:10px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-weight:700;cursor:pointer;font-size:13px;font-family:var(--font-body);">'+
+          '<div style="font-size:20px;margin-bottom:3px;">💵</div>Efectivo</button>'+
+        '<button id="nomMetTra" onclick="nominaSelMetPago(\'transferencia\')" style="flex:1;padding:12px;border-radius:10px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-weight:700;cursor:pointer;font-size:13px;font-family:var(--font-body);">'+
+          '<div style="font-size:20px;margin-bottom:3px;">🏦</div>Transferencia</button>'+
+      '</div>'+
+      '<div id="nomCuentaBox" style="display:none;margin-bottom:12px;">'+
+        '<select id="nomCuentaSel" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px;font-size:13px;">'+cuentasOpts+'</select>'+
+      '</div>'+
+      '<button id="nomBtnConf" onclick="nominaConfirmarPagoFinal(\''+tipo+'\','+total+')" disabled style="width:100%;padding:12px;background:rgba(22,163,74,0.3);border:none;border-radius:10px;color:white;font-weight:800;cursor:not-allowed;font-size:14px;opacity:0.5;font-family:var(--font-body);">✓ Confirmar pago</button>'
+    );
+    window._nomMetodo = '';
+  }
+ 
+  window.nominaSelMetPago = function(met){
+    window._nomMetodo = met;
+    var btnE = document.getElementById('nomMetEfe');
+    var btnT = document.getElementById('nomMetTra');
+    var cBox = document.getElementById('nomCuentaBox');
+    var btnC = document.getElementById('nomBtnConf');
+ 
+    if(btnE && btnT){
+      btnE.style.border = '2px solid rgba(255,255,255,0.10)';
+      btnE.style.background = 'rgba(255,255,255,0.04)';
+      btnT.style.border = '2px solid rgba(255,255,255,0.10)';
+      btnT.style.background = 'rgba(255,255,255,0.04)';
+ 
+      if(met === 'efectivo'){
+        btnE.style.border = '2px solid #16a34a';
+        btnE.style.background = 'rgba(22,163,74,0.15)';
+        if(cBox) cBox.style.display = 'none';
+      } else {
+        btnT.style.border = '2px solid #2563eb';
+        btnT.style.background = 'rgba(37,99,235,0.15)';
+        if(cBox) cBox.style.display = 'block';
+      }
+    }
+    if(btnC){ btnC.disabled = false; btnC.style.background = '#16a34a'; btnC.style.cursor = 'pointer'; btnC.style.opacity = '1'; }
+  };
+ 
+  window.nominaConfirmarPagoFinal = function(tipo, total){
+    var met = window._nomMetodo || '';
+    if(!met){ alert('Selecciona método'); return; }
+ 
+    var cuentaIdx = -1;
+    var cuentaNombre = '';
+ 
+    if(met === 'efectivo'){
+      cuentaIdx = (window.cuentasMemoria||[]).findIndex(function(c){ return c.tipo === 'EFECTIVO'; });
+      cuentaNombre = 'Efectivo';
+    } else {
+      var sel = document.getElementById('nomCuentaSel');
+      cuentaIdx = sel ? Number(sel.value) : -1;
+      if(cuentaIdx < 0 || !window.cuentasMemoria[cuentaIdx]){ alert('Selecciona cuenta'); return; }
+      cuentaNombre = window.cuentasMemoria[cuentaIdx].nombre;
+    }
+ 
+    var data = _nomLeer();
+    var empleados = tipo === 'semanal'
+      ? data.empleados.filter(function(e){ return e.tipo === 'semanal'; })
+      : data.empleados.filter(function(e){ return e.tipo === 'quincenal'; });
+ 
+    var detalle = [];
+    empleados.forEach(function(e){
+      var bruto = tipo === 'semanal'
+        ? (e.asistencia||[]).filter(function(a){return a;}).length * (Number(e.salarioDia)||0)
+        : Number(e.salarioQuincena)||0;
+      var adel = (e.adelantos||[]).reduce(function(s,a){ return s + (Number(a.monto)||0); }, 0);
+      var neto = Math.max(bruto - adel, 0);
+      detalle.push(e.nombre + ': $' + neto.toLocaleString('es-CO'));
+    });
+ 
+    var desc = 'Nómina ' + tipo + ' — ' + detalle.join(', ') + ' [' + cuentaNombre + ']';
+ 
+    // Registrar gasto
+    if(!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
+    window.movimientosContables.push({
+      tipo: 'gasto', monto: total, cuenta: cuentaNombre,
+      descripcion: desc, fecha: new Date().toISOString(),
+      categoria: 'Nómina'
+    });
+ 
+    if(!Array.isArray(window.gastosMemoria)) window.gastosMemoria = [];
+    window.gastosMemoria.push({
+      descripcion: desc, categoria: 'Nómina', monto: total,
+      fecha: new Date().toISOString()
+    });
+    try { sessionStorage.setItem('gastos', JSON.stringify(window.gastosMemoria)); } catch(e){}
+ 
+    // Descontar de cuenta
+    if(cuentaIdx >= 0 && window.cuentasMemoria[cuentaIdx]){
+      window.cuentasMemoria[cuentaIdx].saldo -= total;
+      if(typeof cuentasGuardar === 'function') cuentasGuardar();
+    }
+ 
+    // Caja
+    if(window._cajaCache && window._cajaCache.sesion && window._cajaCache.sesion.estado === 'abierta'){
+      try {
+        window.db.from("cajas_movimientos").insert({
+          caja_id: window._cajaCache.sesion.id,
+          fecha: (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0],
+          tipo: 'egreso', subtipo: 'nomina', categoria: 'Nómina',
+          descripcion: desc, metodo_pago: met === 'efectivo' ? 'efectivo' : 'transferencia',
+          valor: total, saldo_acumulado: 0,
+          usuario: (typeof cajaUsuarioActual === 'function') ? cajaUsuarioActual() : 'Admin',
+          origen: 'nomina'
+        });
+      } catch(e){}
+    }
+ 
+    // Historial
+    data.historialPagos.push({
+      tipo: tipo, total: total,
+      detalle: detalle.join(' | '),
+      cuenta: cuentaNombre, metodo: met,
+      fecha: new Date().toLocaleDateString('es-CO',{day:'numeric',month:'long',year:'numeric'}),
+      semana: data.semanaActual
+    });
+ 
+    // Limpiar
+    empleados.forEach(function(e){
+      e.adelantos = [];
+      if(tipo === 'semanal') e.asistencia = [false,false,false,false,false,false];
+    });
+ 
+    _nomGuardar(data);
+    if(typeof cerrarMC === 'function') cerrarMC();
+    renderNomina();
+    alert('✅ Nómina ' + tipo + ' registrada: $' + total.toLocaleString('es-CO') + ' [' + cuentaNombre + ']');
+  };
+ 
+  // =====================================================
+  // OVERRIDE DEL RENDER PARA AGREGAR BOTONES
+  // =====================================================
+ 
+  var _baseRenderNomina = window.renderNomina;
+  window.renderNomina = function(){
+    if(typeof _baseRenderNomina === 'function') _baseRenderNomina();
+ 
+    var body = document.getElementById('nominaBody');
+    if(!body) return;
+    var data = _nomLeer();
+ 
+    // Inyectar botones editar/eliminar en cada tarjeta de empleado
+    data.empleados.forEach(function(e, idx){
+      // Buscar el div con el nombre del empleado
+      var nombreDivs = body.querySelectorAll('div');
+      nombreDivs.forEach(function(d){
+        if(d.textContent.trim() === e.nombre && d.style.fontSize === '17px' && !d.dataset.nomPatched){
+          d.dataset.nomPatched = 'true';
+          d.style.cursor = 'pointer';
+          d.title = 'Click para editar empleado';
+          d.onclick = function(ev){ ev.stopPropagation(); nominaEditarEmpleado(idx); };
+        }
+      });
+    });
+ 
+    // Hacer adelantos clickeables para editar
+    var adelantoSpans = body.querySelectorAll('span');
+    adelantoSpans.forEach(function(span){
+      if(span.style.color === 'rgb(252, 165, 165)' && span.textContent.startsWith('-$') && !span.dataset.nomPatched){
+        span.dataset.nomPatched = 'true';
+        span.style.cursor = 'pointer';
+        span.title = 'Click para editar monto';
+      }
+    });
+ 
+    // Agregar botones reset y botón eliminar pago al historial
+    var histItems = body.querySelectorAll('.nom-hist-del');
+    // Los inyectamos en el historial
+    if(data.historialPagos && data.historialPagos.length > 0){
+      var histSection = null;
+      var sectionTitles = body.querySelectorAll('.section-title');
+      sectionTitles.forEach(function(st){
+        if(st.textContent.indexOf('Historial') > -1) histSection = st;
+      });
+ 
+      if(histSection){
+        var nextEl = histSection.nextElementSibling;
+        if(nextEl && !nextEl.dataset.nomHistPatched){
+          nextEl.dataset.nomHistPatched = 'true';
+          var items = nextEl.querySelectorAll('[style*="display:flex"]');
+          var realIdx = data.historialPagos.length - 1;
+          items.forEach(function(item){
+            if(realIdx >= 0 && !item.querySelector('.nom-del-btn')){
+              var btn = document.createElement('button');
+              btn.className = 'nom-del-btn';
+              btn.innerHTML = '✕';
+              btn.style.cssText = 'background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;margin-left:8px;';
+              btn.title = 'Eliminar este pago';
+              var capturedIdx = realIdx;
+              btn.onclick = function(){ nominaEliminarPago(capturedIdx); };
+              item.appendChild(btn);
+            }
+            realIdx--;
+          });
+        }
+      }
+    }
+ 
+    // Agregar botones reset por empleado
+    data.empleados.forEach(function(e, idx){
+      var resetId = 'nomReset_' + idx;
+      if(!document.getElementById(resetId)){
+        // Buscar el contenedor de adelantos
+        var adMonto = document.getElementById('nq_adm_' + idx) || document.getElementById('ns_adm_' + idx);
+        if(adMonto){
+          var row = adMonto.parentElement;
+          if(row && !row.querySelector('#' + resetId)){
+            var btn = document.createElement('button');
+            btn.id = resetId;
+            btn.innerHTML = '🗑️ Reset';
+            btn.title = 'Borrar todos los adelantos de ' + e.nombre;
+            btn.style.cssText = 'padding:5px 10px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.2);border-radius:8px;color:#f87171;cursor:pointer;font-size:11px;font-weight:600;font-family:var(--font-body);';
+            btn.onclick = function(){ nominaResetAdelantos(idx); };
+            row.appendChild(btn);
+          }
+        }
+      }
+    });
+ 
+    // Hacer adelantos editables
+    data.empleados.forEach(function(e, idx){
+      if(!e.adelantos) return;
+      e.adelantos.forEach(function(a, ai){
+        // Buscar spans con el monto
+        var spans = body.querySelectorAll('span');
+        var found = 0;
+        spans.forEach(function(s){
+          if(s.style.fontWeight === '700' && s.textContent === '-$' + (Number(a.monto)||0).toLocaleString('es-CO') && !s.dataset.nomEditable){
+            if(found === ai || (found === 0 && ai === 0)){
+              s.dataset.nomEditable = 'true';
+              s.style.cursor = 'pointer';
+              s.style.textDecoration = 'underline';
+              s.style.textDecorationStyle = 'dotted';
+              s.title = 'Click para editar';
+              s.onclick = function(ev){ ev.stopPropagation(); nominaEditarAdelanto(idx, ai); };
+            }
+            found++;
+          }
+        });
+      });
+    });
+  };
+ 
+  console.log('✅ Parche Nómina: 5 mejoras activas');
+ 
+})();
+(function(){
+ 
+  // =====================================================
+  // CATEGORÍAS PREESTABLECIDAS
+  // =====================================================
+ 
+  var CAT_KEY = 'contabilidad_categorias';
+ 
+  function catDefaults(){
+    return {
+      ingresos: [
+        { nombre: 'Venta de Reparto', color: '#4ade80', icono: '🚚' },
+        { nombre: 'Venta de Caja', color: '#22d3ee', icono: '💵' },
+        { nombre: 'Pago de Deuda', color: '#fbbf24', icono: '💰' },
+        { nombre: 'Rendimientos', color: '#a855f7', icono: '📈' },
+        { nombre: 'Intereses', color: '#60a5fa', icono: '🏦' },
+        { nombre: 'Otro Ingreso', color: '#94a3b8', icono: '📥' }
+      ],
+      gastos: [
+        { nombre: 'Nómina', color: '#f59e0b', icono: '👷' },
+        { nombre: 'Materia Prima', color: '#ef4444', icono: '🌾' },
+        { nombre: 'Servicios', color: '#8b5cf6', icono: '💡' },
+        { nombre: 'Arriendo', color: '#ec4899', icono: '🏠' },
+        { nombre: 'Transporte', color: '#06b6d4', icono: '🚗' },
+        { nombre: 'Cuotas', color: '#f97316', icono: '💳' },
+        { nombre: 'Mantenimiento', color: '#14b8a6', icono: '🔧' },
+        { nombre: 'Otro Gasto', color: '#64748b', icono: '📤' }
+      ],
+      costos: [
+        { nombre: 'Costo Producción', color: '#fb923c', icono: '🏭' },
+        { nombre: 'Insumos', color: '#a3e635', icono: '📦' },
+        { nombre: 'Otro Costo', color: '#94a3b8', icono: '⚙️' }
+      ]
+    };
+  }
+ 
+  function catLeer(){
+    try {
+      var raw = localStorage.getItem(CAT_KEY);
+      if(!raw) return catDefaults();
+      return JSON.parse(raw);
+    } catch(e){ return catDefaults(); }
+  }
+ 
+  function catGuardar(d){
+    try { localStorage.setItem(CAT_KEY, JSON.stringify(d)); } catch(e){}
+  }
+ 
+  function nM(n){ return '$' + (Number(n)||0).toLocaleString('es-CO'); }
+ 
+  // =====================================================
+  // INYECTAR "CATEGORÍAS" EN LOS TABS
+  // =====================================================
+ 
+  // Interceptar el renderConta para agregar la pestaña
+  var _prevRC = window.renderConta;
+  window.renderConta = function(tab){
+    tab = tab || 'resumen';
+ 
+    if(tab === 'categorias'){
+      _renderCategorias();
+      return;
+    }
+ 
+    // Ejecutar el render original
+    if(typeof _prevRC === 'function') _prevRC(tab);
+ 
+    // Inyectar pestaña categorías en los tabs
+    setTimeout(function(){
+      var body = document.getElementById('contaBody');
+      if(!body) return;
+      var tabsDiv = body.querySelector('.filter-tabs');
+      if(tabsDiv && tabsDiv.innerHTML.indexOf('categorias') === -1){
+        // Agregar antes del último botón (Caja)
+        var cajaBtn = tabsDiv.querySelector('[onclick*="caja"]');
+        if(cajaBtn){
+          var catBtn = document.createElement('button');
+          catBtn.className = 'ftab' + (tab === 'categorias' ? ' active' : '');
+          catBtn.innerHTML = '📊 Categorías';
+          catBtn.onclick = function(){ renderConta('categorias'); };
+          tabsDiv.insertBefore(catBtn, cajaBtn);
+        }
+      }
+ 
+      // Si estamos en resumen, inyectar formulario de ingresos
+      if(tab === 'resumen'){
+        _inyectarFormIngresos(body);
+        _mejorarFormGastos(body);
+      }
+    }, 80);
+  };
+ 
+  // =====================================================
+  // FORMULARIO DE INGRESOS EXTRA (en pestaña Resumen)
+  // =====================================================
+ 
+  function _inyectarFormIngresos(body){
+    if(!body || document.getElementById('formIngresoExtra')) return;
+ 
+    var gastoForm = body.querySelector('.gasto-form');
+    if(!gastoForm) return;
+ 
+    var cats = catLeer();
+    var catsOpts = cats.ingresos.map(function(c){
+      return '<option value="'+c.nombre+'">'+c.icono+' '+c.nombre+'</option>';
+    }).join('');
+ 
+    var cuentasOpts = '';
+    if(Array.isArray(window.cuentasMemoria)){
+      window.cuentasMemoria.forEach(function(c,i){
+        var emoji = (typeof tipoEmoji === 'function') ? tipoEmoji(c.tipo) : '🏦';
+        cuentasOpts += '<option value="'+i+'">'+emoji+' '+c.nombre+'</option>';
+      });
+    }
+ 
+    var ingresoHTML = document.createElement('div');
+    ingresoHTML.id = 'formIngresoExtra';
+    ingresoHTML.className = 'gasto-form';
+    ingresoHTML.style.borderLeft = '3px solid #16a34a';
+    ingresoHTML.innerHTML =
+      '<h3 style="color:#4ade80;">📥 Registrar ingreso extra</h3>'+
+      '<div class="gasto-row">'+
+        '<input id="ingresoDesc" placeholder="Descripción del ingreso">'+
+        '<select id="ingresoCat">'+catsOpts+'</select>'+
+        '<select id="ingresoCuenta">'+cuentasOpts+'</select>'+
+        '<input id="ingresoMonto" type="number" placeholder="Valor">'+
+        '<button class="btn-add-gasto" style="background:#16a34a;" onclick="agregarIngresoExtra()">+ Ingreso</button>'+
+      '</div>';
+ 
+    gastoForm.parentNode.insertBefore(ingresoHTML, gastoForm);
+  }
+ 
+  window.agregarIngresoExtra = function(){
+    var desc = (document.getElementById('ingresoDesc').value||'').trim();
+    var cat = document.getElementById('ingresoCat').value;
+    var cuenta = Number(document.getElementById('ingresoCuenta').value);
+    var monto = Number(document.getElementById('ingresoMonto').value)||0;
+ 
+    if(!desc||monto<=0){ alert('Completa descripción y valor'); return; }
+ 
+    // Acreditar cuenta
+    if(cuenta >= 0 && window.cuentasMemoria && window.cuentasMemoria[cuenta]){
+      window.cuentasMemoria[cuenta].saldo += monto;
+      if(typeof cuentasGuardar === 'function') cuentasGuardar();
+    }
+ 
+    // Movimientos contables
+    if(!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
+    window.movimientosContables.push({
+      tipo: 'ingreso', monto: monto,
+      cuenta: (window.cuentasMemoria && window.cuentasMemoria[cuenta]) ? window.cuentasMemoria[cuenta].nombre : 'Efectivo',
+      descripcion: desc, categoria: cat,
+      fecha: new Date().toISOString()
+    });
+ 
+    // Limpiar
+    document.getElementById('ingresoDesc').value = '';
+    document.getElementById('ingresoMonto').value = '';
+ 
+    // Recalcular ingresos
+    if(typeof cargarIngresosMes === 'function'){
+      cargarIngresosMes().then(function(){
+        window._ingresosCache = (window._ingresosCache||0) + monto;
+        renderConta('resumen');
+      });
+    } else {
+      window._ingresosCache = (window._ingresosCache||0) + monto;
+      renderConta('resumen');
+    }
+  };
+ 
+  // =====================================================
+  // MEJORAR FORM GASTOS CON CATEGORÍAS
+  // =====================================================
+ 
+  function _mejorarFormGastos(body){
+    if(!body) return;
+    var gastoCatSelect = document.getElementById('gastoCat');
+    if(!gastoCatSelect || gastoCatSelect.dataset.catPatched) return;
+    gastoCatSelect.dataset.catPatched = 'true';
+ 
+    var cats = catLeer();
+    var allCats = cats.gastos.concat(cats.costos);
+ 
+    gastoCatSelect.innerHTML = '';
+    allCats.forEach(function(c){
+      var opt = document.createElement('option');
+      opt.value = c.nombre;
+      opt.textContent = c.icono + ' ' + c.nombre;
+      gastoCatSelect.appendChild(opt);
+    });
+  }
+ 
+  // =====================================================
+  // PESTAÑA CATEGORÍAS + DASHBOARD
+  // =====================================================
+ 
+  function _renderCategorias(){
+    var body = document.getElementById('contaBody');
+    if(!body) return;
+ 
+    var cats = catLeer();
+ 
+    // Recolectar datos para el dashboard
+    var gastosPorCat = {};
+    var ingresosPorCat = {};
+ 
+    // De gastosMemoria
+    if(Array.isArray(window.gastosMemoria)){
+      window.gastosMemoria.forEach(function(g){
+        var cat = g.categoria || 'Otro Gasto';
+        if(!gastosPorCat[cat]) gastosPorCat[cat] = 0;
+        gastosPorCat[cat] += Number(g.monto)||0;
+      });
+    }
+ 
+    // De movimientosContables
+    if(Array.isArray(window.movimientosContables)){
+      window.movimientosContables.forEach(function(m){
+        var tipo = (m.tipo||'').toLowerCase();
+        var cat = m.categoria || m.descripcion || 'Otro';
+ 
+        // Clasificar automáticamente
+        var descLow = (m.descripcion||'').toLowerCase();
+        if(descLow.indexOf('mina') > -1) cat = 'Nómina';
+        else if(descLow.indexOf('cuota') > -1) cat = 'Cuotas';
+        else if(descLow.indexOf('pago deuda') > -1) cat = 'Pago de Deuda';
+        else if(descLow.indexOf('ajuste') > -1) cat = 'Otro Gasto';
+ 
+        if(tipo === 'ingreso'){
+          if(!ingresosPorCat[cat]) ingresosPorCat[cat] = 0;
+          ingresosPorCat[cat] += Number(m.monto)||0;
+        } else {
+          if(!gastosPorCat[cat]) gastosPorCat[cat] = 0;
+          gastosPorCat[cat] += Number(m.monto)||0;
+        }
+      });
+    }
+ 
+    var totalGastos = Object.values(gastosPorCat).reduce(function(s,v){ return s+v; }, 0);
+    var totalIngresos = Object.values(ingresosPorCat).reduce(function(s,v){ return s+v; }, 0);
+ 
+    // Ordenar por monto
+    var gastosOrdenados = Object.entries(gastosPorCat).sort(function(a,b){ return b[1]-a[1]; });
+    var ingresosOrdenados = Object.entries(ingresosPorCat).sort(function(a,b){ return b[1]-a[1]; });
+ 
+    function getColor(nombre, lista){
+      var found = lista.find(function(c){ return c.nombre === nombre; });
+      return found ? found.color : '#94a3b8';
+    }
+    function getIcono(nombre, lista){
+      var found = lista.find(function(c){ return c.nombre === nombre; });
+      return found ? found.icono : '•';
+    }
+ 
+    // ========== HTML ==========
+    var tabsHtml = '<div class="filter-tabs">'+
+      '<button class="ftab" onclick="renderConta(\'resumen\')">📊 Resumen</button>'+
+      '<button class="ftab" onclick="renderConta(\'cuentas\')">🏦 Cuentas</button>'+
+      '<button class="ftab" onclick="renderConta(\'flujo\')">📊 Flujo de Caja</button>'+
+      '<button class="ftab" onclick="renderConta(\'cuotas\')">💳 Cuotas</button>'+
+      '<button class="ftab" onclick="renderConta(\'historial\')">📚 Historial</button>'+
+      '<button class="ftab active" onclick="renderConta(\'categorias\')">📊 Categorías</button>'+
+      '<button class="ftab" onclick="(typeof cajaCargarResumenDia===\'function\'?cajaCargarResumenDia():Promise.resolve()).then(function(){renderConta(\'caja\');})">💵 Caja</button>'+
+    '</div>';
+ 
+    var html = tabsHtml;
+ 
+    html += '<div class="cuentas-page-header" style="margin-bottom:16px;">'+
+      '<div><div class="cuentas-page-title">📊 Dashboard de Categorías</div>'+
+      '<div class="cuentas-page-subtitle">Análisis de ingresos y gastos por categoría</div></div>'+
+      '<button class="btn-nueva-cuenta" onclick="catAgregarNueva()" style="background:#7c3aed;">+ Categoría</button>'+
+    '</div>';
+ 
+    // KPIs
+    html += '<div class="conta-kpi-grid" style="margin-bottom:20px;">'+
+      '<div class="kpi-card green"><div class="kpi-label">Total ingresos</div><div class="kpi-value" style="font-size:1.25rem;">'+nM(totalIngresos)+'</div><div class="kpi-delta neutral">'+Object.keys(ingresosPorCat).length+' categoría(s)</div></div>'+
+      '<div class="kpi-card"><div class="kpi-label">Total gastos</div><div class="kpi-value" style="font-size:1.25rem;color:#f87171;">'+nM(totalGastos)+'</div><div class="kpi-delta neutral">'+Object.keys(gastosPorCat).length+' categoría(s)</div></div>'+
+      '<div class="kpi-card '+(totalIngresos-totalGastos>=0?'green':'')+'"><div class="kpi-label">Balance</div><div class="kpi-value" style="font-size:1.25rem;'+(totalIngresos-totalGastos<0?'color:#f87171;':'')+'">'+nM(totalIngresos-totalGastos)+'</div></div>'+
+      '<div class="kpi-card purple"><div class="kpi-label">Mayor gasto</div><div class="kpi-value" style="font-size:1rem;">'+(gastosOrdenados[0]?gastosOrdenados[0][0]:'—')+'</div><div class="kpi-delta neutral">'+(gastosOrdenados[0]?nM(gastosOrdenados[0][1]):'$0')+'</div></div>'+
+    '</div>';
+ 
+    // ========== GRÁFICOS DE BARRAS ==========
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">'+
+      _barChart('🔴 ¿En qué gastas más?', gastosOrdenados, totalGastos, cats.gastos.concat(cats.costos), '#f87171') +
+      _barChart('🟢 ¿De dónde ingresas más?', ingresosOrdenados, totalIngresos, cats.ingresos, '#4ade80') +
+    '</div>';
+ 
+    // ========== LISTA DE CATEGORÍAS EDITABLES ==========
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">';
+ 
+    // Ingresos
+    html += '<div style="background:var(--clr-panel-surface,#1e293b);border:1px solid var(--clr-panel-border,rgba(255,255,255,0.1));border-radius:16px;padding:20px;">'+
+      '<div style="font-size:14px;font-weight:800;color:#4ade80;margin-bottom:12px;">📥 Categorías de Ingreso</div>';
+    cats.ingresos.forEach(function(c, i){
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:13px;">'+
+        '<div style="display:flex;align-items:center;gap:8px;">'+
+          '<div style="width:10px;height:10px;border-radius:50%;background:'+c.color+';"></div>'+
+          '<span style="color:#e2e8f0;">'+c.icono+' '+c.nombre+'</span>'+
+        '</div>'+
+        '<button onclick="catEliminar(\'ingresos\','+i+')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:12px;">✕</button>'+
+      '</div>';
+    });
+    html += '</div>';
+ 
+    // Gastos
+    html += '<div style="background:var(--clr-panel-surface,#1e293b);border:1px solid var(--clr-panel-border,rgba(255,255,255,0.1));border-radius:16px;padding:20px;">'+
+      '<div style="font-size:14px;font-weight:800;color:#f87171;margin-bottom:12px;">📤 Categorías de Gasto</div>';
+    cats.gastos.forEach(function(c, i){
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:13px;">'+
+        '<div style="display:flex;align-items:center;gap:8px;">'+
+          '<div style="width:10px;height:10px;border-radius:50%;background:'+c.color+';"></div>'+
+          '<span style="color:#e2e8f0;">'+c.icono+' '+c.nombre+'</span>'+
+        '</div>'+
+        '<button onclick="catEliminar(\'gastos\','+i+')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:12px;">✕</button>'+
+      '</div>';
+    });
+    html += '</div>';
+ 
+    // Costos
+    html += '<div style="background:var(--clr-panel-surface,#1e293b);border:1px solid var(--clr-panel-border,rgba(255,255,255,0.1));border-radius:16px;padding:20px;">'+
+      '<div style="font-size:14px;font-weight:800;color:#fbbf24;margin-bottom:12px;">⚙️ Categorías de Costo</div>';
+    cats.costos.forEach(function(c, i){
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:13px;">'+
+        '<div style="display:flex;align-items:center;gap:8px;">'+
+          '<div style="width:10px;height:10px;border-radius:50%;background:'+c.color+';"></div>'+
+          '<span style="color:#e2e8f0;">'+c.icono+' '+c.nombre+'</span>'+
+        '</div>'+
+        '<button onclick="catEliminar(\'costos\','+i+')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:12px;">✕</button>'+
+      '</div>';
+    });
+    html += '</div></div>';
+ 
+    body.innerHTML = html;
+  }
+ 
+  function _barChart(titulo, datos, total, catList, color){
+    var maxVal = datos.length > 0 ? datos[0][1] : 1;
+    if(maxVal <= 0) maxVal = 1;
+ 
+    var barsHTML = '';
+    if(datos.length === 0){
+      barsHTML = '<div style="padding:30px;text-align:center;color:#64748b;font-size:13px;">Sin datos aún</div>';
+    } else {
+      datos.forEach(function(d){
+        var pct = Math.max(((d[1]/maxVal)*100).toFixed(1), 2);
+        var pctTotal = total > 0 ? ((d[1]/total)*100).toFixed(1) : 0;
+        var catColor = '#94a3b8';
+        var catIcono = '•';
+        catList.forEach(function(c){
+          if(c.nombre === d[0]){ catColor = c.color; catIcono = c.icono; }
+        });
+ 
+        barsHTML += '<div style="margin-bottom:10px;">'+
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">'+
+            '<span style="font-size:12px;color:#e2e8f0;font-weight:600;">'+catIcono+' '+d[0]+'</span>'+
+            '<span style="font-size:12px;color:'+catColor+';font-weight:800;">'+nM(d[1])+' <span style="color:#94a3b8;font-weight:400;">('+pctTotal+'%)</span></span>'+
+          '</div>'+
+          '<div style="height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden;">'+
+            '<div style="height:100%;width:'+pct+'%;background:'+catColor+';border-radius:4px;transition:width 0.5s;"></div>'+
+          '</div>'+
+        '</div>';
+      });
+    }
+ 
+    return '<div style="background:var(--clr-panel-surface,#1e293b);border:1px solid var(--clr-panel-border,rgba(255,255,255,0.1));border-radius:16px;padding:20px;">'+
+      '<div style="font-size:15px;font-weight:800;color:'+color+';margin-bottom:14px;">'+titulo+'</div>'+
+      barsHTML+
+      '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);text-align:right;font-size:13px;color:#94a3b8;">Total: <span style="color:white;font-weight:800;">'+nM(total)+'</span></div>'+
+    '</div>';
+  }
+ 
+  // =====================================================
+  // GESTIÓN DE CATEGORÍAS
+  // =====================================================
+ 
+  window.catAgregarNueva = function(){
+    if(typeof mostrarMC !== 'function') return;
+    mostrarMC(
+      '<h3>➕ Nueva categoría</h3>'+
+      '<div class="mc-field"><label>Tipo</label><select id="catTipo"><option value="ingresos">Ingreso</option><option value="gastos">Gasto</option><option value="costos">Costo</option></select></div>'+
+      '<div class="mc-field"><label>Nombre</label><input id="catNom" placeholder="Ej: Publicidad"></div>'+
+      '<div class="mc-field"><label>Icono (emoji)</label><input id="catIco" placeholder="Ej: 📢" value="📌"></div>'+
+      '<div class="mc-field"><label>Color</label><select id="catCol">'+
+        '<option value="#4ade80">Verde</option><option value="#60a5fa">Azul</option><option value="#c084fc">Morado</option>'+
+        '<option value="#fbbf24">Amarillo</option><option value="#f87171">Rojo</option><option value="#22d3ee">Cyan</option>'+
+        '<option value="#fb923c">Naranja</option><option value="#94a3b8">Gris</option>'+
+      '</select></div>'+
+      '<div class="mc-btns">'+
+        '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
+        '<button class="mc-btn-ok" style="background:#7c3aed;" onclick="catConfirmarNueva()">Crear</button>'+
+      '</div>'
+    );
+  };
+ 
+  window.catConfirmarNueva = function(){
+    var tipo = document.getElementById('catTipo').value;
+    var nom = (document.getElementById('catNom').value||'').trim();
+    var ico = (document.getElementById('catIco').value||'📌').trim();
+    var col = document.getElementById('catCol').value;
+    if(!nom){ alert('Ingresa nombre'); return; }
+ 
+    var cats = catLeer();
+    if(!cats[tipo]) cats[tipo] = [];
+    cats[tipo].push({ nombre: nom, color: col, icono: ico });
+    catGuardar(cats);
+    if(typeof cerrarMC === 'function') cerrarMC();
+    renderConta('categorias');
+  };
+ 
+  window.catEliminar = function(tipo, idx){
+    var cats = catLeer();
+    if(!cats[tipo] || !cats[tipo][idx]) return;
+    if(!confirm('¿Eliminar categoría "' + cats[tipo][idx].nombre + '"?')) return;
+    cats[tipo].splice(idx, 1);
+    catGuardar(cats);
+    renderConta('categorias');
+  };
+ 
+  // =====================================================
+  // CSS RESPONSIVO
+  // =====================================================
+  var style = document.createElement('style');
+  style.textContent = '@media(max-width:768px){#contaBody [style*="grid-template-columns:1fr 1fr 1fr"]{grid-template-columns:1fr!important;} #contaBody [style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr!important;}}';
+  document.head.appendChild(style);
+ 
+  console.log('✅ Parche Contabilidad: Categorías + Ingresos + Dashboard activos');
+ 
+})();
 </script>
 <!-- MODAL GLOBAL CONTABILIDAD -->
 <div id="mcOverlayGlobal" style="display:none;">
