@@ -996,6 +996,15 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
   </svg>
   Cartera
 </button>
+<button class="module-btn" onclick="abrirModuloLateral('nomina')" style="border-left:3px solid #eab308">
+       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+         <circle cx="9" cy="7" r="4"/>
+         <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+         <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+       </svg>
+       Nómina
+     </button>
 
 </div>
 
@@ -1139,6 +1148,15 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
     </div>
   </div>
 </div>
+<div class="overlay-panel" id="panelNomina">
+       <div class="panel-drawer" style="width:100%;">
+         <div class="panel-header">
+           <h2>👷 Nómina</h2>
+           <button class="panel-close" onclick="cerrarPanel('panelNomina')">Cerrar</button>
+         </div>
+         <div class="panel-body" id="nominaBody"></div>
+       </div>
+     </div>
 <!-- PANEL CARTERA -->
 <div class="overlay-panel" id="panelCartera">
   <div class="panel-drawer" style="width:min(1300px,98vw);">
@@ -2222,6 +2240,14 @@ async function abrirModuloLateral(modulo){
     panelStats.classList.add("open");
     if(typeof cargarStats === "function") await cargarStats("hoy");
   }
+if(modulo === "nomina"){
+       let panelNomina = document.getElementById("panelNomina");
+       if(!panelNomina) return;
+       panelNomina.style.display = "flex";
+       panelNomina.classList.add("open");
+       renderNomina();
+       return;
+     }
  if(modulo === "cartera"){
   let panelCartera = document.getElementById("panelCartera");
   if(!panelCartera) return;
@@ -7049,6 +7075,549 @@ async function historialExportarExcel(){
   };
  
   console.log('\u2705 Parche Recaudo: 5 mejoras activas');
+})();
+(function(){
+ 
+  // =====================================================
+  // DATOS INICIALES
+  // =====================================================
+ 
+  var NOMINA_KEY = 'nomina_data';
+  var DIAS = ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES','SÁBADO'];
+ 
+  function nominaDefaults(){
+    return {
+      empleados: [
+        { id:'panadero',    nombre:'PANADERO',       color:'#f59e0b', tipo:'quincenal', salarioDia:0, salarioQuincena:900000, asistencia:[false,false,false,false,false,false], adelantos:[] },
+        { id:'aux',         nombre:'AUX-PANADERÍA',  color:'#22c55e', tipo:'quincenal', salarioDia:0, salarioQuincena:840000, asistencia:[false,false,false,false,false,false], adelantos:[] },
+        { id:'diana',       nombre:'DIANA',           color:'#16a34a', tipo:'semanal',   salarioDia:30000, salarioQuincena:0, asistencia:[false,false,false,false,false,false], adelantos:[] },
+        { id:'vianey',      nombre:'VIANEY',          color:'#2563eb', tipo:'semanal',   salarioDia:30000, salarioQuincena:0, asistencia:[false,false,false,false,false,false], adelantos:[] },
+        { id:'andrea',      nombre:'ANDREA',          color:'#7c3aed', tipo:'semanal',   salarioDia:40000, salarioQuincena:0, asistencia:[false,false,false,false,false,false], adelantos:[] },
+        { id:'diego',       nombre:'DIEGO',           color:'#eab308', tipo:'semanal',   salarioDia:30000, salarioQuincena:0, asistencia:[false,false,false,false,false,false], adelantos:[] }
+      ],
+      semanaActual: getSemanaId(),
+      historialPagos: []
+    };
+  }
+ 
+  function getSemanaId(){
+    var d = new Date();
+    var day = d.getDay();
+    var diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    var lunes = new Date(d.setDate(diff));
+    return lunes.toISOString().split('T')[0];
+  }
+ 
+  function nominaLeer(){
+    try {
+      var raw = localStorage.getItem(NOMINA_KEY);
+      if(!raw) return nominaDefaults();
+      var data = JSON.parse(raw);
+      // Si cambió la semana, resetear asistencia
+      if(data.semanaActual !== getSemanaId()){
+        data.semanaActual = getSemanaId();
+        data.empleados.forEach(function(e){
+          e.asistencia = [false,false,false,false,false,false];
+        });
+      }
+      return data;
+    } catch(e){
+      return nominaDefaults();
+    }
+  }
+ 
+  function nominaGuardar(data){
+    try { localStorage.setItem(NOMINA_KEY, JSON.stringify(data)); } catch(e){}
+  }
+ 
+  function nMoney(n){
+    return '$' + (Number(n)||0).toLocaleString('es-CO');
+  }
+ 
+  // =====================================================
+  // RENDER PRINCIPAL
+  // =====================================================
+ 
+  window.renderNomina = function(){
+    var body = document.getElementById('nominaBody');
+    if(!body) return;
+ 
+    var data = nominaLeer();
+    var semanales = data.empleados.filter(function(e){ return e.tipo === 'semanal'; });
+    var quincenales = data.empleados.filter(function(e){ return e.tipo === 'quincenal'; });
+ 
+    var totalNominaSemanal = 0;
+    var totalNominaQuincenal = 0;
+ 
+    // Calcular totales
+    semanales.forEach(function(e){
+      var diasTrab = e.asistencia.filter(function(a){ return a; }).length;
+      var bruto = diasTrab * (Number(e.salarioDia)||0);
+      var adelantos = (e.adelantos||[]).reduce(function(s,a){ return s + (Number(a.monto)||0); }, 0);
+      totalNominaSemanal += Math.max(bruto - adelantos, 0);
+    });
+ 
+    quincenales.forEach(function(e){
+      var bruto = Number(e.salarioQuincena)||0;
+      var adelantos = (e.adelantos||[]).reduce(function(s,a){ return s + (Number(a.monto)||0); }, 0);
+      totalNominaQuincenal += Math.max(bruto - adelantos, 0);
+    });
+ 
+    var html = '';
+ 
+    // ========== HEADER ==========
+    html += '<div class="cuentas-page-header" style="margin-bottom:16px;">'+
+      '<div><div class="cuentas-page-title">👷 Nómina Semanal</div>'+
+      '<div class="cuentas-page-subtitle">Semana del ' + data.semanaActual + '</div></div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'+
+        '<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#cbd5e1;font-size:12px;">' + new Date().toLocaleDateString('es-CO',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) + '</span>'+
+        '<button onclick="nominaAgregarEmpleado()" class="btn-nueva-cuenta" style="background:#eab308;">+ Empleado</button>'+
+      '</div>'+
+    '</div>';
+ 
+    // ========== KPIs ==========
+    html += '<div class="conta-kpi-grid" style="margin-bottom:20px;">'+
+      '<div class="kpi-card orange"><div class="kpi-label">Nómina semanal</div><div class="kpi-value" style="font-size:1.25rem;">'+nMoney(totalNominaSemanal)+'</div><div class="kpi-delta neutral">'+semanales.length+' empleado(s)</div></div>'+
+      '<div class="kpi-card blue"><div class="kpi-label">Nómina quincenal</div><div class="kpi-value" style="font-size:1.25rem;">'+nMoney(totalNominaQuincenal)+'</div><div class="kpi-delta neutral">'+quincenales.length+' empleado(s)</div></div>'+
+      '<div class="kpi-card green"><div class="kpi-label">Total nómina</div><div class="kpi-value" style="font-size:1.25rem;">'+nMoney(totalNominaSemanal + totalNominaQuincenal)+'</div><div class="kpi-delta neutral">Todos los empleados</div></div>'+
+    '</div>';
+ 
+    // ========== QUINCENALES (PANADERO + AUX) ==========
+    html += '<div class="section-title">🍞 Pago Quincenal</div>';
+ 
+    quincenales.forEach(function(e, qi){
+      var idx = data.empleados.indexOf(e);
+      var adelantos = (e.adelantos||[]).reduce(function(s,a){ return s + (Number(a.monto)||0); }, 0);
+      var neto = Math.max((Number(e.salarioQuincena)||0) - adelantos, 0);
+ 
+      html += '<div style="background:var(--clr-panel-surface,#1e293b);border:1px solid var(--clr-panel-border,rgba(255,255,255,0.1));border-radius:16px;padding:20px;margin-bottom:16px;">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">'+
+          '<div style="display:flex;align-items:center;gap:10px;">'+
+            '<div style="width:40px;height:40px;border-radius:10px;background:'+e.color+';display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:white;">'+e.nombre.charAt(0)+'</div>'+
+            '<div><div style="font-size:17px;font-weight:800;color:white;text-transform:uppercase;">'+e.nombre+'</div>'+
+            '<div style="font-size:12px;color:#94a3b8;">Quincenal</div></div>'+
+          '</div>'+
+          '<div style="display:flex;gap:8px;align-items:center;">'+
+            '<div style="text-align:right;">'+
+              '<div style="font-size:11px;color:#94a3b8;text-transform:uppercase;font-weight:600;">Salario quincena</div>'+
+              '<input id="nq_sal_'+idx+'" type="text" inputmode="numeric" value="'+(Number(e.salarioQuincena)||0).toLocaleString('es-CO')+'" '+
+                'onblur="nominaEditarSalarioQ('+idx+',this)" '+
+                'style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fbbf24;padding:6px 10px;font-size:18px;font-weight:800;text-align:right;width:160px;font-family:var(--font-body);" />'+
+            '</div>'+
+          '</div>'+
+        '</div>';
+ 
+      // Adelantos
+      html += '<div style="margin-bottom:14px;">'+
+        '<div style="font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase;margin-bottom:8px;">Adelantos / Descuentos</div>';
+ 
+      if(e.adelantos && e.adelantos.length > 0){
+        e.adelantos.forEach(function(a, ai){
+          html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.15);border-radius:8px;margin-bottom:4px;font-size:13px;">'+
+            '<div style="display:flex;align-items:center;gap:8px;">'+
+              '<span style="color:#fca5a5;font-weight:700;">-'+nMoney(a.monto)+'</span>'+
+              '<span style="color:#94a3b8;">'+( a.razon || '')+'</span>'+
+            '</div>'+
+            '<button onclick="nominaBorrarAdelanto('+idx+','+ai+')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;">✕</button>'+
+          '</div>';
+        });
+      }
+ 
+      html += '<div style="display:flex;gap:4px;margin-top:6px;">'+
+          '<input id="nq_adm_'+idx+'" type="text" inputmode="numeric" placeholder="Monto" style="flex:1;max-width:120px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:6px 10px;font-size:13px;font-family:var(--font-body);" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').replace(/\\B(?=(\\d{3})+(?!\\d))/g,\'.\')" />'+
+          '<input id="nq_adr_'+idx+'" type="text" placeholder="Razón (ej: Adelanto 11/04)" style="flex:2;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:6px 10px;font-size:13px;font-family:var(--font-body);" />'+
+          '<button onclick="nominaAgregarAdelanto('+idx+')" style="padding:6px 12px;background:rgba(239,68,68,0.2);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#f87171;font-weight:700;cursor:pointer;font-size:13px;">+ Adelanto</button>'+
+        '</div>'+
+      '</div>';
+ 
+      // Resumen
+      html += '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">'+
+        '<div style="display:flex;gap:16px;">'+
+          '<div><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;">Bruto</div><div style="font-size:16px;font-weight:800;color:white;">'+nMoney(e.salarioQuincena)+'</div></div>'+
+          '<div><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;">Adelantos</div><div style="font-size:16px;font-weight:800;color:#f87171;">-'+nMoney(adelantos)+'</div></div>'+
+          '<div><div style="font-size:10px;color:#4ade80;text-transform:uppercase;font-weight:700;">A PAGAR</div><div style="font-size:20px;font-weight:800;color:#4ade80;">'+nMoney(neto)+'</div></div>'+
+        '</div>'+
+      '</div>';
+ 
+      html += '</div>';
+    });
+ 
+    // Botón registrar quincena
+    html += '<div style="margin-bottom:24px;"><button onclick="nominaRegistrarQuincena()" style="width:100%;padding:14px;background:linear-gradient(135deg,#d97706,#f59e0b);border:none;border-radius:12px;color:white;font-size:16px;font-weight:800;cursor:pointer;font-family:var(--font-body);letter-spacing:0.03em;">💰 REGISTRAR QUINCENA</button></div>';
+ 
+    // ========== SEMANALES (DIANA, VIANEY, ANDREA, DIEGO) ==========
+    html += '<div class="section-title">📋 Asistencia Semanal</div>';
+ 
+    semanales.forEach(function(e){
+      var idx = data.empleados.indexOf(e);
+      var diasTrab = e.asistencia.filter(function(a){ return a; }).length;
+      var bruto = diasTrab * (Number(e.salarioDia)||0);
+      var adelantos = (e.adelantos||[]).reduce(function(s,a){ return s + (Number(a.monto)||0); }, 0);
+      var neto = Math.max(bruto - adelantos, 0);
+ 
+      html += '<div style="background:var(--clr-panel-surface,#1e293b);border:1px solid var(--clr-panel-border,rgba(255,255,255,0.1));border-radius:16px;padding:20px;margin-bottom:16px;">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px;">'+
+          '<div style="display:flex;align-items:center;gap:10px;">'+
+            '<div style="width:40px;height:40px;border-radius:10px;background:'+e.color+';display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:white;">'+e.nombre.charAt(0)+'</div>'+
+            '<div><div style="font-size:17px;font-weight:800;color:white;text-transform:uppercase;">'+e.nombre+'</div>'+
+            '<div style="font-size:12px;color:#94a3b8;">Semanal · '+nMoney(e.salarioDia)+'/día</div></div>'+
+          '</div>'+
+          '<div style="display:flex;align-items:center;gap:8px;">'+
+            '<div style="font-size:11px;color:#94a3b8;">$/día:</div>'+
+            '<input id="ns_sal_'+idx+'" type="text" inputmode="numeric" value="'+(Number(e.salarioDia)||0).toLocaleString('es-CO')+'" '+
+              'onblur="nominaEditarSalarioD('+idx+',this)" '+
+              'style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fbbf24;padding:6px 10px;font-size:15px;font-weight:800;text-align:right;width:110px;font-family:var(--font-body);" />'+
+          '</div>'+
+        '</div>';
+ 
+      // Tabla de asistencia
+      html += '<div style="overflow-x:auto;margin-bottom:12px;">'+
+        '<table style="width:100%;border-collapse:collapse;min-width:500px;">'+
+          '<thead><tr>';
+      DIAS.forEach(function(d){
+        html += '<th style="padding:8px 6px;background:'+e.color+';color:white;font-size:11px;font-weight:700;text-align:center;letter-spacing:0.05em;">'+d+'</th>';
+      });
+      html += '</tr></thead><tbody><tr>';
+      DIAS.forEach(function(d, di){
+        html += '<td style="padding:8px;text-align:center;border:1px solid rgba(255,255,255,0.06);">'+
+          '<input type="checkbox" '+(e.asistencia[di]?'checked':'')+' onchange="nominaToggleAsistencia('+idx+','+di+')" style="width:20px;height:20px;accent-color:'+e.color+';cursor:pointer;" />'+
+        '</td>';
+      });
+      html += '</tr><tr>';
+      DIAS.forEach(function(d, di){
+        html += '<td style="padding:4px;text-align:center;font-size:12px;color:'+(e.asistencia[di]?'#4ade80':'#475569')+';font-weight:'+(e.asistencia[di]?'700':'400')+';">'+
+          (e.asistencia[di] ? nMoney(e.salarioDia) : '-')+
+        '</td>';
+      });
+      html += '</tr></tbody></table></div>';
+ 
+      // Adelantos
+      html += '<div style="margin-bottom:12px;">'+
+        '<div style="font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase;margin-bottom:6px;">Adelantos / Descuentos</div>';
+ 
+      if(e.adelantos && e.adelantos.length > 0){
+        e.adelantos.forEach(function(a, ai){
+          html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.15);border-radius:8px;margin-bottom:3px;font-size:12px;">'+
+            '<div><span style="color:#fca5a5;font-weight:700;">-'+nMoney(a.monto)+'</span> <span style="color:#94a3b8;margin-left:6px;">'+( a.razon || '')+'</span></div>'+
+            '<button onclick="nominaBorrarAdelanto('+idx+','+ai+')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:13px;">✕</button>'+
+          '</div>';
+        });
+      }
+ 
+      html += '<div style="display:flex;gap:4px;margin-top:4px;">'+
+          '<input id="ns_adm_'+idx+'" type="text" inputmode="numeric" placeholder="Monto" style="flex:1;max-width:100px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:5px 8px;font-size:12px;font-family:var(--font-body);" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').replace(/\\B(?=(\\d{3})+(?!\\d))/g,\'.\')" />'+
+          '<input id="ns_adr_'+idx+'" type="text" placeholder="Razón" style="flex:2;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:5px 8px;font-size:12px;font-family:var(--font-body);" />'+
+          '<button onclick="nominaAgregarAdelanto('+idx+')" style="padding:5px 10px;background:rgba(239,68,68,0.2);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#f87171;font-weight:700;cursor:pointer;font-size:12px;">+</button>'+
+        '</div>'+
+      '</div>';
+ 
+      // Resumen
+      html += '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);">'+
+        '<div style="display:flex;gap:14px;">'+
+          '<div><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;">Días</div><div style="font-size:16px;font-weight:800;color:white;">'+diasTrab+'/6</div></div>'+
+          '<div><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;">Bruto</div><div style="font-size:16px;font-weight:800;color:white;">'+nMoney(bruto)+'</div></div>'+
+          '<div><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;">Adelantos</div><div style="font-size:16px;font-weight:800;color:#f87171;">-'+nMoney(adelantos)+'</div></div>'+
+          '<div style="background:rgba(22,163,74,0.12);border:1px solid rgba(22,163,74,0.2);border-radius:10px;padding:6px 14px;"><div style="font-size:10px;color:#4ade80;text-transform:uppercase;font-weight:700;">A PAGAR</div><div style="font-size:22px;font-weight:800;color:#4ade80;">'+nMoney(neto)+'</div></div>'+
+        '</div>'+
+      '</div>';
+ 
+      html += '</div>';
+    });
+ 
+    // Botón registrar semanal
+    html += '<div style="margin-bottom:24px;"><button onclick="nominaRegistrarSemanal()" style="width:100%;padding:16px;background:linear-gradient(135deg,#16a34a,#22c55e);border:none;border-radius:12px;color:white;font-size:18px;font-weight:800;cursor:pointer;font-family:var(--font-body);letter-spacing:0.03em;">✅ REGISTRAR SEMANAL</button></div>';
+ 
+    // ========== HISTORIAL ==========
+    html += '<div class="section-title">📜 Historial de Pagos</div>';
+    var hist = data.historialPagos || [];
+    if(hist.length === 0){
+      html += '<div style="padding:30px;text-align:center;color:#64748b;font-size:13px;">Sin pagos registrados aún</div>';
+    } else {
+      html += '<div style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;">';
+      hist.slice().reverse().forEach(function(h){
+        var color = h.tipo === 'semanal' ? '#4ade80' : '#fbbf24';
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;font-size:13px;">'+
+          '<div><span style="color:'+color+';font-weight:700;">'+(h.tipo === 'semanal' ? '📋 Semanal' : '💰 Quincena')+'</span>'+
+          '<span style="color:#94a3b8;margin-left:10px;">'+h.fecha+'</span></div>'+
+          '<div style="text-align:right;"><div style="font-weight:800;color:white;">'+nMoney(h.total)+'</div>'+
+          '<div style="font-size:11px;color:#94a3b8;">'+h.detalle+'</div></div>'+
+        '</div>';
+      });
+      html += '</div>';
+    }
+ 
+    body.innerHTML = html;
+  };
+ 
+ 
+  // =====================================================
+  // FUNCIONES
+  // =====================================================
+ 
+  window.nominaToggleAsistencia = function(idx, dia){
+    var data = nominaLeer();
+    if(!data.empleados[idx]) return;
+    data.empleados[idx].asistencia[dia] = !data.empleados[idx].asistencia[dia];
+    nominaGuardar(data);
+    renderNomina();
+  };
+ 
+  window.nominaEditarSalarioD = function(idx, input){
+    var data = nominaLeer();
+    if(!data.empleados[idx]) return;
+    var val = Number(input.value.replace(/\./g,'')) || 0;
+    data.empleados[idx].salarioDia = val;
+    nominaGuardar(data);
+    renderNomina();
+  };
+ 
+  window.nominaEditarSalarioQ = function(idx, input){
+    var data = nominaLeer();
+    if(!data.empleados[idx]) return;
+    var val = Number(input.value.replace(/\./g,'')) || 0;
+    data.empleados[idx].salarioQuincena = val;
+    nominaGuardar(data);
+    renderNomina();
+  };
+ 
+  window.nominaAgregarAdelanto = function(idx){
+    var mInput = document.getElementById('nq_adm_'+idx) || document.getElementById('ns_adm_'+idx);
+    var rInput = document.getElementById('nq_adr_'+idx) || document.getElementById('ns_adr_'+idx);
+    if(!mInput) return;
+ 
+    var monto = Number(mInput.value.replace(/\./g,'')) || 0;
+    var razon = rInput ? rInput.value.trim() : '';
+ 
+    if(monto <= 0){ alert('Ingresa el monto del adelanto'); return; }
+ 
+    var data = nominaLeer();
+    if(!data.empleados[idx]) return;
+    if(!Array.isArray(data.empleados[idx].adelantos)) data.empleados[idx].adelantos = [];
+ 
+    var fechaHoy = new Date().toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit',year:'numeric'});
+    data.empleados[idx].adelantos.push({
+      monto: monto,
+      razon: razon || ('Adelanto ' + fechaHoy),
+      fecha: fechaHoy
+    });
+ 
+    nominaGuardar(data);
+    renderNomina();
+  };
+ 
+  window.nominaBorrarAdelanto = function(idx, ai){
+    var data = nominaLeer();
+    if(!data.empleados[idx]) return;
+    if(!confirm('¿Eliminar este adelanto?')) return;
+    data.empleados[idx].adelantos.splice(ai, 1);
+    nominaGuardar(data);
+    renderNomina();
+  };
+ 
+  // =====================================================
+  // REGISTRAR PAGO SEMANAL
+  // =====================================================
+ 
+  window.nominaRegistrarSemanal = function(){
+    var data = nominaLeer();
+    var semanales = data.empleados.filter(function(e){ return e.tipo === 'semanal'; });
+ 
+    var totalPagar = 0;
+    var detalle = [];
+ 
+    semanales.forEach(function(e){
+      var diasTrab = e.asistencia.filter(function(a){ return a; }).length;
+      var bruto = diasTrab * (Number(e.salarioDia)||0);
+      var adelantos = (e.adelantos||[]).reduce(function(s,a){ return s + (Number(a.monto)||0); }, 0);
+      var neto = Math.max(bruto - adelantos, 0);
+      totalPagar += neto;
+      detalle.push(e.nombre + ': ' + nMoney(neto));
+    });
+ 
+    if(totalPagar <= 0){
+      alert('No hay nómina semanal para registrar');
+      return;
+    }
+ 
+    if(!confirm('¿Registrar pago semanal por ' + nMoney(totalPagar) + '?\n\n' + detalle.join('\n'))){
+      return;
+    }
+ 
+    // Registrar gasto en contabilidad
+    _nominaRegistrarGasto(totalPagar, 'Nómina semanal — ' + detalle.join(', '));
+ 
+    // Historial
+    data.historialPagos.push({
+      tipo: 'semanal',
+      total: totalPagar,
+      detalle: detalle.join(' | '),
+      fecha: new Date().toLocaleDateString('es-CO',{day:'numeric',month:'long',year:'numeric'}),
+      semana: data.semanaActual
+    });
+ 
+    // Limpiar adelantos y asistencia de los semanales
+    semanales.forEach(function(e){
+      e.adelantos = [];
+      e.asistencia = [false,false,false,false,false,false];
+    });
+ 
+    nominaGuardar(data);
+    renderNomina();
+    alert('✅ Nómina semanal registrada: ' + nMoney(totalPagar));
+  };
+ 
+  // =====================================================
+  // REGISTRAR PAGO QUINCENAL
+  // =====================================================
+ 
+  window.nominaRegistrarQuincena = function(){
+    var data = nominaLeer();
+    var quincenales = data.empleados.filter(function(e){ return e.tipo === 'quincenal'; });
+ 
+    var totalPagar = 0;
+    var detalle = [];
+ 
+    quincenales.forEach(function(e){
+      var bruto = Number(e.salarioQuincena)||0;
+      var adelantos = (e.adelantos||[]).reduce(function(s,a){ return s + (Number(a.monto)||0); }, 0);
+      var neto = Math.max(bruto - adelantos, 0);
+      totalPagar += neto;
+      detalle.push(e.nombre + ': ' + nMoney(neto));
+    });
+ 
+    if(totalPagar <= 0){
+      alert('No hay nómina quincenal para registrar');
+      return;
+    }
+ 
+    if(!confirm('¿Registrar pago quincenal por ' + nMoney(totalPagar) + '?\n\n' + detalle.join('\n'))){
+      return;
+    }
+ 
+    _nominaRegistrarGasto(totalPagar, 'Nómina quincenal — ' + detalle.join(', '));
+ 
+    data.historialPagos.push({
+      tipo: 'quincenal',
+      total: totalPagar,
+      detalle: detalle.join(' | '),
+      fecha: new Date().toLocaleDateString('es-CO',{day:'numeric',month:'long',year:'numeric'}),
+      semana: data.semanaActual
+    });
+ 
+    // Limpiar adelantos de quincenales
+    quincenales.forEach(function(e){
+      e.adelantos = [];
+    });
+ 
+    nominaGuardar(data);
+    renderNomina();
+    alert('✅ Nómina quincenal registrada: ' + nMoney(totalPagar));
+  };
+ 
+  // =====================================================
+  // REGISTRAR GASTO EN EL ECOSISTEMA
+  // =====================================================
+ 
+  function _nominaRegistrarGasto(monto, descripcion){
+    // 1. Movimientos contables
+    if(!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
+    window.movimientosContables.push({
+      tipo: 'gasto',
+      monto: monto,
+      cuenta: 'Efectivo',
+      descripcion: descripcion,
+      fecha: new Date().toISOString()
+    });
+ 
+    // 2. Gastos memoria
+    if(!Array.isArray(window.gastosMemoria)) window.gastosMemoria = [];
+    window.gastosMemoria.push({
+      descripcion: descripcion,
+      categoria: 'Costo',
+      monto: monto,
+      fecha: new Date().toISOString()
+    });
+    try { sessionStorage.setItem('gastos', JSON.stringify(window.gastosMemoria)); } catch(e){}
+ 
+    // 3. Descontar de cuenta Efectivo
+    if(Array.isArray(window.cuentasMemoria)){
+      var idxEf = window.cuentasMemoria.findIndex(function(c){ return c.tipo === 'EFECTIVO'; });
+      if(idxEf >= 0){
+        window.cuentasMemoria[idxEf].saldo -= monto;
+        if(typeof cuentasGuardar === 'function') cuentasGuardar();
+      }
+    }
+ 
+    // 4. Si hay caja abierta, registrar egreso
+    if(window._cajaCache && window._cajaCache.sesion && window._cajaCache.sesion.estado === 'abierta'){
+      try {
+        window.db.from("cajas_movimientos").insert({
+          caja_id: window._cajaCache.sesion.id,
+          fecha: (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0],
+          tipo: 'egreso',
+          subtipo: 'nomina',
+          categoria: 'Costo',
+          descripcion: descripcion,
+          metodo_pago: 'efectivo',
+          valor: monto,
+          saldo_acumulado: 0,
+          usuario: (typeof cajaUsuarioActual === 'function') ? cajaUsuarioActual() : 'Admin',
+          origen: 'nomina'
+        });
+      } catch(e){ console.error('Error caja nomina:', e); }
+    }
+  }
+ 
+  // =====================================================
+  // AGREGAR EMPLEADO
+  // =====================================================
+ 
+  window.nominaAgregarEmpleado = function(){
+    if(typeof mostrarMC !== 'function') return;
+    mostrarMC(
+      '<h3>➕ Nuevo empleado</h3>'+
+      '<div class="mc-field"><label>Nombre</label><input id="neNom" placeholder="Ej: CARLOS"></div>'+
+      '<div class="mc-field"><label>Tipo de pago</label><select id="neTipo"><option value="semanal">Semanal</option><option value="quincenal">Quincenal</option></select></div>'+
+      '<div class="mc-field"><label>Salario diario (si es semanal)</label><input id="neSalD" type="number" placeholder="Ej: 30000" value="30000"></div>'+
+      '<div class="mc-field"><label>Salario quincena (si es quincenal)</label><input id="neSalQ" type="number" placeholder="Ej: 900000" value="0"></div>'+
+      '<div class="mc-field"><label>Color</label><select id="neColor">'+
+        '<option value="#16a34a">Verde</option><option value="#2563eb">Azul</option><option value="#7c3aed">Morado</option>'+
+        '<option value="#eab308">Amarillo</option><option value="#f59e0b">Naranja</option><option value="#e11d48">Rojo</option>'+
+        '<option value="#06b6d4">Cyan</option>'+
+      '</select></div>'+
+      '<div class="mc-btns">'+
+        '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
+        '<button class="mc-btn-ok" style="background:#eab308;" onclick="nominaConfirmarNuevo()">Crear</button>'+
+      '</div>'
+    );
+  };
+ 
+  window.nominaConfirmarNuevo = function(){
+    var nom = (document.getElementById('neNom').value||'').trim().toUpperCase();
+    if(!nom){ alert('Ingresa un nombre'); return; }
+    var tipo = document.getElementById('neTipo').value;
+    var salD = Number(document.getElementById('neSalD').value)||0;
+    var salQ = Number(document.getElementById('neSalQ').value)||0;
+    var color = document.getElementById('neColor').value;
+ 
+    var data = nominaLeer();
+    data.empleados.push({
+      id: nom.toLowerCase().replace(/\s+/g,'_'),
+      nombre: nom,
+      color: color,
+      tipo: tipo,
+      salarioDia: salD,
+      salarioQuincena: salQ,
+      asistencia: [false,false,false,false,false,false],
+      adelantos: []
+    });
+    nominaGuardar(data);
+    if(typeof cerrarMC === 'function') cerrarMC();
+    renderNomina();
+  };
+ 
+  console.log('✅ Módulo Nómina cargado');
+ 
 })();
 </script>
 <!-- MODAL GLOBAL CONTABILIDAD -->
