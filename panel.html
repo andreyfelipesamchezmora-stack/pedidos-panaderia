@@ -9655,6 +9655,167 @@ window.quitarFilaMoneda = function(idx){
 console.log('✅ Parche Mega: 7 mejoras activas');
  
 })();
+(function(){
+ 
+// 1. MARQUESINA — SIN DUPLICADOS + RECORRIDO COMPLETO
+var fixStyle = document.createElement('style');
+fixStyle.textContent = '#obsTrack{animation:none!important;}.obs-marquee-moving{display:inline-flex;gap:80px;white-space:nowrap;padding:8px 20px;align-items:center;will-change:transform;}';
+document.head.appendChild(fixStyle);
+ 
+window.actualizarMarquee = function(){
+  var marquee = document.getElementById('obsMarquee');
+  if(!marquee) return;
+  var obs=[];try{obs=JSON.parse(localStorage.getItem('obs_marquee')||'[]');}catch(e){}
+  var vistos={},unicos=[];
+  obs.forEach(function(o){if(!vistos[o.nombre]){vistos[o.nombre]=true;unicos.push(o);}});
+  obs=unicos;localStorage.setItem('obs_marquee',JSON.stringify(obs));
+  if(obs.length===0){marquee.classList.remove('visible');marquee.innerHTML='<div id="obsTrack"></div>';return;}
+  marquee.classList.add('visible');
+  var html=obs.map(function(o,i){return'<span class="obs-item"><span class="obs-nombre">'+o.nombre+'</span><span class="obs-texto">'+o.texto+'</span><button class="obs-del" onclick="event.stopPropagation();eliminarObsMarquee('+i+')">\u00d7</button></span>';}).join('');
+  marquee.innerHTML='<div class="obs-marquee-moving">'+html+'</div>';
+  var track=marquee.querySelector('.obs-marquee-moving');if(!track)return;
+  var cW=marquee.offsetWidth,tW=track.scrollWidth,startP=cW,endP=-tW,speed=50,pos=startP,st=null;
+  function anim(ts){if(!st)st=ts;pos=startP-((ts-st)/1000)*speed;if(pos<endP){st=null;pos=startP;}track.style.transform='translateX('+pos+'px)';window._obsAnimId=requestAnimationFrame(anim);}
+  if(window._obsAnimId)cancelAnimationFrame(window._obsAnimId);
+  window._obsAnimId=requestAnimationFrame(anim);
+  marquee.onmouseenter=function(){if(window._obsAnimId)cancelAnimationFrame(window._obsAnimId);};
+  marquee.onmouseleave=function(){window._obsAnimId=requestAnimationFrame(anim);};
+};
+setTimeout(function(){window.actualizarMarquee();},1500);
+setInterval(function(){window.actualizarMarquee();},60000);
+ 
+// 2. DRAG & DROP CORREGIDO
+window.initDragDrop=function(){
+  var grid=document.getElementById('grid');if(!grid)return;
+  var ng=grid.cloneNode(true);grid.parentNode.replaceChild(ng,grid);grid=ng;
+  var di=-1;
+  grid.addEventListener('dragstart',function(e){var c=e.target.closest('.card');if(!c)return;c.classList.add('dragging');e.dataTransfer.effectAllowed='move';di=Array.from(grid.children).indexOf(c);});
+  grid.addEventListener('dragend',function(){grid.querySelectorAll('.card').forEach(function(c){c.classList.remove('dragging','drag-over');});});
+  grid.addEventListener('dragover',function(e){e.preventDefault();e.dataTransfer.dropEffect='move';var c=e.target.closest('.card');grid.querySelectorAll('.drag-over').forEach(function(x){x.classList.remove('drag-over');});if(c&&!c.classList.contains('dragging'))c.classList.add('drag-over');});
+  grid.addEventListener('drop',function(e){e.preventDefault();grid.querySelectorAll('.drag-over').forEach(function(x){x.classList.remove('drag-over');});var tc=e.target.closest('.card');if(!tc||di<0)return;var ti=Array.from(grid.children).indexOf(tc);if(di===ti||ti<0)return;if(Array.isArray(window.clientes)&&di<window.clientes.length&&ti<window.clientes.length){var mv=window.clientes.splice(di,1)[0];window.clientes.splice(ti,0,mv);localStorage.setItem('clientes',JSON.stringify(window.clientes));if(typeof cargar==='function')cargar();}di=-1;});
+};
+var _fc2=window.cargar;
+window.cargar=async function(){if(typeof _fc2==='function')await _fc2();setTimeout(function(){document.querySelectorAll('#grid .card').forEach(function(c){c.setAttribute('draggable','true');});initDragDrop();},150);};
+ 
+// 3. MONEDAS SIMPLIFICADO
+var _fr3=window.renderRecaudo;
+window.renderRecaudo=async function(){
+  var os=document.getElementById('monedasSection');if(os)os.remove();
+  if(typeof _fr3==='function')await _fr3();
+  var body=document.getElementById('recaudoBody');if(!body||document.getElementById('monedasSection'))return;
+  var mk='monedas_'+((typeof cajaFechaHoy==='function')?cajaFechaHoy():new Date().toISOString().split('T')[0]);
+  var mm=[];try{mm=JSON.parse(localStorage.getItem(mk)||'[]');}catch(e){}
+  if(!Array.isArray(mm)||mm.length===0)mm=[0,0,0];
+  var tot=mm.reduce(function(s,m){return s+(Number(m)||0);},0);
+  var fh=mm.map(function(m,i){return'<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;"><span style="color:#94a3b8;font-size:12px;font-weight:600;min-width:20px;">'+(i+1)+'.</span><input id="monV_'+i+'" type="text" inputmode="numeric" placeholder="Monto" value="'+(Number(m)>0?Number(m).toLocaleString('es-CO'):'')+'" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').replace(/\\B(?=(\\d{3})+(?!\\d))/g,\'.\');guardarMonedasSimple();" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(251,191,36,0.2);border-radius:8px;color:#fbbf24;padding:8px 12px;font-size:15px;font-weight:700;text-align:right;font-family:var(--font-body);" /><button onclick="quitarMonedaSimple('+i+')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:16px;">\u2715</button></div>';}).join('');
+  var s=document.createElement('div');s.id='monedasSection';s.style.cssText='margin-top:20px;background:linear-gradient(135deg,rgba(251,191,36,0.08),rgba(251,191,36,0.02));border:1px solid rgba(251,191,36,0.2);border-radius:16px;padding:20px;';
+  s.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:22px;">\ud83e\ude99</span><div><div style="font-size:15px;font-weight:800;color:#fbbf24;">Control de Monedas</div><div style="font-size:11px;color:#94a3b8;">Solo para gu\u00eda, no afecta saldos</div></div></div><button onclick="agregarMonedaSimple()" style="padding:6px 14px;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.3);border-radius:8px;color:#fbbf24;font-weight:700;cursor:pointer;font-size:12px;">+ Agregar</button></div><div id="monedasFilas">'+fh+'</div><div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(251,191,36,0.15);display:flex;justify-content:space-between;align-items:center;"><span style="font-size:14px;color:#94a3b8;font-weight:700;">TOTAL MONEDAS</span><span id="monedaTotal" style="font-size:24px;font-weight:800;color:#fbbf24;">$'+tot.toLocaleString('es-CO')+'</span></div>';
+  body.appendChild(s);
+  setTimeout(function(){if(typeof actualizarMarquee==='function')actualizarMarquee();},300);
+};
+window.guardarMonedasSimple=function(){var k='monedas_'+((typeof cajaFechaHoy==='function')?cajaFechaHoy():new Date().toISOString().split('T')[0]);var mm=[],i=0;while(document.getElementById('monV_'+i)){mm.push(Number((document.getElementById('monV_'+i).value||'0').replace(/\./g,''))||0);i++;}localStorage.setItem(k,JSON.stringify(mm));var t=mm.reduce(function(s,m){return s+m;},0);var el=document.getElementById('monedaTotal');if(el)el.textContent='$'+t.toLocaleString('es-CO');};
+window.agregarMonedaSimple=function(){var k='monedas_'+((typeof cajaFechaHoy==='function')?cajaFechaHoy():new Date().toISOString().split('T')[0]);var mm=[];try{mm=JSON.parse(localStorage.getItem(k)||'[]');}catch(e){}mm.push(0);localStorage.setItem(k,JSON.stringify(mm));var s=document.getElementById('monedasSection');if(s)s.remove();renderRecaudo();};
+window.quitarMonedaSimple=function(i){var k='monedas_'+((typeof cajaFechaHoy==='function')?cajaFechaHoy():new Date().toISOString().split('T')[0]);var mm=[];try{mm=JSON.parse(localStorage.getItem(k)||'[]');}catch(e){}if(i>=0&&i<mm.length)mm.splice(i,1);localStorage.setItem(k,JSON.stringify(mm));var s=document.getElementById('monedasSection');if(s)s.remove();renderRecaudo();};
+ 
+// 4. PAGO DEUDA EFECTIVO CORREGIDO
+window.recaudoConfirmarPago=function(nombre,monto){
+  var met=window._recMetSel||'';if(!met){alert('Selecciona m\u00e9todo');return;}
+  var ci=-1,nb='';
+  if(met==='efectivo'){ci=(window.cuentasMemoria||[]).findIndex(function(c){return c.tipo==='EFECTIVO';});nb='Efectivo';}
+  else{var sl=document.getElementById('recCuentaSel');ci=sl?Number(sl.value):-1;if(ci<0||!window.cuentasMemoria[ci]){alert('Selecciona cuenta');return;}nb=window.cuentasMemoria[ci].nombre;}
+  var hoy=new Date().toLocaleDateString('es-CO',{day:'numeric',month:'long',year:'numeric'});
+  var e=(typeof recaudoLeerEstado==='function')?recaudoLeerEstado():{};if(!e[nombre])e[nombre]={};
+  e[nombre].deudasPagadas=monto;e[nombre].deudaMetodo=met;e[nombre].deudaCuentaIdx=ci;e[nombre].deudaBanco=nb;e[nombre].fechaPago=hoy;
+  if(typeof recaudoGuardarEstado==='function')recaudoGuardarEstado(e);
+  var ca={};try{ca=JSON.parse(localStorage.getItem('cartera_deudas')||'{}');}catch(x){}if(!ca[nombre])ca[nombre]={};ca[nombre].deudasPagadas=monto;ca[nombre].fechaPago=hoy;ca[nombre].metodoPago=met;ca[nombre].banco=nb;localStorage.setItem('cartera_deudas',JSON.stringify(ca));
+  var hi=[];try{hi=JSON.parse(localStorage.getItem('cartera_pagos_historial')||'[]');}catch(x){}hi.push({cliente:nombre,monto:monto,metodo:met,banco:nb,cuentaIdx:ci,nota:'Desde recaudo diario',fecha:hoy});localStorage.setItem('cartera_pagos_historial',JSON.stringify(hi));
+  if(ci>=0&&window.cuentasMemoria[ci]){window.cuentasMemoria[ci].saldo+=monto;if(typeof cuentasGuardar==='function')cuentasGuardar();}
+  if(!Array.isArray(window.movimientosContables))window.movimientosContables=[];window.movimientosContables.push({tipo:'ingreso',monto:monto,cuenta:nb,descripcion:'Pago deuda '+nombre,fecha:new Date().toISOString()});
+  if(typeof cerrarMC==='function')cerrarMC();if(typeof renderRecaudo==='function')renderRecaudo();
+};
+ 
+// 5. HISTORIAL — BOTÓN BORRAR
+window.historialBorrarMovimiento=function(origen,idx){
+  if(origen==='gastoManual'){if(!Array.isArray(window.gastosMemoria)||!window.gastosMemoria[idx])return;if(!confirm('\u00bfEliminar?'))return;window.gastosMemoria.splice(idx,1);try{sessionStorage.setItem('gastos',JSON.stringify(window.gastosMemoria));}catch(e){}}
+  else{if(!Array.isArray(window.movimientosContables)||!window.movimientosContables[idx])return;if(!confirm('\u00bfEliminar movimiento?'))return;window.movimientosContables.splice(idx,1);}
+  if(typeof renderConta==='function')renderConta('historial');
+};
+ 
+// 6. DASHBOARD + FLUJO BANCARIO + CUENTAS INGRESO
+var _prc6=window.renderConta;
+window.renderConta=function(tab){
+  if(typeof _prc6==='function')_prc6(tab);
+  if(tab==='resumen')setTimeout(function(){var s=document.getElementById('ingresoCuenta');if(s&&s.options.length===0&&Array.isArray(window.cuentasMemoria)){window.cuentasMemoria.forEach(function(c,i){var o=document.createElement('option');o.value=i;o.textContent=((typeof tipoEmoji==='function')?tipoEmoji(c.tipo):'\ud83c\udfe6')+' '+c.nombre;s.appendChild(o);});}},300);
+  if(tab==='flujo')setTimeout(function(){var o=document.getElementById('flujoPorCuentaSection');if(o)o.remove();_injFlujoBanco();},250);
+};
+ 
+function _injFlujoBanco(){
+  var body=document.getElementById('contaBody');if(!body||document.getElementById('flujoPorCuentaSection'))return;
+  var ub=body.querySelector('.utilidad-box');if(!ub)return;
+  var co='<option value="todas">\ud83d\udcca Todas</option>';
+  if(Array.isArray(window.cuentasMemoria))window.cuentasMemoria.forEach(function(c,i){co+='<option value="'+i+'">'+((typeof tipoEmoji==='function')?tipoEmoji(c.tipo):'\ud83c\udfe6')+' '+c.nombre+'</option>';});
+  var s=document.createElement('div');s.id='flujoPorCuentaSection';
+  s.innerHTML='<div class="section-title" style="margin-top:24px;">\ud83c\udfe6 Flujo por Cuenta Bancaria</div><div style="margin-bottom:14px;"><select id="fcs" onchange="rfbf()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:10px 14px;font-size:14px;font-weight:600;min-width:250px;">'+co+'</select></div><div id="fcb"></div>';
+  ub.parentNode.insertBefore(s,ub.nextSibling);rfbf();
+}
+ 
+window.rfbf=function(){
+  var sl=document.getElementById('fcs'),ct=document.getElementById('fcb');if(!sl||!ct)return;
+  var ci=sl.value,cn=ci==='todas'?'Todas':(window.cuentasMemoria[ci]?window.cuentasMemoria[ci].nombre:'');
+  var ms=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  var ig=[0,0,0,0,0,0,0,0,0,0,0,0],eg=[0,0,0,0,0,0,0,0,0,0,0,0];
+  var si=0;
+  if(ci==='todas')si=(window.cuentasMemoria||[]).reduce(function(s,c){return s+(Number(c.saldo)||0);},0);
+  else if(window.cuentasMemoria&&window.cuentasMemoria[ci])si=Number(window.cuentasMemoria[ci].saldo)||0;
+ 
+  (window.movimientosContables||[]).forEach(function(m){var f=new Date(m.fecha);if(isNaN(f.getTime()))return;var me=f.getMonth(),cu=(m.cuenta||'').toUpperCase();
+    if(ci!=='todas'){if(!window.cuentasMemoria[ci])return;var nu=window.cuentasMemoria[ci].nombre.toUpperCase();if(cu.indexOf(nu)===-1&&nu.indexOf(cu)===-1)return;}
+    if((m.tipo||'').toLowerCase()==='ingreso')ig[me]+=Number(m.monto)||0;else eg[me]+=Number(m.monto)||0;});
+ 
+  function fm(v){return'$'+(Number(v)||0).toLocaleString('es-CO');}
+  var sia=[],ga=[],aa=[],sd=si;
+  for(var i=0;i<12;i++){sia.push(sd);var g=ig[i]-eg[i];sd+=g;ga.push(g);aa.push(sd);}
+  var tI=ig.reduce(function(s,v){return s+v;},0),tE=eg.reduce(function(s,v){return s+v;},0),tG=tI-tE;
+ 
+  var h='<div style="overflow:auto;background:#0b1220;border:1px solid #1e293b;border-radius:14px;"><table style="width:100%;min-width:1000px;border-collapse:collapse;color:#e2e8f0;font-size:13px;"><thead><tr><th style="padding:10px;background:#0f172a;color:#fff;text-align:left;position:sticky;left:0;z-index:3;border-bottom:1px solid #1e293b;min-width:120px;">'+cn+'</th>';
+  for(var i=0;i<12;i++)h+='<th style="padding:10px;background:#0f172a;color:#fff;text-align:center;border-bottom:1px solid #1e293b;">'+ms[i]+'</th>';
+  h+='<th style="padding:10px;background:#0f172a;color:#fbbf24;text-align:center;border-bottom:1px solid #1e293b;font-weight:800;">TOTAL</th></tr></thead><tbody>';
+ 
+  h+='<tr><td style="padding:8px;color:#94a3b8;font-weight:600;position:sticky;left:0;background:#0b1220;z-index:2;">Saldo Inicial</td>';
+  for(var i=0;i<12;i++)h+='<td style="padding:8px;text-align:right;color:'+(sia[i]!==0?'#e2e8f0':'#475569')+';">'+fm(sia[i])+'</td>';
+  h+='<td style="padding:8px;text-align:right;color:#94a3b8;">\u2014</td></tr>';
+ 
+  h+='<tr><td style="padding:8px;color:#4ade80;font-weight:700;position:sticky;left:0;background:#0b1220;z-index:2;">\u2705 Ingresos</td>';
+  for(var i=0;i<12;i++)h+='<td style="padding:8px;text-align:right;font-weight:700;color:'+(ig[i]>0?'#4ade80':'#475569')+';">'+fm(ig[i])+'</td>';
+  h+='<td style="padding:8px;text-align:right;font-weight:800;color:#4ade80;">'+fm(tI)+'</td></tr>';
+ 
+  h+='<tr><td style="padding:8px;color:#f87171;font-weight:700;position:sticky;left:0;background:#0b1220;z-index:2;">\ud83d\udd34 Egresos</td>';
+  for(var i=0;i<12;i++)h+='<td style="padding:8px;text-align:right;font-weight:700;color:'+(eg[i]>0?'#f87171':'#475569')+';">'+fm(eg[i])+'</td>';
+  h+='<td style="padding:8px;text-align:right;font-weight:800;color:#f87171;">'+fm(tE)+'</td></tr>';
+ 
+  h+='<tr style="background:rgba(22,163,74,0.08);"><td style="padding:8px;font-weight:800;color:#e2e8f0;position:sticky;left:0;background:rgba(22,163,74,0.12);z-index:2;">\ud83d\udcb0 Neto</td>';
+  for(var i=0;i<12;i++){var gc=ga[i]>0?'#4ade80':(ga[i]<0?'#f87171':'#475569');h+='<td style="padding:8px;text-align:right;font-weight:800;color:'+gc+';">'+fm(ga[i])+'</td>';}
+  h+='<td style="padding:8px;text-align:right;font-weight:800;color:'+(tG>=0?'#4ade80':'#f87171')+';">'+fm(tG)+'</td></tr>';
+ 
+  h+='<tr style="background:rgba(37,99,235,0.08);"><td style="padding:10px 8px;font-weight:800;color:#60a5fa;position:sticky;left:0;background:rgba(37,99,235,0.12);z-index:2;">\ud83d\udcc8 Acumulado</td>';
+  for(var i=0;i<12;i++)h+='<td style="padding:10px 8px;text-align:right;font-weight:800;color:'+(aa[i]>=0?'#60a5fa':'#f87171')+';">'+fm(aa[i])+'</td>';
+  h+='<td style="padding:10px 8px;text-align:right;font-weight:800;color:#fbbf24;">'+fm(sd)+'</td></tr>';
+  h+='</tbody></table></div>';
+ 
+  if(ci!=='todas'&&window.cuentasMemoria[ci])h+='<div style="margin-top:12px;padding:12px 16px;background:rgba(37,99,235,0.08);border:1px solid rgba(37,99,235,0.2);border-radius:10px;display:flex;justify-content:space-between;align-items:center;"><span style="color:#94a3b8;font-size:13px;">Saldo actual de '+cn+'</span><span style="color:#60a5fa;font-size:22px;font-weight:800;">'+fm(window.cuentasMemoria[ci].saldo)+'</span></div>';
+  ct.innerHTML=h;
+};
+ 
+// 7. FORZAR CUENTAS EN INGRESO EXTRA
+var _oAIE=window.agregarIngresoExtra;
+window.agregarIngresoExtra=function(){
+  var s=document.getElementById('ingresoCuenta');
+  if(s&&s.options.length===0&&Array.isArray(window.cuentasMemoria))window.cuentasMemoria.forEach(function(c,i){var o=document.createElement('option');o.value=i;o.textContent=((typeof tipoEmoji==='function')?tipoEmoji(c.tipo):'\ud83c\udfe6')+' '+c.nombre;s.appendChild(o);});
+  if(typeof _oAIE==='function')_oAIE();
+};
+ 
+console.log('\u2705 Parche Correcciones: 7 arreglos definitivos');
+})();
 </script>
 <!-- MODAL GLOBAL CONTABILIDAD -->
 <div id="mcOverlayGlobal" style="display:none;">
