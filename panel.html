@@ -6894,143 +6894,733 @@ window.mostrarRangoStats = function(){
   }, 50);
 };
 
+
+
 // =====================================================
-// 3. REDISEÑO VISUAL TIPO APPLE/PANADERÍA
+// REDISEÑO PRO V5 — PREMIUM SAAS
+// Home Login con Logo 3D + Panel Apple-style
 // =====================================================
 (function(){
-  // Fuente Inter + Playfair
+  'use strict';
+
+  // ============ FUENTES ============
   var fontLink = document.createElement('link');
   fontLink.rel = 'stylesheet';
-  fontLink.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Playfair+Display:wght@700;900&display=swap';
+  fontLink.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Playfair+Display:wght@400;700;900&display=swap';
   document.head.appendChild(fontLink);
 
+  // ============ ESTILOS GLOBALES ============
   var style = document.createElement('style');
-  style.id = 'vianny-apple-theme';
+  style.id = 'vianny-pro-v5';
   style.textContent = `
+  /* ========================================================
+     VIANNY'S PRO — SaaS PREMIUM THEME
+     ======================================================== */
+
   :root {
     --vn-cream: #FAF6F0;
+    --vn-cream-2: #F4EDE0;
     --vn-beige: #E8DCC4;
+    --vn-warm-white: #FFFBF5;
     --vn-brown: #8B6F47;
     --vn-brown-dark: #5D4A2E;
+    --vn-brown-deep: #3D2E1A;
     --vn-orange: #D97706;
-    --vn-accent: #FBBF24;
-    --vn-shadow-soft: 0 4px 12px rgba(139, 111, 71, 0.08), 0 2px 4px rgba(0,0,0,0.04);
-    --vn-shadow-hover: 0 12px 28px rgba(139, 111, 71, 0.15), 0 4px 8px rgba(0,0,0,0.06);
-    --vn-inflated: 0 8px 20px rgba(139, 111, 71, 0.12), 0 2px 6px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.5);
+    --vn-orange-2: #F59E0B;
+    --vn-gold: #FBBF24;
+    --vn-gold-soft: #FCD34D;
+    --vn-ink: #1A1A1A;
+    --vn-ink-soft: #2D2D2D;
+    --vn-shadow-xs: 0 1px 2px rgba(93, 74, 46, 0.06);
+    --vn-shadow-sm: 0 2px 8px rgba(93, 74, 46, 0.08), 0 1px 3px rgba(0,0,0,0.04);
+    --vn-shadow-md: 0 6px 16px rgba(93, 74, 46, 0.10), 0 2px 6px rgba(0,0,0,0.05);
+    --vn-shadow-lg: 0 14px 32px rgba(93, 74, 46, 0.14), 0 4px 10px rgba(0,0,0,0.06);
+    --vn-shadow-xl: 0 24px 60px rgba(93, 74, 46, 0.20), 0 8px 20px rgba(0,0,0,0.08);
+    --vn-shadow-inflated: 0 10px 24px rgba(139, 111, 71, 0.15), 0 3px 8px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -2px 4px rgba(139, 111, 71, 0.04);
+    --vn-shadow-inflated-dark: 0 12px 28px rgba(0,0,0,0.35), 0 4px 10px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.08);
+    --vn-ease: cubic-bezier(0.4, 0, 0.2, 1);
+    --vn-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  /* CURSOR PAN */
-  html, body {
-    cursor: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 32 32'%3E%3Cellipse cx='16' cy='18' rx='11' ry='8' fill='%23D97706' stroke='%235D4A2E' stroke-width='1.5'/%3E%3Cpath d='M9 14 Q16 10 23 14' stroke='%235D4A2E' stroke-width='1' fill='none'/%3E%3Cpath d='M9 18 Q16 14 23 18' stroke='%235D4A2E' stroke-width='1' fill='none'/%3E%3Cpath d='M9 22 Q16 18 23 22' stroke='%235D4A2E' stroke-width='1' fill='none'/%3E%3C/svg%3E") 14 14, auto;
-  }
-  button, a, .card, .ftab, .btn-transferir, .btn-nueva-cuenta, .btn-add-gasto,
-  input[type="checkbox"], [onclick] {
-    cursor: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='34' height='34' viewBox='0 0 32 32'%3E%3Cellipse cx='16' cy='18' rx='11' ry='8' fill='%23F59E0B' stroke='%235D4A2E' stroke-width='1.5'/%3E%3Cpath d='M9 14 Q16 10 23 14' stroke='%235D4A2E' stroke-width='1.2' fill='none'/%3E%3Cpath d='M9 18 Q16 14 23 18' stroke='%235D4A2E' stroke-width='1.2' fill='none'/%3E%3Cpath d='M9 22 Q16 18 23 22' stroke='%235D4A2E' stroke-width='1.2' fill='none'/%3E%3C/svg%3E") 17 17, pointer !important;
-  }
-
-  /* TIPOGRAFÍA */
-  body, .main, .panel-body, .panel-drawer, input, select, textarea, button {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+  /* ============ TIPOGRAFÍA GLOBAL ============ */
+  body, input, select, textarea, button,
+  .main, .panel-body, .panel-drawer, .modal, .mc-box {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif !important;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.01em;
   }
-  h1, h2, h3, .panel-header h2, .kpi-value, .cuentas-page-title, .section-title {
+
+  h1, h2, h3, h4, h5,
+  .panel-header h2, .kpi-value, .cuentas-page-title, .section-title {
     letter-spacing: -0.025em !important;
     font-weight: 700 !important;
   }
 
-  /* CARDS CLIENTES INFLATED */
+  /* ============ HOME LOGIN ============ */
+  #vnLoginScreen {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    background: radial-gradient(ellipse at top left, #2D2618 0%, #1A1410 40%, #0F0C08 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* Textura de fondo: granos de trigo/harina */
+  #vnLoginScreen::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 15% 20%, rgba(251, 191, 36, 0.08) 0%, transparent 35%),
+      radial-gradient(circle at 85% 70%, rgba(217, 119, 6, 0.06) 0%, transparent 40%),
+      radial-gradient(circle at 50% 50%, rgba(139, 111, 71, 0.04) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  /* Partículas de harina */
+  #vnLoginParticles {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  #vnLoginContent {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    max-width: 1400px;
+    padding: 40px;
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 80px;
+    align-items: center;
+  }
+
+  /* ============ LOGO 3D ============ */
+  #vnLogoStage {
+    position: relative;
+    perspective: 1400px;
+    perspective-origin: 50% 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 560px;
+  }
+
+  #vnLogoCube {
+    width: 420px;
+    height: 420px;
+    position: relative;
+    transform-style: preserve-3d;
+    animation: vnLogoFloat 6s ease-in-out infinite, vnLogoRotate 18s linear infinite;
+  }
+
+  @keyframes vnLogoFloat {
+    0%, 100% { transform: translateY(0) rotateX(10deg); }
+    50% { transform: translateY(-18px) rotateX(10deg); }
+  }
+
+  @keyframes vnLogoRotate {
+    0% { transform: rotateY(0deg); }
+    100% { transform: rotateY(360deg); }
+  }
+
+  .vnLogoFace {
+    position: absolute;
+    inset: 0;
+    border-radius: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    backface-visibility: hidden;
+    box-shadow: 0 40px 80px rgba(0,0,0,0.6), 0 10px 30px rgba(217, 119, 6, 0.15), inset 0 2px 0 rgba(255,255,255,0.1);
+  }
+
+  /* Cara delantera: Logo */
+  .vnLogoFront {
+    background: radial-gradient(circle at 30% 20%, #1A1410 0%, #0A0806 100%);
+    transform: translateZ(30px);
+    border: 2px solid rgba(217, 119, 6, 0.2);
+  }
+
+  /* Cara trasera: Logo girado */
+  .vnLogoBack {
+    background: radial-gradient(circle at 70% 80%, #1A1410 0%, #0A0806 100%);
+    transform: rotateY(180deg) translateZ(30px);
+    border: 2px solid rgba(217, 119, 6, 0.2);
+  }
+
+  /* Logo interior */
+  .vnLogoInner {
+    width: 85%;
+    height: 85%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  .vnLogoBread {
+    width: 140px;
+    height: 140px;
+    position: relative;
+    margin-bottom: 18px;
+    animation: vnBreadGlow 4s ease-in-out infinite;
+  }
+
+  @keyframes vnBreadGlow {
+    0%, 100% { filter: drop-shadow(0 0 20px rgba(251, 191, 36, 0.3)); }
+    50% { filter: drop-shadow(0 0 40px rgba(251, 191, 36, 0.6)); }
+  }
+
+  /* SVG de pan + trigo */
+  .vnLogoSvg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .vnLogoTitle {
+    font-family: 'Playfair Display', serif;
+    font-size: 56px;
+    font-weight: 900;
+    color: #FFFFFF;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    margin-bottom: 6px;
+    text-shadow: 0 2px 20px rgba(251, 191, 36, 0.3);
+  }
+
+  .vnLogoSubtitle {
+    font-size: 11px;
+    color: #FCD34D;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .vnLogoYear {
+    font-size: 10px;
+    color: rgba(252, 211, 77, 0.7);
+    letter-spacing: 0.4em;
+    font-weight: 700;
+    padding: 4px 14px;
+    border-top: 1px solid rgba(217, 119, 6, 0.3);
+    border-bottom: 1px solid rgba(217, 119, 6, 0.3);
+  }
+
+  /* Aro orbital */
+  .vnLogoOrbit {
+    position: absolute;
+    inset: -30px;
+    border-radius: 50%;
+    border: 1px dashed rgba(251, 191, 36, 0.15);
+    animation: vnOrbit 30s linear infinite;
+    pointer-events: none;
+  }
+  .vnLogoOrbit::before,
+  .vnLogoOrbit::after {
+    content: '';
+    position: absolute;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #FBBF24, #D97706);
+    box-shadow: 0 0 20px rgba(251, 191, 36, 0.8);
+  }
+  .vnLogoOrbit::before { top: -4px; left: 50%; }
+  .vnLogoOrbit::after { bottom: -4px; left: 50%; }
+  @keyframes vnOrbit {
+    0% { transform: rotateZ(0deg); }
+    100% { transform: rotateZ(360deg); }
+  }
+
+  /* ============ FORMULARIO LOGIN ============ */
+  #vnLoginForm {
+    background: rgba(255, 251, 245, 0.03);
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    border: 1px solid rgba(251, 191, 36, 0.12);
+    border-radius: 28px;
+    padding: 48px 44px;
+    box-shadow: 0 40px 80px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+
+  .vnLoginBrand {
+    font-size: 13px;
+    color: #FCD34D;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+
+  .vnLoginTitle {
+    font-family: 'Playfair Display', serif;
+    font-size: 40px;
+    font-weight: 900;
+    color: #FFFBF5;
+    line-height: 1.1;
+    margin-bottom: 10px;
+    letter-spacing: -0.01em;
+  }
+
+  .vnLoginSubtitle {
+    font-size: 14px;
+    color: rgba(255, 251, 245, 0.6);
+    line-height: 1.5;
+    margin-bottom: 36px;
+  }
+
+  .vnLoginField {
+    margin-bottom: 18px;
+  }
+
+  .vnLoginField label {
+    display: block;
+    font-size: 11px;
+    color: rgba(252, 211, 77, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .vnLoginInput {
+    width: 100%;
+    background: rgba(255, 251, 245, 0.04);
+    border: 1px solid rgba(251, 191, 36, 0.15);
+    border-radius: 14px;
+    padding: 16px 18px;
+    color: #FFFBF5;
+    font-size: 15px;
+    font-weight: 500;
+    font-family: 'Inter', sans-serif;
+    transition: all 0.25s var(--vn-ease);
+    outline: none;
+  }
+
+  .vnLoginInput::placeholder {
+    color: rgba(255, 251, 245, 0.3);
+  }
+
+  .vnLoginInput:focus {
+    background: rgba(255, 251, 245, 0.08);
+    border-color: rgba(251, 191, 36, 0.5);
+    box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.12), 0 4px 16px rgba(217, 119, 6, 0.2);
+    transform: translateY(-1px);
+  }
+
+  /* Botón ACCEDER inflated 3D */
+  .vnLoginButton {
+    width: 100%;
+    margin-top: 12px;
+    padding: 18px;
+    background: linear-gradient(180deg, #F59E0B 0%, #D97706 100%);
+    border: none;
+    border-radius: 16px;
+    color: #FFFBF5;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+      0 8px 20px rgba(217, 119, 6, 0.45),
+      0 2px 6px rgba(217, 119, 6, 0.3),
+      inset 0 1px 0 rgba(255,255,255,0.3),
+      inset 0 -3px 8px rgba(120, 53, 15, 0.4);
+    transition: all 0.25s var(--vn-ease);
+    font-family: 'Inter', sans-serif;
+  }
+
+  .vnLoginButton::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+    transition: left 0.6s ease;
+  }
+
+  .vnLoginButton:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 14px 32px rgba(217, 119, 6, 0.55),
+      0 4px 10px rgba(217, 119, 6, 0.4),
+      inset 0 1px 0 rgba(255,255,255,0.4),
+      inset 0 -3px 8px rgba(120, 53, 15, 0.3);
+  }
+  .vnLoginButton:hover::before { left: 100%; }
+
+  .vnLoginButton:active {
+    transform: translateY(0);
+    box-shadow:
+      0 4px 12px rgba(217, 119, 6, 0.4),
+      inset 0 2px 4px rgba(120, 53, 15, 0.5);
+  }
+
+  .vnLoginFooter {
+    margin-top: 28px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(251, 191, 36, 0.08);
+    text-align: center;
+    font-size: 11px;
+    color: rgba(255, 251, 245, 0.4);
+    letter-spacing: 0.1em;
+  }
+
+  /* ============ PANEL PRINCIPAL — APPLE STYLE ============ */
+
+  /* Fondo del body */
+  body {
+    background: linear-gradient(180deg, #FAF6F0 0%, #F4EDE0 100%) !important;
+  }
+
+  /* Sidebar oscuro moderno */
+  .sidebar {
+    background: linear-gradient(180deg, #1A1410 0%, #0F0C08 100%) !important;
+    border-right: 1px solid rgba(251, 191, 36, 0.08) !important;
+    padding: 20px 16px !important;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.15) !important;
+  }
+
+  .sidebar h3 {
+    color: rgba(252, 211, 77, 0.7) !important;
+    font-size: 10px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.2em !important;
+    font-weight: 600 !important;
+    margin-bottom: 8px !important;
+  }
+
+  .sidebar input[type="date"],
+  .sidebar input[type="text"] {
+    background: rgba(255, 251, 245, 0.05) !important;
+    border: 1px solid rgba(251, 191, 36, 0.15) !important;
+    border-radius: 12px !important;
+    color: #FFFBF5 !important;
+    padding: 12px 14px !important;
+    font-size: 14px !important;
+    font-family: 'Inter', sans-serif !important;
+    transition: all 0.2s var(--vn-ease) !important;
+  }
+
+  .sidebar input[type="date"]:focus,
+  .sidebar input[type="text"]:focus {
+    background: rgba(255, 251, 245, 0.08) !important;
+    border-color: rgba(251, 191, 36, 0.5) !important;
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.12) !important;
+  }
+
+  /* Botones del sidebar */
+  .sidebar button {
+    background: rgba(255, 251, 245, 0.04) !important;
+    border: 1px solid rgba(251, 191, 36, 0.1) !important;
+    border-radius: 12px !important;
+    color: #FCD34D !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+    padding: 12px 14px !important;
+    margin-bottom: 6px !important;
+    transition: all 0.2s var(--vn-ease) !important;
+    cursor: pointer !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    font-family: 'Inter', sans-serif !important;
+    letter-spacing: -0.005em !important;
+  }
+
+  .sidebar button:hover {
+    background: rgba(251, 191, 36, 0.1) !important;
+    border-color: rgba(251, 191, 36, 0.3) !important;
+    color: #FFFBF5 !important;
+    transform: translateX(2px);
+  }
+
+  /* Área principal */
+  .main {
+    background: linear-gradient(180deg, #FAF6F0 0%, #FFFBF5 100%) !important;
+    padding: 24px !important;
+  }
+
+  .main > input[type="text"] {
+    border-radius: 14px !important;
+    border: 1px solid rgba(139, 111, 71, 0.15) !important;
+    background: rgba(255, 251, 245, 0.8) !important;
+    backdrop-filter: blur(10px);
+    padding: 14px 18px !important;
+    font-size: 15px !important;
+    box-shadow: var(--vn-shadow-sm) !important;
+    transition: all 0.2s var(--vn-ease) !important;
+    color: var(--vn-ink) !important;
+  }
+
+  .main > input[type="text"]:focus {
+    outline: none !important;
+    border-color: var(--vn-orange) !important;
+    box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.12), var(--vn-shadow-md) !important;
+  }
+
+  /* ============ CARDS DE CLIENTES — INFLATED 3D ============ */
+  #grid {
+    gap: 14px !important;
+    padding: 4px !important;
+  }
+
   #grid .card {
+    background: linear-gradient(145deg, #FFFFFF 0%, #FAF6F0 100%) !important;
+    border: 1px solid rgba(139, 111, 71, 0.08) !important;
     border-radius: 18px !important;
-    background: linear-gradient(145deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01)) !important;
-    border: 1px solid rgba(251, 191, 36, 0.08) !important;
-    box-shadow: 0 6px 16px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.06) !important;
-    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease !important;
+    padding: 16px !important;
+    box-shadow: var(--vn-shadow-inflated) !important;
+    transition: all 0.3s var(--vn-ease-out) !important;
+    color: var(--vn-ink) !important;
     position: relative;
     overflow: hidden;
   }
+
   #grid .card::before {
     content: '';
     position: absolute;
-    top: 0; left: 0; right: 0; height: 3px;
-    background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.5), transparent);
+    top: 0; left: 0; right: 0; height: 4px;
+    background: linear-gradient(90deg, transparent, rgba(217, 119, 6, 0.5), transparent);
     opacity: 0;
     transition: opacity 0.3s ease;
   }
+
   #grid .card:hover {
-    transform: translateY(-3px) scale(1.015) !important;
-    box-shadow: 0 16px 40px rgba(0,0,0,0.35), 0 6px 14px rgba(251, 191, 36, 0.15), inset 0 1px 0 rgba(255,255,255,0.1) !important;
+    transform: translateY(-4px) scale(1.015) !important;
+    box-shadow:
+      0 20px 45px rgba(139, 111, 71, 0.22),
+      0 6px 14px rgba(217, 119, 6, 0.1),
+      inset 0 1px 0 rgba(255,255,255,0.7) !important;
   }
+
   #grid .card:hover::before { opacity: 1; }
 
-  /* BOTONES INFLATED */
+  /* Borde lateral según tipo */
+  #grid .card.moto { border-left: 4px solid #16A34A !important; }
+  #grid .card.auto { border-left: 4px solid #2563EB !important; }
+  #grid .card.recoge { border-left: 4px solid #D97706 !important; }
+  #grid .card.lejano { border-left: 4px solid #7C3AED !important; }
+  #grid .card.nuevo {
+    background: linear-gradient(145deg, #ECFDF5 0%, #D1FAE5 100%) !important;
+    border-left: 4px solid #16A34A !important;
+  }
+  #grid .card.editado {
+    background: linear-gradient(145deg, #FFFBEB 0%, #FEF3C7 100%) !important;
+  }
+
+  /* Botón impresora mini */
+  #grid .card .printMini {
+    background: #1A1410 !important;
+    color: #FCD34D !important;
+    border-radius: 8px !important;
+    padding: 5px 9px !important;
+    font-size: 13px !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2) !important;
+    transition: all 0.2s var(--vn-ease) !important;
+  }
+  #grid .card .printMini:hover {
+    background: var(--vn-orange) !important;
+    color: #FFFBF5 !important;
+    transform: scale(1.1);
+  }
+
+  /* X de borrar */
+  #grid .card .x {
+    background: rgba(220, 38, 38, 0.1);
+    color: #DC2626 !important;
+    width: 22px; height: 22px;
+    border-radius: 50% !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 12px !important;
+    transition: all 0.2s var(--vn-ease) !important;
+  }
+  #grid .card .x:hover {
+    background: #DC2626;
+    color: white !important;
+    transform: scale(1.15);
+  }
+
+  /* ============ BOTONES GENERALES ============ */
   .btn-nueva-cuenta, .btn-transferir, .btn-add-gasto {
     border-radius: 12px !important;
     font-weight: 600 !important;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.15) !important;
+    font-family: 'Inter', sans-serif !important;
+    letter-spacing: -0.005em !important;
+    padding: 10px 18px !important;
+    transition: all 0.25s var(--vn-ease) !important;
+    box-shadow:
+      0 4px 10px rgba(0,0,0,0.15),
+      inset 0 1px 0 rgba(255,255,255,0.2) !important;
+    cursor: pointer !important;
   }
+
   .btn-nueva-cuenta:hover, .btn-transferir:hover, .btn-add-gasto:hover {
-    transform: translateY(-1px) !important;
-    box-shadow: 0 6px 14px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.15) !important;
+    transform: translateY(-2px) !important;
+    box-shadow:
+      0 8px 18px rgba(0,0,0,0.2),
+      inset 0 1px 0 rgba(255,255,255,0.25) !important;
   }
+
   .btn-nueva-cuenta:active, .btn-transferir:active, .btn-add-gasto:active {
     transform: translateY(0) !important;
+    box-shadow:
+      0 2px 6px rgba(0,0,0,0.15),
+      inset 0 2px 4px rgba(0,0,0,0.1) !important;
   }
 
-  /* TABS */
+  /* ============ FILTER TABS ============ */
+  .filter-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 6px;
+    background: rgba(139, 111, 71, 0.06);
+    border-radius: 14px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+
   .ftab {
-    border-radius: 12px !important;
+    border-radius: 10px !important;
     font-weight: 600 !important;
-    transition: all 0.2s ease !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
-  }
-  .ftab.active {
-    box-shadow: 0 4px 12px rgba(217, 119, 6, 0.35), inset 0 1px 0 rgba(255,255,255,0.15) !important;
+    font-size: 13px !important;
+    padding: 9px 16px !important;
+    transition: all 0.2s var(--vn-ease) !important;
+    font-family: 'Inter', sans-serif !important;
+    background: transparent !important;
+    border: none !important;
+    color: rgba(255, 255, 255, 0.7) !important;
+    cursor: pointer !important;
   }
 
-  /* KPI CARDS */
+  .ftab.active {
+    background: linear-gradient(180deg, #F59E0B 0%, #D97706 100%) !important;
+    color: white !important;
+    box-shadow:
+      0 4px 12px rgba(217, 119, 6, 0.35),
+      inset 0 1px 0 rgba(255,255,255,0.2) !important;
+  }
+
+  /* ============ KPI CARDS ============ */
   .kpi-card {
     border-radius: 18px !important;
-    box-shadow: 0 6px 16px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.05) !important;
-    transition: transform 0.25s ease, box-shadow 0.25s ease !important;
-  }
-  .kpi-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 12px 28px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.08) !important;
-  }
-  .kpi-value {
-    font-weight: 800 !important;
-    letter-spacing: -0.025em !important;
+    padding: 18px 20px !important;
+    box-shadow: var(--vn-shadow-inflated-dark) !important;
+    transition: all 0.25s var(--vn-ease) !important;
+    position: relative;
+    overflow: hidden;
   }
 
-  /* INPUTS */
+  .kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, rgba(251, 191, 36, 0.6), transparent);
+  }
+
+  .kpi-card:hover {
+    transform: translateY(-3px);
+    box-shadow:
+      0 18px 40px rgba(0,0,0,0.4),
+      0 6px 14px rgba(0,0,0,0.2),
+      inset 0 1px 0 rgba(255,255,255,0.1) !important;
+  }
+
+  .kpi-label {
+    font-size: 10px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.15em !important;
+    color: rgba(255, 251, 245, 0.55) !important;
+    font-weight: 600 !important;
+    margin-bottom: 8px !important;
+  }
+
+  .kpi-value {
+    font-size: 1.7rem !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.025em !important;
+    color: #FFFBF5 !important;
+  }
+
+  /* ============ INPUTS GENERALES ============ */
   input[type="text"], input[type="number"], input[type="date"],
   input[type="email"], input[type="password"], select, textarea {
-    border-radius: 10px !important;
-    transition: all 0.2s ease !important;
+    border-radius: 12px !important;
     font-family: 'Inter', sans-serif !important;
+    transition: all 0.2s var(--vn-ease) !important;
   }
+
   input[type="text"]:focus, input[type="number"]:focus, input[type="date"]:focus,
   input[type="email"]:focus, input[type="password"]:focus, select:focus, textarea:focus {
     outline: none !important;
-    box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.2), 0 2px 4px rgba(0,0,0,0.1) !important;
+    box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.2), 0 2px 6px rgba(0,0,0,0.08) !important;
     border-color: rgba(251, 191, 36, 0.5) !important;
   }
 
-  /* PANEL DRAWER */
+  /* ============ PANEL DRAWER ============ */
   .panel-drawer {
-    border-radius: 24px 0 0 24px !important;
-    box-shadow: -20px 0 60px rgba(0,0,0,0.45) !important;
+    border-radius: 28px 0 0 28px !important;
+    background: linear-gradient(180deg, #15100B 0%, #0A0806 100%) !important;
+    border-left: 1px solid rgba(251, 191, 36, 0.1) !important;
+    box-shadow: -24px 0 72px rgba(0,0,0,0.5) !important;
   }
 
-  /* TABLAS */
+  .panel-header {
+    padding: 20px 24px !important;
+    border-bottom: 1px solid rgba(251, 191, 36, 0.08) !important;
+    background: rgba(15, 12, 8, 0.5) !important;
+    backdrop-filter: blur(20px);
+  }
+
+  .panel-header h2 {
+    color: #FFFBF5 !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.02em !important;
+  }
+
+  .panel-close {
+    border-radius: 10px !important;
+    background: rgba(255, 251, 245, 0.06) !important;
+    border: 1px solid rgba(251, 191, 36, 0.15) !important;
+    color: #FCD34D !important;
+    padding: 8px 14px !important;
+    font-weight: 600 !important;
+    font-family: 'Inter', sans-serif !important;
+    transition: all 0.2s var(--vn-ease) !important;
+    cursor: pointer !important;
+  }
+
+  .panel-close:hover {
+    background: rgba(251, 191, 36, 0.15) !important;
+    border-color: rgba(251, 191, 36, 0.4) !important;
+    transform: translateX(-2px);
+  }
+
+  /* ============ TABLAS ============ */
   table {
-    border-radius: 12px;
+    border-radius: 14px;
     overflow: hidden;
   }
   table thead tr {
     letter-spacing: 0.02em;
+    text-transform: uppercase;
   }
   table tbody tr {
     transition: background 0.15s ease;
@@ -7039,15 +7629,15 @@ window.mostrarRangoStats = function(){
     background: rgba(251, 191, 36, 0.04) !important;
   }
 
-  /* MARQUESINA */
+  /* ============ MARQUESINA ============ */
   #obsMarquee {
     border-radius: 14px !important;
-    box-shadow: 0 4px 14px rgba(217, 119, 6, 0.3), inset 0 1px 0 rgba(255,255,255,0.3) !important;
+    box-shadow: 0 6px 18px rgba(217, 119, 6, 0.3), inset 0 1px 0 rgba(255,255,255,0.4) !important;
   }
 
-  /* SCROLLBAR */
+  /* ============ SCROLLBAR ============ */
   ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-track { background: rgba(139, 111, 71, 0.06); border-radius: 10px; }
+  ::-webkit-scrollbar-track { background: rgba(139, 111, 71, 0.04); border-radius: 10px; }
   ::-webkit-scrollbar-thumb {
     background: linear-gradient(180deg, rgba(217, 119, 6, 0.5), rgba(139, 111, 71, 0.5));
     border-radius: 10px;
@@ -7059,74 +7649,202 @@ window.mostrarRangoStats = function(){
     background-clip: padding-box;
   }
 
-  /* MODAL */
+  /* ============ MODAL ============ */
   .mc-box, #mcBoxGlobal {
-    border-radius: 20px !important;
-    box-shadow: 0 25px 80px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.1) !important;
+    border-radius: 24px !important;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1) !important;
   }
+
   .mc-btn-ok, .mc-btn-cancel {
     border-radius: 12px !important;
     font-weight: 600 !important;
-    transition: all 0.2s ease !important;
+    font-family: 'Inter', sans-serif !important;
+    padding: 10px 20px !important;
+    transition: all 0.2s var(--vn-ease) !important;
   }
   .mc-btn-ok:hover, .mc-btn-cancel:hover { transform: translateY(-1px); }
 
-  /* CHART CARDS */
-  .chart-card, .utilidad-box {
-    border-radius: 18px !important;
-    box-shadow: 0 6px 16px rgba(0,0,0,0.18) !important;
-    transition: all 0.3s ease !important;
-  }
-  .chart-card:hover {
-    box-shadow: 0 12px 28px rgba(0,0,0,0.25) !important;
+  /* Modal original de pedido */
+  .modal-content {
+    border-radius: 24px !important;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.4) !important;
   }
 
-  /* ANIMACIÓN ENTRADA */
-  @keyframes vn-fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
+  .producto {
+    border-radius: 14px !important;
+    transition: all 0.2s var(--vn-ease) !important;
+  }
+  .producto:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--vn-shadow-sm);
+  }
+
+  /* ============ CHARTS ============ */
+  .chart-card, .utilidad-box {
+    border-radius: 18px !important;
+    box-shadow: var(--vn-shadow-inflated-dark) !important;
+    transition: all 0.3s var(--vn-ease) !important;
+  }
+  .chart-card:hover {
+    box-shadow: 0 16px 36px rgba(0,0,0,0.35) !important;
+  }
+
+  /* ============ ANIMACIÓN ENTRADA ============ */
+  @keyframes vnFadeIn {
+    from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
   }
   .panel-body > * {
-    animation: vn-fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+    animation: vnFadeIn 0.4s var(--vn-ease) backwards;
+  }
+  .panel-body > *:nth-child(1) { animation-delay: 0s; }
+  .panel-body > *:nth-child(2) { animation-delay: 0.04s; }
+  .panel-body > *:nth-child(3) { animation-delay: 0.08s; }
+  .panel-body > *:nth-child(4) { animation-delay: 0.12s; }
+  .panel-body > *:nth-child(5) { animation-delay: 0.16s; }
+
+  /* ============ RESPONSIVE ============ */
+  @media (max-width: 1100px) {
+    #vnLoginContent { grid-template-columns: 1fr; gap: 40px; padding: 30px; }
+    #vnLogoStage { height: 400px; }
+    #vnLogoCube { width: 320px; height: 320px; }
+    .vnLoginTitle { font-size: 32px; }
   }
 
-  /* RESPONSIVE */
   @media (max-width: 768px) {
     #grid .card { border-radius: 14px !important; }
-    .panel-drawer { border-radius: 20px 20px 0 0 !important; }
+    .panel-drawer { border-radius: 24px 24px 0 0 !important; }
+    #vnLogoCube { width: 260px; height: 260px; }
+    .vnLogoTitle { font-size: 38px; }
+    #vnLoginForm { padding: 32px 24px; }
   }
   `;
   document.head.appendChild(style);
 
-  // Partículas de harina sutiles
-  setTimeout(function(){
-    if(document.getElementById('vn-particles')) return;
-    var cv = document.createElement('canvas');
-    cv.id = 'vn-particles';
-    cv.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;opacity:0.4;';
-    document.body.appendChild(cv);
+  // ============ HOME LOGIN ============
+  function crearLoginScreen(){
+    // Si ya entró antes, no mostrar
+    if(sessionStorage.getItem('vnLoggedIn') === 'true') return;
+
+    var overlay = document.createElement('div');
+    overlay.id = 'vnLoginScreen';
+    overlay.innerHTML = `
+      <canvas id="vnLoginParticles"></canvas>
+      <div id="vnLoginContent">
+        <div id="vnLogoStage">
+          <div id="vnLogoCube">
+            <div class="vnLogoFace vnLogoFront">
+              <div class="vnLogoInner">
+                <div class="vnLogoOrbit"></div>
+                <div class="vnLogoBread">
+                  <svg class="vnLogoSvg" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Trigo izquierdo -->
+                    <g transform="translate(15, 20)">
+                      <path d="M20 60 Q22 40 25 10" stroke="#D97706" stroke-width="2" fill="none" stroke-linecap="round"/>
+                      <ellipse cx="15" cy="15" rx="4" ry="7" fill="#F59E0B" transform="rotate(-30 15 15)"/>
+                      <ellipse cx="22" cy="22" rx="4" ry="7" fill="#F59E0B" transform="rotate(-20 22 22)"/>
+                      <ellipse cx="10" cy="25" rx="4" ry="7" fill="#D97706" transform="rotate(-40 10 25)"/>
+                      <ellipse cx="20" cy="35" rx="4" ry="7" fill="#F59E0B" transform="rotate(-25 20 35)"/>
+                      <ellipse cx="12" cy="40" rx="4" ry="7" fill="#D97706" transform="rotate(-45 12 40)"/>
+                    </g>
+                    <!-- Trigo derecho -->
+                    <g transform="translate(105, 25)">
+                      <path d="M0 55 Q-2 35 -5 10" stroke="#D97706" stroke-width="2" fill="none" stroke-linecap="round"/>
+                      <ellipse cx="5" cy="15" rx="4" ry="7" fill="#F59E0B" transform="rotate(30 5 15)"/>
+                      <ellipse cx="-2" cy="22" rx="4" ry="7" fill="#F59E0B" transform="rotate(20 -2 22)"/>
+                      <ellipse cx="10" cy="25" rx="4" ry="7" fill="#D97706" transform="rotate(40 10 25)"/>
+                      <ellipse cx="0" cy="35" rx="4" ry="7" fill="#F59E0B" transform="rotate(25 0 35)"/>
+                      <ellipse cx="8" cy="40" rx="4" ry="7" fill="#D97706" transform="rotate(45 8 40)"/>
+                    </g>
+                    <!-- Pan -->
+                    <g transform="translate(70, 85)">
+                      <ellipse cx="0" cy="0" rx="32" ry="22" fill="url(#breadGrad)"/>
+                      <path d="M-25 -5 Q0 -12 25 -5" stroke="#92400E" stroke-width="1.5" fill="none"/>
+                      <path d="M-20 3 Q0 -4 20 3" stroke="#92400E" stroke-width="1.5" fill="none"/>
+                      <path d="M-15 10 Q0 4 15 10" stroke="#92400E" stroke-width="1.5" fill="none"/>
+                    </g>
+                    <defs>
+                      <radialGradient id="breadGrad" cx="0.3" cy="0.3">
+                        <stop offset="0%" stop-color="#FCD34D"/>
+                        <stop offset="60%" stop-color="#F59E0B"/>
+                        <stop offset="100%" stop-color="#B45309"/>
+                      </radialGradient>
+                    </defs>
+                  </svg>
+                </div>
+                <div class="vnLogoTitle">VIANNY'S</div>
+                <div class="vnLogoSubtitle">Panadería y Distribuidora</div>
+                <div class="vnLogoYear">DESDE 2008</div>
+              </div>
+            </div>
+            <div class="vnLogoFace vnLogoBack">
+              <div class="vnLogoInner">
+                <div class="vnLogoOrbit"></div>
+                <div class="vnLogoBread">
+                  <svg class="vnLogoSvg" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="70" cy="70" r="55" fill="none" stroke="#D97706" stroke-width="2" stroke-dasharray="4 6"/>
+                    <text x="70" y="78" text-anchor="middle" font-family="Playfair Display, serif" font-size="40" font-weight="900" fill="#FBBF24">V</text>
+                  </svg>
+                </div>
+                <div class="vnLogoTitle">VIANNY'S</div>
+                <div class="vnLogoSubtitle">Sistema de Gestión</div>
+                <div class="vnLogoYear">PANEL PRO</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="vnLoginForm">
+          <div class="vnLoginBrand">Panel de Control</div>
+          <div class="vnLoginTitle">Bienvenido</div>
+          <div class="vnLoginSubtitle">Accede a tu sistema de gestión integral de panadería.</div>
+
+          <div class="vnLoginField">
+            <label>Usuario</label>
+            <input class="vnLoginInput" id="vnLoginUser" type="text" placeholder="usuario" autocomplete="username">
+          </div>
+
+          <div class="vnLoginField">
+            <label>Contraseña</label>
+            <input class="vnLoginInput" id="vnLoginPass" type="password" placeholder="••••••••" autocomplete="current-password">
+          </div>
+
+          <button class="vnLoginButton" id="vnLoginBtn">Acceder →</button>
+
+          <div class="vnLoginFooter">VIANNY'S · DESDE 2008 · PANEL PRO</div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    // Partículas de harina
+    var cv = document.getElementById('vnLoginParticles');
     var ctx = cv.getContext('2d');
-    function resize(){ cv.width = window.innerWidth; cv.height = window.innerHeight; }
-    resize();
-    window.addEventListener('resize', resize);
+    function resizeP(){ cv.width = window.innerWidth; cv.height = window.innerHeight; }
+    resizeP();
+    window.addEventListener('resize', resizeP);
 
     var parts = [];
-    for(var i=0; i<20; i++){
+    for(var i=0; i<50; i++){
       parts.push({
         x: Math.random()*cv.width,
         y: Math.random()*cv.height,
-        r: Math.random()*1.5 + 0.3,
-        vx: (Math.random()-0.5)*0.15,
-        vy: Math.random()*0.2 + 0.05,
-        op: Math.random()*0.4 + 0.1
+        r: Math.random()*2 + 0.5,
+        vx: (Math.random()-0.5)*0.3,
+        vy: Math.random()*0.4 + 0.1,
+        op: Math.random()*0.5 + 0.15
       });
     }
-    function draw(){
+    function drawP(){
+      if(!document.getElementById('vnLoginScreen')) return;
       ctx.clearRect(0,0,cv.width,cv.height);
       parts.forEach(function(p){
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
-        ctx.fillStyle = 'rgba(251, 191, 36, '+p.op+')';
+        var grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r*2);
+        grd.addColorStop(0, 'rgba(251, 191, 36, '+p.op+')');
+        grd.addColorStop(1, 'rgba(251, 191, 36, 0)');
+        ctx.fillStyle = grd;
         ctx.fill();
         p.x += p.vx;
         p.y += p.vy;
@@ -7134,14 +7852,87 @@ window.mostrarRangoStats = function(){
         if(p.x < 0) p.x = cv.width;
         if(p.x > cv.width) p.x = 0;
       });
+      requestAnimationFrame(drawP);
+    }
+    drawP();
+
+    // Click acceder
+    function entrar(){
+      var btn = document.getElementById('vnLoginBtn');
+      btn.style.pointerEvents = 'none';
+      btn.textContent = 'Accediendo...';
+      sessionStorage.setItem('vnLoggedIn', 'true');
+      var overlay = document.getElementById('vnLoginScreen');
+      overlay.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+      overlay.style.opacity = '0';
+      overlay.style.transform = 'scale(1.05)';
+      setTimeout(function(){
+        if(overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      }, 650);
+    }
+
+    document.getElementById('vnLoginBtn').addEventListener('click', entrar);
+    document.getElementById('vnLoginPass').addEventListener('keypress', function(e){
+      if(e.key === 'Enter') entrar();
+    });
+    document.getElementById('vnLoginUser').addEventListener('keypress', function(e){
+      if(e.key === 'Enter') document.getElementById('vnLoginPass').focus();
+    });
+
+    // Focus inicial
+    setTimeout(function(){ document.getElementById('vnLoginUser').focus(); }, 300);
+  }
+
+  // Ejecutar al cargar
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', crearLoginScreen);
+  } else {
+    crearLoginScreen();
+  }
+
+  // ============ PARTÍCULAS DE FONDO DEL PANEL ============
+  setTimeout(function(){
+    if(document.getElementById('vn-panel-particles')) return;
+    if(document.getElementById('vnLoginScreen')) return;
+
+    var cv = document.createElement('canvas');
+    cv.id = 'vn-panel-particles';
+    cv.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;opacity:0.25;';
+    document.body.appendChild(cv);
+    var ctx = cv.getContext('2d');
+    function resize(){ cv.width = window.innerWidth; cv.height = window.innerHeight; }
+    resize();
+    window.addEventListener('resize', resize);
+
+    var parts = [];
+    for(var i=0; i<15; i++){
+      parts.push({
+        x: Math.random()*cv.width,
+        y: Math.random()*cv.height,
+        r: Math.random()*1.2 + 0.3,
+        vx: (Math.random()-0.5)*0.1,
+        vy: Math.random()*0.15 + 0.03,
+        op: Math.random()*0.3 + 0.1
+      });
+    }
+    function draw(){
+      ctx.clearRect(0,0,cv.width,cv.height);
+      parts.forEach(function(p){
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(217, 119, 6, '+p.op+')';
+        ctx.fill();
+        p.x += p.vx;
+        p.y += p.vy;
+        if(p.y > cv.height){ p.y = -5; p.x = Math.random()*cv.width; }
+      });
       requestAnimationFrame(draw);
     }
     draw();
-  }, 500);
+  }, 1500);
 
-  console.log('🎨 Tema Apple/Panadería activado');
+  console.log('✨ Rediseño PRO V5 activado');
 })();
-
 console.log('✅ Parche V4: Historial Excel + Rango + Diseño Apple');  
 console.log('✅ Parche Unificado V2: Todo activo');
 })();
