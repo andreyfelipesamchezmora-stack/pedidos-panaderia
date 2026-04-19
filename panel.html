@@ -6541,11 +6541,17 @@ window.abrir=async function(nombre,id){
 // HISTORIAL — BOTÓN BORRAR MOVIMIENTOS
 // =====================================================
 window.historialBorrarMovimiento=function(origen,idx){
-  if(origen==='gastoManual'){if(!Array.isArray(gastosMemoria)||!gastosMemoria[idx])return;if(!confirm('¿Eliminar?'))return;gastosMemoria.splice(idx,1);try{sessionStorage.setItem('gastos',JSON.stringify(gastosMemoria));}catch(e){}}
-  else{if(!Array.isArray(movimientosContables)||!movimientosContables[idx])return;if(!confirm('¿Eliminar movimiento?'))return;movimientosContables.splice(idx,1);}
-  renderConta('historial');
+  if(origen==='gastoManual'){if(!Array.isArray(window.gastosMemoria)||!window.gastosMemoria[idx])return;if(!confirm('\u00bfEliminar?'))return;window.gastosMemoria.splice(idx,1);try{sessionStorage.setItem('gastos',JSON.stringify(window.gastosMemoria));}catch(e){}}
+  else{if(!Array.isArray(window.movimientosContables)||!window.movimientosContables[idx])return;if(!confirm('\u00bfEliminar movimiento?'))return;window.movimientosContables.splice(idx,1);}
+  if(typeof renderConta==='function')renderConta('historial');
 };
-
+// 7. FORZAR CUENTAS EN INGRESO EXTRA
+var _oAIE=window.agregarIngresoExtra;
+window.agregarIngresoExtra=function(){
+  var s=document.getElementById('ingresoCuenta');
+  if(s&&s.options.length===0&&Array.isArray(window.cuentasMemoria))window.cuentasMemoria.forEach(function(c,i){var o=document.createElement('option');o.value=i;o.textContent=((typeof tipoEmoji==='function')?tipoEmoji(c.tipo):'\ud83c\udfe6')+' '+c.nombre;s.appendChild(o);});
+  if(typeof _oAIE==='function')_oAIE();
+};
 console.log('✅ Parche Unificado: TODO activo — Marquesina, Drag&Drop, Monedas, Flujo, Cuotas, Categorías, Caja, Deudas');
 
 })();
