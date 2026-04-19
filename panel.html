@@ -7930,7 +7930,690 @@ window.mostrarRangoStats = function(){
     }
     draw();
   }, 1500);
-
+// =====================================================
+// CREDENCIALES VÁLIDAS (CAMBIA ESTOS DATOS POR LOS TUYOS)
+// =====================================================
+var VN_CREDENCIALES = [
+  { usuario: 'vianny',   password: 'vianny2008' },
+  { usuario: 'admin',    password: 'panaderia' },
+  { usuario: 'andrey',   password: 'andrey123'  }
+];
+ 
+// Intentos fallidos y bloqueo
+var VN_MAX_INTENTOS = 5;
+var VN_BLOQUEO_MS = 30000; // 30 segundos de bloqueo
+ 
+function _vnLeerIntentos(){
+  try { return JSON.parse(localStorage.getItem('vn_intentos_login')||'{"n":0,"hasta":0}'); }
+  catch(e){ return {n:0, hasta:0}; }
+}
+function _vnGuardarIntentos(obj){
+  localStorage.setItem('vn_intentos_login', JSON.stringify(obj));
+}
+ 
+// =====================================================
+// INYECTAR ESTILOS ADICIONALES PARA HOME ENRIQUECIDO
+// =====================================================
+var _vnStyleExtra = document.createElement('style');
+_vnStyleExtra.id = 'vn-v6-extras';
+_vnStyleExtra.textContent = `
+  /* ============ HOME CONTENT EXTRA ============ */
+  #vnLoginContent {
+    grid-template-columns: 1.1fr 0.9fr !important;
+    gap: 60px !important;
+    max-width: 1500px !important;
+  }
+ 
+  /* Stats flotantes junto al logo */
+  #vnStatsFloat {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+ 
+  .vnStatBadge {
+    position: absolute;
+    background: rgba(26, 20, 16, 0.85);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(251, 191, 36, 0.25);
+    border-radius: 18px;
+    padding: 14px 20px;
+    color: #FFFBF5;
+    box-shadow:
+      0 20px 40px rgba(0,0,0,0.4),
+      0 4px 12px rgba(217, 119, 6, 0.15),
+      inset 0 1px 0 rgba(255,255,255,0.1);
+    pointer-events: auto;
+    animation: vnBadgeFloat 5s ease-in-out infinite;
+    min-width: 180px;
+  }
+ 
+  .vnStatBadge .vnStatIcon {
+    display: inline-flex;
+    width: 36px; height: 36px;
+    border-radius: 12px;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    margin-bottom: 8px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 10px rgba(0,0,0,0.2);
+  }
+ 
+  .vnStatBadge .vnStatLabel {
+    font-size: 10px;
+    color: rgba(252, 211, 77, 0.7);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    font-weight: 600;
+    margin-bottom: 3px;
+  }
+ 
+  .vnStatBadge .vnStatValue {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    font-family: 'Inter', sans-serif;
+    line-height: 1.1;
+  }
+ 
+  .vnStatBadge .vnStatSub {
+    font-size: 10px;
+    color: rgba(255, 251, 245, 0.5);
+    margin-top: 2px;
+    font-weight: 500;
+  }
+ 
+  /* Posiciones: 3 badges */
+  .vnStatBadge.vnStat1 {
+    top: 8%; left: -5%;
+    animation-delay: 0s;
+  }
+  .vnStatBadge.vnStat2 {
+    top: 45%; right: -8%;
+    animation-delay: 1.5s;
+  }
+  .vnStatBadge.vnStat3 {
+    bottom: 8%; left: 5%;
+    animation-delay: 3s;
+  }
+ 
+  @keyframes vnBadgeFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+ 
+  /* ============ FEATURES ROW debajo del formulario ============ */
+  .vnFeaturesRow {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(251, 191, 36, 0.1);
+  }
+ 
+  .vnFeatureCard {
+    background: rgba(255, 251, 245, 0.04);
+    border: 1px solid rgba(251, 191, 36, 0.1);
+    border-radius: 14px;
+    padding: 14px 12px;
+    text-align: center;
+    transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+    cursor: default;
+  }
+ 
+  .vnFeatureCard:hover {
+    background: rgba(251, 191, 36, 0.08);
+    border-color: rgba(251, 191, 36, 0.3);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(217, 119, 6, 0.15);
+  }
+ 
+  .vnFeatureCard .vnFeatIcon {
+    font-size: 22px;
+    margin-bottom: 6px;
+    display: block;
+  }
+ 
+  .vnFeatureCard .vnFeatTitle {
+    font-size: 11px;
+    font-weight: 700;
+    color: #FCD34D;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 2px;
+  }
+ 
+  .vnFeatureCard .vnFeatDesc {
+    font-size: 10px;
+    color: rgba(255, 251, 245, 0.55);
+    line-height: 1.3;
+  }
+ 
+  /* ============ MENSAJE DE ERROR LOGIN ============ */
+  #vnLoginError {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: rgba(220, 38, 38, 0.12);
+    border: 1px solid rgba(220, 38, 38, 0.3);
+    border-radius: 12px;
+    color: #FCA5A5;
+    font-size: 13px;
+    font-weight: 500;
+    display: none;
+    animation: vnShake 0.4s ease;
+  }
+ 
+  #vnLoginError.visible {
+    display: block;
+  }
+ 
+  @keyframes vnShake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+ 
+  /* ============ LOCK ICON BLOQUEO ============ */
+  #vnLoginLocked {
+    margin-top: 14px;
+    padding: 14px;
+    background: rgba(251, 191, 36, 0.08);
+    border: 1px solid rgba(251, 191, 36, 0.25);
+    border-radius: 12px;
+    color: #FCD34D;
+    font-size: 13px;
+    text-align: center;
+    display: none;
+  }
+ 
+  #vnLoginLocked.visible { display: block; }
+ 
+  /* ============ BADGE ESQUINA SUPERIOR ============ */
+  .vnTopBadge {
+    position: absolute;
+    top: 30px;
+    left: 40px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: rgba(26, 20, 16, 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(251, 191, 36, 0.15);
+    border-radius: 100px;
+    z-index: 20;
+  }
+ 
+  .vnTopBadge .vnDot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #10B981;
+    box-shadow: 0 0 10px #10B981;
+    animation: vnPulse 2s ease-in-out infinite;
+  }
+ 
+  @keyframes vnPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.2); }
+  }
+ 
+  .vnTopBadge .vnTopText {
+    font-size: 11px;
+    color: #FCD34D;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+ 
+  /* ============ CORNER DATE ============ */
+  .vnCornerDate {
+    position: absolute;
+    top: 30px;
+    right: 40px;
+    padding: 10px 18px;
+    background: rgba(26, 20, 16, 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(251, 191, 36, 0.15);
+    border-radius: 100px;
+    z-index: 20;
+    font-size: 12px;
+    color: rgba(255, 251, 245, 0.75);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+ 
+  /* ============ FOOTER MARCAS ============ */
+  .vnBrandsFooter {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 28px;
+    z-index: 20;
+    font-size: 10px;
+    color: rgba(255, 251, 245, 0.35);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+ 
+  .vnBrandsFooter span {
+    transition: color 0.3s ease;
+  }
+  .vnBrandsFooter span:hover {
+    color: rgba(252, 211, 77, 0.7);
+  }
+ 
+  /* ============ BOTÓN LOGOUT DEL PANEL ============ */
+  #vnLogoutBtn {
+    margin-top: auto;
+    background: rgba(220, 38, 38, 0.08) !important;
+    border: 1px solid rgba(220, 38, 38, 0.2) !important;
+    color: #FCA5A5 !important;
+    border-radius: 12px !important;
+    padding: 12px 14px !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+    cursor: pointer !important;
+    transition: all 0.2s cubic-bezier(0.4,0,0.2,1) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    font-family: 'Inter', sans-serif !important;
+    letter-spacing: -0.005em !important;
+    margin-top: 16px !important;
+    width: 100% !important;
+  }
+ 
+  #vnLogoutBtn:hover {
+    background: rgba(220, 38, 38, 0.2) !important;
+    border-color: rgba(220, 38, 38, 0.4) !important;
+    color: #FEE2E2 !important;
+    transform: translateY(-1px);
+  }
+ 
+  #vnLogoutBtn svg {
+    width: 16px; height: 16px;
+    stroke: currentColor;
+  }
+ 
+  /* ============ RESPONSIVE HOME ============ */
+  @media (max-width: 1100px) {
+    .vnStatBadge { display: none; }
+    .vnTopBadge, .vnCornerDate { top: 16px; }
+    .vnTopBadge { left: 16px; }
+    .vnCornerDate { right: 16px; font-size: 10px; padding: 8px 12px; }
+    .vnBrandsFooter { display: none; }
+  }
+`;
+document.head.appendChild(_vnStyleExtra);
+ 
+// =====================================================
+// SOBRESCRIBIR crearLoginScreen CON AUTH + CONTENIDO EXTRA
+// =====================================================
+(function(){
+  // Remover pantalla existente si hay
+  var existing = document.getElementById('vnLoginScreen');
+  if(existing) existing.remove();
+ 
+  // Si ya está logueado, no crear
+  if(sessionStorage.getItem('vnLoggedIn') === 'true') return;
+ 
+  var overlay = document.createElement('div');
+  overlay.id = 'vnLoginScreen';
+ 
+  var fechaHoy = new Date().toLocaleDateString('es-CO', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+  });
+  fechaHoy = fechaHoy.charAt(0).toUpperCase() + fechaHoy.slice(1);
+ 
+  overlay.innerHTML =
+    '<canvas id="vnLoginParticles"></canvas>'+
+ 
+    // Badge superior
+    '<div class="vnTopBadge"><span class="vnDot"></span><span class="vnTopText">Sistema Activo · v5.2</span></div>'+
+    '<div class="vnCornerDate">📅 '+fechaHoy+'</div>'+
+ 
+    '<div id="vnLoginContent">'+
+ 
+      // ===== COLUMNA IZQUIERDA: LOGO 3D + STATS FLOAT =====
+      '<div id="vnLogoStage">'+
+        '<div id="vnStatsFloat">'+
+          '<div class="vnStatBadge vnStat1">'+
+            '<span class="vnStatIcon" style="background:linear-gradient(135deg,#F59E0B,#D97706);">🍞</span>'+
+            '<div class="vnStatLabel">Pedidos hoy</div>'+
+            '<div class="vnStatValue" id="vnStatPedidos">—</div>'+
+            '<div class="vnStatSub">Panel en tiempo real</div>'+
+          '</div>'+
+          '<div class="vnStatBadge vnStat2">'+
+            '<span class="vnStatIcon" style="background:linear-gradient(135deg,#16A34A,#22C55E);">💰</span>'+
+            '<div class="vnStatLabel">Clientes activos</div>'+
+            '<div class="vnStatValue" id="vnStatClientes">—</div>'+
+            '<div class="vnStatSub">Base de datos</div>'+
+          '</div>'+
+          '<div class="vnStatBadge vnStat3">'+
+            '<span class="vnStatIcon" style="background:linear-gradient(135deg,#7C3AED,#A855F7);">📊</span>'+
+            '<div class="vnStatLabel">Estado caja</div>'+
+            '<div class="vnStatValue" id="vnStatCaja">OK</div>'+
+            '<div class="vnStatSub">Sincronizado</div>'+
+          '</div>'+
+        '</div>'+
+ 
+        '<div id="vnLogoCube">'+
+          '<div class="vnLogoFace vnLogoFront">'+
+            '<div class="vnLogoInner">'+
+              '<div class="vnLogoOrbit"></div>'+
+              '<div class="vnLogoBread">'+
+                '<svg class="vnLogoSvg" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">'+
+                  '<g transform="translate(15, 20)">'+
+                    '<path d="M20 60 Q22 40 25 10" stroke="#D97706" stroke-width="2" fill="none" stroke-linecap="round"/>'+
+                    '<ellipse cx="15" cy="15" rx="4" ry="7" fill="#F59E0B" transform="rotate(-30 15 15)"/>'+
+                    '<ellipse cx="22" cy="22" rx="4" ry="7" fill="#F59E0B" transform="rotate(-20 22 22)"/>'+
+                    '<ellipse cx="10" cy="25" rx="4" ry="7" fill="#D97706" transform="rotate(-40 10 25)"/>'+
+                    '<ellipse cx="20" cy="35" rx="4" ry="7" fill="#F59E0B" transform="rotate(-25 20 35)"/>'+
+                    '<ellipse cx="12" cy="40" rx="4" ry="7" fill="#D97706" transform="rotate(-45 12 40)"/>'+
+                  '</g>'+
+                  '<g transform="translate(105, 25)">'+
+                    '<path d="M0 55 Q-2 35 -5 10" stroke="#D97706" stroke-width="2" fill="none" stroke-linecap="round"/>'+
+                    '<ellipse cx="5" cy="15" rx="4" ry="7" fill="#F59E0B" transform="rotate(30 5 15)"/>'+
+                    '<ellipse cx="-2" cy="22" rx="4" ry="7" fill="#F59E0B" transform="rotate(20 -2 22)"/>'+
+                    '<ellipse cx="10" cy="25" rx="4" ry="7" fill="#D97706" transform="rotate(40 10 25)"/>'+
+                    '<ellipse cx="0" cy="35" rx="4" ry="7" fill="#F59E0B" transform="rotate(25 0 35)"/>'+
+                    '<ellipse cx="8" cy="40" rx="4" ry="7" fill="#D97706" transform="rotate(45 8 40)"/>'+
+                  '</g>'+
+                  '<g transform="translate(70, 85)">'+
+                    '<ellipse cx="0" cy="0" rx="32" ry="22" fill="url(#breadGrad)"/>'+
+                    '<path d="M-25 -5 Q0 -12 25 -5" stroke="#92400E" stroke-width="1.5" fill="none"/>'+
+                    '<path d="M-20 3 Q0 -4 20 3" stroke="#92400E" stroke-width="1.5" fill="none"/>'+
+                    '<path d="M-15 10 Q0 4 15 10" stroke="#92400E" stroke-width="1.5" fill="none"/>'+
+                  '</g>'+
+                  '<defs><radialGradient id="breadGrad" cx="0.3" cy="0.3"><stop offset="0%" stop-color="#FCD34D"/><stop offset="60%" stop-color="#F59E0B"/><stop offset="100%" stop-color="#B45309"/></radialGradient></defs>'+
+                '</svg>'+
+              '</div>'+
+              '<div class="vnLogoTitle">VIANNY\'S</div>'+
+              '<div class="vnLogoSubtitle">Panadería y Distribuidora</div>'+
+              '<div class="vnLogoYear">DESDE 2008</div>'+
+            '</div>'+
+          '</div>'+
+          '<div class="vnLogoFace vnLogoBack">'+
+            '<div class="vnLogoInner">'+
+              '<div class="vnLogoOrbit"></div>'+
+              '<div class="vnLogoBread">'+
+                '<svg class="vnLogoSvg" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">'+
+                  '<circle cx="70" cy="70" r="55" fill="none" stroke="#D97706" stroke-width="2" stroke-dasharray="4 6"/>'+
+                  '<text x="70" y="78" text-anchor="middle" font-family="Playfair Display, serif" font-size="40" font-weight="900" fill="#FBBF24">V</text>'+
+                '</svg>'+
+              '</div>'+
+              '<div class="vnLogoTitle">VIANNY\'S</div>'+
+              '<div class="vnLogoSubtitle">Sistema de Gestión</div>'+
+              '<div class="vnLogoYear">PANEL PRO</div>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+ 
+      // ===== COLUMNA DERECHA: LOGIN FORM =====
+      '<div id="vnLoginForm">'+
+        '<div class="vnLoginBrand">Panel de Control</div>'+
+        '<div class="vnLoginTitle">Bienvenido</div>'+
+        '<div class="vnLoginSubtitle">Accede a tu sistema de gestión integral. Administra pedidos, contabilidad, cartera y nómina desde un solo lugar.</div>'+
+ 
+        '<div class="vnLoginField">'+
+          '<label>Usuario</label>'+
+          '<input class="vnLoginInput" id="vnLoginUser" type="text" placeholder="Ingresa tu usuario" autocomplete="username">'+
+        '</div>'+
+ 
+        '<div class="vnLoginField">'+
+          '<label>Contraseña</label>'+
+          '<input class="vnLoginInput" id="vnLoginPass" type="password" placeholder="••••••••" autocomplete="current-password">'+
+        '</div>'+
+ 
+        '<button class="vnLoginButton" id="vnLoginBtn">Acceder →</button>'+
+ 
+        '<div id="vnLoginError">❌ Usuario o contraseña incorrectos</div>'+
+        '<div id="vnLoginLocked">🔒 Bloqueado por seguridad. Espera <span id="vnLockCount">30</span>s</div>'+
+ 
+        // ===== FEATURES EN 3 COLUMNAS =====
+        '<div class="vnFeaturesRow">'+
+          '<div class="vnFeatureCard">'+
+            '<span class="vnFeatIcon">📊</span>'+
+            '<div class="vnFeatTitle">Contabilidad</div>'+
+            '<div class="vnFeatDesc">Ingresos, gastos y flujo</div>'+
+          '</div>'+
+          '<div class="vnFeatureCard">'+
+            '<span class="vnFeatIcon">🧾</span>'+
+            '<div class="vnFeatTitle">Pedidos</div>'+
+            '<div class="vnFeatDesc">Control diario rápido</div>'+
+          '</div>'+
+          '<div class="vnFeatureCard">'+
+            '<span class="vnFeatIcon">💼</span>'+
+            '<div class="vnFeatTitle">Nómina</div>'+
+            '<div class="vnFeatDesc">Empleados y adelantos</div>'+
+          '</div>'+
+        '</div>'+
+ 
+        '<div class="vnLoginFooter">VIANNY\'S · DESDE 2008 · PANEL PRO · v5.2</div>'+
+      '</div>'+
+ 
+    '</div>'+
+ 
+    '<div class="vnBrandsFooter">'+
+      '<span>🔒 SEGURO</span>'+
+      '<span>⚡ RÁPIDO</span>'+
+      '<span>☁️ EN LA NUBE</span>'+
+      '<span>🛡️ PROTEGIDO</span>'+
+    '</div>';
+ 
+  document.body.appendChild(overlay);
+ 
+  // ============ CARGAR STATS REALES ============
+  setTimeout(function(){
+    try {
+      var clientesData = JSON.parse(localStorage.getItem('clientes')||'[]');
+      var el = document.getElementById('vnStatClientes');
+      if(el) el.textContent = clientesData.length;
+    } catch(e){}
+    try {
+      var recHoy = 'recaudo_' + new Date().toISOString().split('T')[0];
+      var recData = JSON.parse(localStorage.getItem(recHoy)||'{}');
+      var count = Object.keys(recData).filter(function(k){ return !k.startsWith('__'); }).length;
+      var elP = document.getElementById('vnStatPedidos');
+      if(elP) elP.textContent = count || '0';
+    } catch(e){}
+    // Caja
+    try {
+      var nomSaldo = 0;
+      var cuentas = JSON.parse(localStorage.getItem('cuentasMemoria')||'[]');
+      cuentas.forEach(function(c){ nomSaldo += Number(c.saldo)||0; });
+      var elC = document.getElementById('vnStatCaja');
+      if(elC){
+        if(nomSaldo > 0) elC.textContent = '$'+nomSaldo.toLocaleString('es-CO').replace(/,/g,'.');
+        else elC.textContent = 'OK';
+      }
+    } catch(e){}
+  }, 300);
+ 
+  // ============ PARTÍCULAS DE HARINA ============
+  var cv = document.getElementById('vnLoginParticles');
+  var ctx = cv.getContext('2d');
+  function resizeP(){ cv.width = window.innerWidth; cv.height = window.innerHeight; }
+  resizeP();
+  window.addEventListener('resize', resizeP);
+ 
+  var parts = [];
+  for(var i=0; i<55; i++){
+    parts.push({
+      x: Math.random()*cv.width,
+      y: Math.random()*cv.height,
+      r: Math.random()*2 + 0.5,
+      vx: (Math.random()-0.5)*0.3,
+      vy: Math.random()*0.4 + 0.1,
+      op: Math.random()*0.5 + 0.15
+    });
+  }
+  function drawP(){
+    if(!document.getElementById('vnLoginScreen')) return;
+    ctx.clearRect(0,0,cv.width,cv.height);
+    parts.forEach(function(p){
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+      var grd = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r*2);
+      grd.addColorStop(0, 'rgba(251, 191, 36, '+p.op+')');
+      grd.addColorStop(1, 'rgba(251, 191, 36, 0)');
+      ctx.fillStyle = grd;
+      ctx.fill();
+      p.x += p.vx;
+      p.y += p.vy;
+      if(p.y > cv.height){ p.y = -5; p.x = Math.random()*cv.width; }
+      if(p.x < 0) p.x = cv.width;
+      if(p.x > cv.width) p.x = 0;
+    });
+    requestAnimationFrame(drawP);
+  }
+  drawP();
+ 
+  // ============ LÓGICA DE LOGIN CON VALIDACIÓN ============
+  function intentarEntrar(){
+    var user = document.getElementById('vnLoginUser').value.trim().toLowerCase();
+    var pass = document.getElementById('vnLoginPass').value;
+    var errEl = document.getElementById('vnLoginError');
+    var lockEl = document.getElementById('vnLoginLocked');
+ 
+    // Validar que ambos campos estén llenos
+    if(!user || !pass){
+      errEl.textContent = '⚠️ Completa usuario y contraseña';
+      errEl.classList.add('visible');
+      setTimeout(function(){ errEl.classList.remove('visible'); }, 3500);
+      return;
+    }
+ 
+    // Verificar bloqueo
+    var intentos = _vnLeerIntentos();
+    var ahora = Date.now();
+    if(intentos.hasta && ahora < intentos.hasta){
+      var seg = Math.ceil((intentos.hasta - ahora) / 1000);
+      lockEl.classList.add('visible');
+      document.getElementById('vnLockCount').textContent = seg;
+      errEl.classList.remove('visible');
+      // Countdown
+      var intId = setInterval(function(){
+        var now = Date.now();
+        if(now >= intentos.hasta){
+          clearInterval(intId);
+          lockEl.classList.remove('visible');
+          _vnGuardarIntentos({n:0, hasta:0});
+        } else {
+          var s = Math.ceil((intentos.hasta - now) / 1000);
+          var countEl = document.getElementById('vnLockCount');
+          if(countEl) countEl.textContent = s;
+        }
+      }, 1000);
+      return;
+    }
+ 
+    // Validar credenciales
+    var valido = VN_CREDENCIALES.some(function(c){
+      return c.usuario.toLowerCase() === user && c.password === pass;
+    });
+ 
+    if(!valido){
+      intentos.n = (intentos.n||0) + 1;
+      if(intentos.n >= VN_MAX_INTENTOS){
+        intentos.hasta = ahora + VN_BLOQUEO_MS;
+        intentos.n = 0;
+        _vnGuardarIntentos(intentos);
+        lockEl.classList.add('visible');
+        document.getElementById('vnLockCount').textContent = Math.ceil(VN_BLOQUEO_MS/1000);
+        errEl.classList.remove('visible');
+        return;
+      }
+      _vnGuardarIntentos(intentos);
+      errEl.textContent = '❌ Usuario o contraseña incorrectos ('+(VN_MAX_INTENTOS-intentos.n)+' intentos restantes)';
+      errEl.classList.add('visible');
+      document.getElementById('vnLoginPass').value = '';
+      document.getElementById('vnLoginPass').focus();
+      // Shake animation re-trigger
+      errEl.style.animation = 'none';
+      setTimeout(function(){ errEl.style.animation = 'vnShake 0.4s ease'; }, 10);
+      return;
+    }
+ 
+    // LOGIN EXITOSO
+    _vnGuardarIntentos({n:0, hasta:0});
+    sessionStorage.setItem('vnLoggedIn', 'true');
+    sessionStorage.setItem('vnUser', user);
+ 
+    var btn = document.getElementById('vnLoginBtn');
+    btn.style.pointerEvents = 'none';
+    btn.textContent = '✓ Accediendo...';
+    btn.style.background = 'linear-gradient(180deg, #16A34A 0%, #15803D 100%)';
+ 
+    var ov = document.getElementById('vnLoginScreen');
+    ov.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+    ov.style.opacity = '0';
+    ov.style.transform = 'scale(1.05)';
+    setTimeout(function(){
+      if(ov.parentNode) ov.parentNode.removeChild(ov);
+      // Inyectar botón logout en sidebar
+      _vnInyectarLogout();
+    }, 650);
+  }
+ 
+  document.getElementById('vnLoginBtn').addEventListener('click', intentarEntrar);
+  document.getElementById('vnLoginPass').addEventListener('keypress', function(e){
+    if(e.key === 'Enter') intentarEntrar();
+  });
+  document.getElementById('vnLoginUser').addEventListener('keypress', function(e){
+    if(e.key === 'Enter') document.getElementById('vnLoginPass').focus();
+  });
+ 
+  setTimeout(function(){ document.getElementById('vnLoginUser').focus(); }, 400);
+})();
+ 
+// =====================================================
+// BOTÓN CERRAR SESIÓN EN SIDEBAR
+// =====================================================
+window._vnInyectarLogout = function(){
+  if(document.getElementById('vnLogoutBtn')) return;
+  var sidebar = document.querySelector('.sidebar');
+  if(!sidebar) return;
+ 
+  var btn = document.createElement('button');
+  btn.id = 'vnLogoutBtn';
+  btn.innerHTML =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+
+      '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>'+
+      '<polyline points="16 17 21 12 16 7"/>'+
+      '<line x1="21" y1="12" x2="9" y2="12"/>'+
+    '</svg>'+
+    'Cerrar sesión';
+  btn.onclick = function(){
+    if(confirm('¿Cerrar sesión?')){
+      sessionStorage.removeItem('vnLoggedIn');
+      sessionStorage.removeItem('vnUser');
+      location.reload();
+    }
+  };
+  sidebar.appendChild(btn);
+};
+ 
+// Si ya está logueado al cargar, inyectar logout
+if(sessionStorage.getItem('vnLoggedIn') === 'true'){
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', function(){
+      setTimeout(_vnInyectarLogout, 500);
+    });
+  } else {
+    setTimeout(_vnInyectarLogout, 500);
+  }
+}
+  console.log('🔐 Parche V6: Autenticación + Logout + Home enriquecido');
   console.log('✨ Rediseño PRO V5 activado');
 })();
 console.log('✅ Parche V4: Historial Excel + Rango + Diseño Apple');  
