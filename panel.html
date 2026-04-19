@@ -6358,6 +6358,350 @@ function _nRegistrarGasto(monto,desc){
 window.nominaAgregarEmpleado=function(){mostrarMC('<h3>➕ Nuevo empleado</h3><div class="mc-field"><label>Nombre</label><input id="neNom" placeholder="Ej: CARLOS"></div><div class="mc-field"><label>Tipo</label><select id="neTipo"><option value="semanal">Semanal</option><option value="quincenal">Quincenal</option></select></div><div class="mc-field"><label>Salario diario</label><input id="neSalD" type="number" value="30000"></div><div class="mc-field"><label>Salario quincena</label><input id="neSalQ" type="number" value="0"></div><div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button><button class="mc-btn-ok" style="background:#eab308;" onclick="nominaConfirmarNuevo()">Crear</button></div>');};
 window.nominaConfirmarNuevo=function(){var n=(document.getElementById('neNom').value||'').trim().toUpperCase();if(!n){alert('Nombre');return;}var d=_nLeer();d.empleados.push({id:n.toLowerCase().replace(/\s+/g,'_'),nombre:n,color:'#'+Math.floor(Math.random()*16777215).toString(16),tipo:document.getElementById('neTipo').value,salarioDia:Number(document.getElementById('neSalD').value)||0,salarioQuincena:Number(document.getElementById('neSalQ').value)||0,asistencia:[false,false,false,false,false,false],adelantos:[]});_nGuardar(d);cerrarMC();renderNomina();};
 
+// =====================================================
+// PARCHE V3 — 5 CORRECCIONES FINALES
+// Pegar JUSTO ANTES del último })(); que cierra el
+// parche unificado (antes de la línea que dice
+// "console.log('✅ Parche Unificado...")
+// =====================================================
+
+// =====================================================
+// 1. RECAUDO: Recaudar solo el efectivo que sobra
+//    (subtotal - nequi - bancolombia = efectivo a cobrar)
+//    Ya funciona así en efectivoNeto pero el checkbox
+//    "Recaudo domi" debe marcar solo el efectivo neto
+// =====================================================
+window.recaudoToggleDomi = function(nombre, subtotal){
+  var cb = document.getElementById('rec_domi_' + nombre);
+  var estado = recaudoLeerEstado();
+  if(!estado[nombre]) estado[nombre] = {};
+
+  if(cb && cb.checked){
+    // Calcular el efectivo neto (subtotal - nequi - bancolombia)
+    var nequiInput = document.getElementById('rec_nequi_' + nombre);
+    var bancoInput = document.getElementById('rec_banco_' + nombre);
+    var nequi = nequiInput ? (Number((nequiInput.dataset.raw || nequiInput.value || '0').replace(/\./g,'')) || 0) : 0;
+    var banco = bancoInput ? (Number((bancoInput.dataset.raw || bancoInput.value || '0').replace(/\./g,'')) || 0) : 0;
+    var efectivoNeto = Math.max(subtotal - nequi - banco, 0);
+    estado[nombre].recaudoDomi = efectivoNeto;
+  } else {
+    estado[nombre].recaudoDomi = 0;
+  }
+
+  recaudoGuardarEstado(estado);
+  renderRecaudo();
+};
+
+// =====================================================
+// 2. PAGO DEUDA: Permitir digitar monto parcial
+// =====================================================
+window.recaudoModalMetodoPago = function(nombre, montoTotal){
+  var cuentasOpts = '';
+  if(Array.isArray(cuentasMemoria)){
+    cuentasMemoria.forEach(function(c, i){
+      if(c.tipo !== 'EFECTIVO'){
+        cuentasOpts += '<option value="'+i+'">'+tipoEmoji(c.tipo)+' '+c.nombre+'</option>';
+      }
+    });
+  }
+
+  mostrarMC(
+    '<h3 style="text-align:center;margin-bottom:6px;">💳 Pago de deuda</h3>'+
+    '<div style="text-align:center;font-size:12px;color:#94a3b8;margin-bottom:14px;">'+nombre+'</div>'+
+
+    '<div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:10px;margin-bottom:14px;text-align:center;">'+
+      '<div style="font-size:11px;color:#fcd34d;font-weight:600;margin-bottom:3px;">Deuda total</div>'+
+      '<div style="font-size:22px;font-weight:800;color:#fbbf24;">$'+Number(montoTotal).toLocaleString("es-CO")+'</div>'+
+    '</div>'+
+
+    '<div class="mc-field" style="margin-bottom:12px;">'+
+      '<label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;margin-bottom:5px;">Monto a pagar</label>'+
+      '<input id="recPagoMontoInput" type="number" value="'+montoTotal+'" placeholder="Monto" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;font-size:16px;font-weight:800;font-family:var(--font-body);text-align:center;">'+
+      '<div style="font-size:10px;color:#64748b;margin-top:4px;text-align:center;">Puedes pagar parcial o total</div>'+
+    '</div>'+
+
+    '<div style="display:flex;gap:8px;margin-bottom:12px;">'+
+      '<button id="recMetEfe" onclick="recaudoSelMetodo(\'efectivo\')" style="flex:1;padding:14px 8px;border-radius:10px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-weight:700;cursor:pointer;font-family:var(--font-body);font-size:13px;">'+
+        '<div style="font-size:22px;margin-bottom:3px;">💵</div>Efectivo</button>'+
+      '<button id="recMetTra" onclick="recaudoSelMetodo(\'transferencia\')" style="flex:1;padding:14px 8px;border-radius:10px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-weight:700;cursor:pointer;font-family:var(--font-body);font-size:13px;">'+
+        '<div style="font-size:22px;margin-bottom:3px;">🏦</div>Transferencia</button>'+
+    '</div>'+
+
+    '<div id="recCuentaBox" style="display:none;margin-bottom:12px;">'+
+      '<select id="recCuentaSel" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px;font-size:13px;">'+cuentasOpts+'</select>'+
+    '</div>'+
+
+    '<button id="recBtnConfirmar" onclick="recaudoConfirmarPagoV3(\''+nombre.replace(/'/g,"\\\\'")+'\')" disabled style="width:100%;padding:12px;background:rgba(22,163,74,0.3);border:none;border-radius:10px;color:white;font-weight:800;cursor:not-allowed;font-family:var(--font-body);font-size:14px;opacity:0.5;">'+
+      '✓ Confirmar pago</button>'
+  );
+  window._recMetSel = '';
+};
+
+window.recaudoConfirmarPagoV3 = function(nombre){
+  var met = window._recMetSel || '';
+  if(!met){ alert('Selecciona método'); return; }
+
+  var montoInput = document.getElementById('recPagoMontoInput');
+  var monto = montoInput ? (Number(montoInput.value) || 0) : 0;
+  if(monto <= 0){ alert('Ingresa un monto válido'); return; }
+
+  var ci = -1, nb = '';
+  if(met === 'efectivo'){
+    ci = (cuentasMemoria||[]).findIndex(function(c){ return c.tipo === 'EFECTIVO'; });
+    nb = 'Efectivo';
+  } else {
+    var sl = document.getElementById('recCuentaSel');
+    ci = sl ? Number(sl.value) : -1;
+    if(ci < 0 || !cuentasMemoria[ci]){ alert('Selecciona cuenta'); return; }
+    nb = cuentasMemoria[ci].nombre;
+  }
+
+  var hoy = new Date().toLocaleDateString('es-CO',{day:'numeric',month:'long',year:'numeric'});
+
+  var e = recaudoLeerEstado();
+  if(!e[nombre]) e[nombre] = {};
+  e[nombre].deudasPagadas = monto;
+  e[nombre].deudaMetodo = met;
+  e[nombre].deudaCuentaIdx = ci;
+  e[nombre].deudaBanco = nb;
+  e[nombre].fechaPago = hoy;
+  recaudoGuardarEstado(e);
+
+  var ca = {};
+  try { ca = JSON.parse(localStorage.getItem('cartera_deudas')||'{}'); } catch(x){}
+  if(!ca[nombre]) ca[nombre] = {};
+  ca[nombre].deudasPagadas = (Number(ca[nombre].deudasPagadas)||0) + monto;
+  ca[nombre].fechaPago = hoy;
+  ca[nombre].metodoPago = met;
+  ca[nombre].banco = nb;
+  localStorage.setItem('cartera_deudas', JSON.stringify(ca));
+
+  var hi = [];
+  try { hi = JSON.parse(localStorage.getItem('cartera_pagos_historial')||'[]'); } catch(x){}
+  hi.push({cliente:nombre,monto:monto,metodo:met,banco:nb,cuentaIdx:ci,nota:'Desde recaudo',fecha:hoy});
+  localStorage.setItem('cartera_pagos_historial', JSON.stringify(hi));
+
+  if(ci >= 0 && cuentasMemoria[ci]){
+    cuentasMemoria[ci].saldo += monto;
+    cuentasGuardar();
+  }
+
+  if(!Array.isArray(movimientosContables)) movimientosContables = [];
+  movimientosContables.push({tipo:'ingreso',monto:monto,cuenta:nb,descripcion:'Pago deuda '+nombre,fecha:new Date().toISOString()});
+
+  cerrarMC();
+  renderRecaudo();
+};
+
+// =====================================================
+// 3. CARTERA: Editar valor de deuda
+// =====================================================
+window.carteraEditarDeuda = function(nombre){
+  var deudaInfo = recaudoGetDeudaHistorica(nombre);
+  var deudaActual = deudaInfo.deudaCliente;
+  var deudaMia = deudaInfo.deudaMia;
+
+  mostrarMC(
+    '<h3>✏️ Editar deuda — '+nombre+'</h3>'+
+    '<div class="mc-field"><label>Me debe (deuda del cliente)</label>'+
+      '<input id="cartEditDeudaC" type="number" value="'+deudaActual+'" style="font-size:18px;font-weight:800;color:#f87171;">'+
+    '</div>'+
+    '<div class="mc-field"><label>Le debo (mi deuda al cliente)</label>'+
+      '<input id="cartEditDeudaM" type="number" value="'+deudaMia+'" style="font-size:18px;font-weight:800;color:#60a5fa;">'+
+    '</div>'+
+    '<div class="mc-btns">'+
+      '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
+      '<button class="mc-btn-ok" style="background:#d97706;" onclick="carteraGuardarDeuda(\''+nombre.replace(/'/g,"\\'")+'\')">Guardar</button>'+
+    '</div>'
+  );
+};
+
+window.carteraGuardarDeuda = function(nombre){
+  var dc = Number(document.getElementById('cartEditDeudaC').value) || 0;
+  var dm = Number(document.getElementById('cartEditDeudaM').value) || 0;
+
+  // Actualizar en TODOS los recaudos del localStorage
+  for(var i = 0; i < localStorage.length; i++){
+    var key = localStorage.key(i);
+    if(key && key.startsWith('recaudo_')){
+      try {
+        var obj = JSON.parse(localStorage.getItem(key));
+        if(obj && obj[nombre]){
+          // Resetear deudas viejas de este cliente
+          obj[nombre].deudaCliente = 0;
+          obj[nombre].deudaMia = 0;
+          localStorage.setItem(key, JSON.stringify(obj));
+        }
+      } catch(e){}
+    }
+  }
+
+  // Poner el nuevo valor en el recaudo del día actual
+  var estado = recaudoLeerEstado();
+  if(!estado[nombre]) estado[nombre] = {};
+  estado[nombre].deudaCliente = dc;
+  estado[nombre].deudaMia = dm;
+  recaudoGuardarEstado(estado);
+
+  // Resetear pagos en cartera_deudas
+  var cartera = {};
+  try { cartera = JSON.parse(localStorage.getItem('cartera_deudas')||'{}'); } catch(e){}
+  if(cartera[nombre]){
+    cartera[nombre].deudasPagadas = 0;
+  }
+  localStorage.setItem('cartera_deudas', JSON.stringify(cartera));
+
+  cerrarMC();
+
+  // Refrescar cartera si está abierta
+  if(typeof renderCartera === 'function') renderCartera();
+};
+
+// Inyectar botón "Editar deuda" en la tabla de cartera
+var _origRenderCartera = window.renderCartera;
+window.renderCartera = async function(filtroMora, filtroNombre){
+  if(typeof _origRenderCartera === 'function') await _origRenderCartera(filtroMora, filtroNombre);
+
+  // Agregar botón editar a cada fila
+  var body = document.getElementById('carteraBody');
+  if(!body) return;
+  var rows = body.querySelectorAll('.cartera-table tbody tr');
+  rows.forEach(function(row){
+    var nameCell = row.querySelector('td:first-child');
+    if(!nameCell) return;
+    var nombre = nameCell.textContent.trim();
+    var actionCell = row.querySelector('td:last-child');
+    if(!actionCell || actionCell.querySelector('.cart-edit-btn')) return;
+
+    var btn = document.createElement('button');
+    btn.className = 'cart-edit-btn btn-transferir';
+    btn.style.cssText = 'padding:5px 10px;font-size:11px;margin-left:4px;background:rgba(217,119,6,0.2);border:1px solid rgba(217,119,6,0.3);color:#fbbf24;';
+    btn.textContent = '✏️ Editar';
+    btn.onclick = function(ev){ ev.stopPropagation(); carteraEditarDeuda(nombre); };
+    actionCell.appendChild(btn);
+  });
+};
+
+// =====================================================
+// 4. EXPORTAR EXCEL CAJA — PROFESIONAL
+// =====================================================
+window.cajaExportarCSV = async function(){
+  if(typeof XLSX === 'undefined'){
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload = function(){ cajaExportarCSV(); };
+    document.head.appendChild(s);
+    return;
+  }
+
+  try {
+    var sesion = window._cajaCache.sesion || null;
+    var movimientos = window._cajaCache.movimientos || [];
+    var resumen = window._cajaCache.resumen || {};
+    var fecha = sesion ? sesion.fecha : cajaFechaHoy();
+
+    var wb = XLSX.utils.book_new();
+
+    // === HOJA 1: MOVIMIENTOS ===
+    var aoa = [];
+    aoa.push(['CAJA DIARIA — PANADERÍA VIANNYS']);
+    aoa.push(['Fecha: ' + fecha + '  |  Estado: ' + (sesion ? sesion.estado.toUpperCase() : 'SIN APERTURA')]);
+    aoa.push([]);
+    aoa.push(['HORA', 'TIPO', 'CATEGORÍA', 'DESCRIPCIÓN', 'MÉTODO', 'VALOR', 'SALDO']);
+
+    movimientos.forEach(function(m){
+      var hora = m.hora ? new Date(m.hora).toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}) : '—';
+      aoa.push([
+        hora,
+        (m.tipo||'').toUpperCase(),
+        m.categoria || '',
+        m.descripcion || '',
+        m.metodo_pago || '',
+        Number(m.valor||0),
+        Number(m.saldo_acumulado||0)
+      ]);
+    });
+
+    aoa.push([]);
+    aoa.push(['', '', '', '', 'RESUMEN', '', '']);
+    aoa.push(['', '', '', '', 'Ventas del día', Number(resumen.ventas||0), '']);
+    aoa.push(['', '', '', '', 'Efectivo', Number(resumen.efectivo||0), '']);
+    aoa.push(['', '', '', '', 'Transferencias', Number(resumen.transferencias||0), '']);
+    aoa.push(['', '', '', '', 'Ingresos extra', Number(resumen.ingresosExtra||0), '']);
+    aoa.push(['', '', '', '', 'Egresos', Number(resumen.egresos||0), '']);
+    aoa.push(['', '', '', '', 'Esperado en caja', Number(resumen.esperado||0), '']);
+    aoa.push(['', '', '', '', 'Contado real', Number(resumen.contado||0), '']);
+    aoa.push(['', '', '', '', 'DIFERENCIA', Number(resumen.diferencia||0), '']);
+
+    var ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{wch:10},{wch:12},{wch:16},{wch:35},{wch:14},{wch:16},{wch:16}];
+    ws['!merges'] = [{s:{r:0,c:0},e:{r:0,c:6}},{s:{r:1,c:0},e:{r:1,c:6}}];
+
+    // Estilos
+    var rng = XLSX.utils.decode_range(ws['!ref']);
+    for(var R=0;R<=rng.e.r;R++){
+      for(var C=0;C<=rng.e.c;C++){
+        var addr=XLSX.utils.encode_cell({r:R,c:C});
+        if(!ws[addr])continue;
+        if(R===0) ws[addr].s={font:{bold:true,sz:16,color:{rgb:"FFFFFF"},name:"Arial"},fill:{fgColor:{rgb:"0F172A"}},alignment:{horizontal:"center"}};
+        else if(R===1) ws[addr].s={font:{italic:true,sz:11,color:{rgb:"94A3B8"},name:"Arial"},fill:{fgColor:{rgb:"1E293B"}},alignment:{horizontal:"center"}};
+        else if(R===3) ws[addr].s={font:{bold:true,sz:11,color:{rgb:"FFFFFF"},name:"Arial"},fill:{fgColor:{rgb:"334155"}},alignment:{horizontal:"center"}};
+        else if(R>=4 && R<4+movimientos.length){
+          var mov=movimientos[R-4];var par=(R-4)%2===0;
+          var st={font:{sz:10,name:"Arial",color:{rgb:"E2E8F0"}},fill:{fgColor:{rgb:par?"111827":"1E293B"}},alignment:{vertical:"center"}};
+          if(C===1){
+            if(mov.tipo==='ingreso'||mov.tipo==='apertura'){st.font.color={rgb:"4ADE80"};st.font.bold=true;}
+            else if(mov.tipo==='egreso'){st.font.color={rgb:"F87171"};st.font.bold=true;}
+            else{st.font.color={rgb:"60A5FA"};}
+          }
+          if(C===5||C===6){st.alignment={horizontal:"right"};st.numFmt='"$"#,##0';st.font.bold=true;if(mov.tipo==='egreso'&&C===5)st.font.color={rgb:"F87171"};}
+          ws[addr].s=st;
+        }
+        else if(R>4+movimientos.length){
+          var lbl=ws[XLSX.utils.encode_cell({r:R,c:4})];var lt=lbl?String(lbl.v||''):'';
+          var bg="1E293B",fg="E2E8F0";
+          if(lt==='RESUMEN'){bg="334155";fg="FBBF24";}
+          else if(lt==='DIFERENCIA'){bg="0F4C2A";fg="4ADE80";}
+          else if(lt==='Esperado en caja'){bg="172554";fg="60A5FA";}
+          ws[addr].s={font:{bold:lt==='RESUMEN'||lt==='DIFERENCIA',sz:lt==='RESUMEN'?13:11,color:{rgb:fg},name:"Arial"},fill:{fgColor:{rgb:bg}},alignment:{horizontal:C>=5?"right":"left"}};
+          if(C===5)ws[addr].s.numFmt='"$"#,##0';
+        }
+      }
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, "Caja "+fecha);
+    XLSX.writeFile(wb, 'Caja_'+fecha+'.xlsx');
+  } catch(e){
+    console.error(e);
+    alert('Error: '+e.message);
+  }
+};
+
+// =====================================================
+// 5. CATEGORÍAS — FIX: Restaurar defaults + agregar
+// =====================================================
+// El problema: _catLeer devuelve datos vacíos del localStorage
+// Solución: verificar que tenga datos reales
+
+var _origCatLeer = window._catLeer || null;
+
+// Forzar reset de categorías si están vacías
+(function(){
+  var CAT_KEY = 'contabilidad_categorias';
+  try {
+    var raw = localStorage.getItem(CAT_KEY);
+    if(raw){
+      var parsed = JSON.parse(raw);
+      // Si las categorías están vacías o incompletas, resetear
+      if(!parsed.ingresos || parsed.ingresos.length === 0 || !parsed.gastos || parsed.gastos.length === 0){
+        localStorage.removeItem(CAT_KEY);
+      }
+    }
+  } catch(e){
+    localStorage.removeItem(CAT_KEY);
+  }
+})();
+  
 console.log('✅ Parche Unificado V2: Todo activo');
 })();
 
