@@ -7723,6 +7723,8 @@ window.mostrarRangoStats = function(){
 
   // ============ HOME LOGIN ============
   function crearLoginScreen(){
+    // V5 LOGIN DESACTIVADO - V6 se encarga del login con autenticación
+    return;
     // Si ya entró antes, no mostrar
     if(sessionStorage.getItem('vnLoggedIn') === 'true') return;
 
@@ -7930,6 +7932,13 @@ window.mostrarRangoStats = function(){
     }
     draw();
   }, 1500);
+
+
+// =====================================================
+// PARCHE V6 — SEGURIDAD + LOGOUT + HOME ENRIQUECIDO
+// Pegar JUSTO ANTES de "console.log('✨ Rediseño PRO V5 activado');"
+// =====================================================
+
 // =====================================================
 // CREDENCIALES VÁLIDAS (CAMBIA ESTOS DATOS POR LOS TUYOS)
 // =====================================================
@@ -7938,11 +7947,11 @@ var VN_CREDENCIALES = [
   { usuario: 'admin',    password: 'panaderia' },
   { usuario: 'andrey',   password: 'andrey123'  }
 ];
- 
+
 // Intentos fallidos y bloqueo
 var VN_MAX_INTENTOS = 5;
 var VN_BLOQUEO_MS = 30000; // 30 segundos de bloqueo
- 
+
 function _vnLeerIntentos(){
   try { return JSON.parse(localStorage.getItem('vn_intentos_login')||'{"n":0,"hasta":0}'); }
   catch(e){ return {n:0, hasta:0}; }
@@ -7950,7 +7959,7 @@ function _vnLeerIntentos(){
 function _vnGuardarIntentos(obj){
   localStorage.setItem('vn_intentos_login', JSON.stringify(obj));
 }
- 
+
 // =====================================================
 // INYECTAR ESTILOS ADICIONALES PARA HOME ENRIQUECIDO
 // =====================================================
@@ -7963,14 +7972,14 @@ _vnStyleExtra.textContent = `
     gap: 60px !important;
     max-width: 1500px !important;
   }
- 
+
   /* Stats flotantes junto al logo */
   #vnStatsFloat {
     position: absolute;
     inset: 0;
     pointer-events: none;
   }
- 
+
   .vnStatBadge {
     position: absolute;
     background: rgba(26, 20, 16, 0.85);
@@ -7988,7 +7997,7 @@ _vnStyleExtra.textContent = `
     animation: vnBadgeFloat 5s ease-in-out infinite;
     min-width: 180px;
   }
- 
+
   .vnStatBadge .vnStatIcon {
     display: inline-flex;
     width: 36px; height: 36px;
@@ -7999,7 +8008,7 @@ _vnStyleExtra.textContent = `
     margin-bottom: 8px;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 10px rgba(0,0,0,0.2);
   }
- 
+
   .vnStatBadge .vnStatLabel {
     font-size: 10px;
     color: rgba(252, 211, 77, 0.7);
@@ -8008,7 +8017,7 @@ _vnStyleExtra.textContent = `
     font-weight: 600;
     margin-bottom: 3px;
   }
- 
+
   .vnStatBadge .vnStatValue {
     font-size: 20px;
     font-weight: 800;
@@ -8016,14 +8025,14 @@ _vnStyleExtra.textContent = `
     font-family: 'Inter', sans-serif;
     line-height: 1.1;
   }
- 
+
   .vnStatBadge .vnStatSub {
     font-size: 10px;
     color: rgba(255, 251, 245, 0.5);
     margin-top: 2px;
     font-weight: 500;
   }
- 
+
   /* Posiciones: 3 badges */
   .vnStatBadge.vnStat1 {
     top: 8%; left: -5%;
@@ -8037,12 +8046,12 @@ _vnStyleExtra.textContent = `
     bottom: 8%; left: 5%;
     animation-delay: 3s;
   }
- 
+
   @keyframes vnBadgeFloat {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-10px); }
   }
- 
+
   /* ============ FEATURES ROW debajo del formulario ============ */
   .vnFeaturesRow {
     display: grid;
@@ -8052,7 +8061,7 @@ _vnStyleExtra.textContent = `
     padding-top: 24px;
     border-top: 1px solid rgba(251, 191, 36, 0.1);
   }
- 
+
   .vnFeatureCard {
     background: rgba(255, 251, 245, 0.04);
     border: 1px solid rgba(251, 191, 36, 0.1);
@@ -8062,20 +8071,20 @@ _vnStyleExtra.textContent = `
     transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
     cursor: default;
   }
- 
+
   .vnFeatureCard:hover {
     background: rgba(251, 191, 36, 0.08);
     border-color: rgba(251, 191, 36, 0.3);
     transform: translateY(-3px);
     box-shadow: 0 8px 20px rgba(217, 119, 6, 0.15);
   }
- 
+
   .vnFeatureCard .vnFeatIcon {
     font-size: 22px;
     margin-bottom: 6px;
     display: block;
   }
- 
+
   .vnFeatureCard .vnFeatTitle {
     font-size: 11px;
     font-weight: 700;
@@ -8084,13 +8093,13 @@ _vnStyleExtra.textContent = `
     letter-spacing: 0.1em;
     margin-bottom: 2px;
   }
- 
+
   .vnFeatureCard .vnFeatDesc {
     font-size: 10px;
     color: rgba(255, 251, 245, 0.55);
     line-height: 1.3;
   }
- 
+
   /* ============ MENSAJE DE ERROR LOGIN ============ */
   #vnLoginError {
     margin-top: 14px;
@@ -8104,17 +8113,17 @@ _vnStyleExtra.textContent = `
     display: none;
     animation: vnShake 0.4s ease;
   }
- 
+
   #vnLoginError.visible {
     display: block;
   }
- 
+
   @keyframes vnShake {
     0%, 100% { transform: translateX(0); }
     25% { transform: translateX(-6px); }
     75% { transform: translateX(6px); }
   }
- 
+
   /* ============ LOCK ICON BLOQUEO ============ */
   #vnLoginLocked {
     margin-top: 14px;
@@ -8127,9 +8136,9 @@ _vnStyleExtra.textContent = `
     text-align: center;
     display: none;
   }
- 
+
   #vnLoginLocked.visible { display: block; }
- 
+
   /* ============ BADGE ESQUINA SUPERIOR ============ */
   .vnTopBadge {
     position: absolute;
@@ -8146,7 +8155,7 @@ _vnStyleExtra.textContent = `
     border-radius: 100px;
     z-index: 20;
   }
- 
+
   .vnTopBadge .vnDot {
     width: 8px; height: 8px;
     border-radius: 50%;
@@ -8154,12 +8163,12 @@ _vnStyleExtra.textContent = `
     box-shadow: 0 0 10px #10B981;
     animation: vnPulse 2s ease-in-out infinite;
   }
- 
+
   @keyframes vnPulse {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.5; transform: scale(1.2); }
   }
- 
+
   .vnTopBadge .vnTopText {
     font-size: 11px;
     color: #FCD34D;
@@ -8167,7 +8176,7 @@ _vnStyleExtra.textContent = `
     letter-spacing: 0.1em;
     text-transform: uppercase;
   }
- 
+
   /* ============ CORNER DATE ============ */
   .vnCornerDate {
     position: absolute;
@@ -8185,7 +8194,7 @@ _vnStyleExtra.textContent = `
     font-weight: 600;
     letter-spacing: 0.05em;
   }
- 
+
   /* ============ FOOTER MARCAS ============ */
   .vnBrandsFooter {
     position: absolute;
@@ -8201,14 +8210,14 @@ _vnStyleExtra.textContent = `
     text-transform: uppercase;
     font-weight: 600;
   }
- 
+
   .vnBrandsFooter span {
     transition: color 0.3s ease;
   }
   .vnBrandsFooter span:hover {
     color: rgba(252, 211, 77, 0.7);
   }
- 
+
   /* ============ BOTÓN LOGOUT DEL PANEL ============ */
   #vnLogoutBtn {
     margin-top: auto;
@@ -8230,19 +8239,19 @@ _vnStyleExtra.textContent = `
     margin-top: 16px !important;
     width: 100% !important;
   }
- 
+
   #vnLogoutBtn:hover {
     background: rgba(220, 38, 38, 0.2) !important;
     border-color: rgba(220, 38, 38, 0.4) !important;
     color: #FEE2E2 !important;
     transform: translateY(-1px);
   }
- 
+
   #vnLogoutBtn svg {
     width: 16px; height: 16px;
     stroke: currentColor;
   }
- 
+
   /* ============ RESPONSIVE HOME ============ */
   @media (max-width: 1100px) {
     .vnStatBadge { display: none; }
@@ -8253,35 +8262,41 @@ _vnStyleExtra.textContent = `
   }
 `;
 document.head.appendChild(_vnStyleExtra);
- 
+
 // =====================================================
 // SOBRESCRIBIR crearLoginScreen CON AUTH + CONTENIDO EXTRA
 // =====================================================
-(function(){
-  // Remover pantalla existente si hay
+// Desactivar el login V5 viejo reemplazando su función
+try { window.crearLoginScreen = function(){ /* V6 override */ }; } catch(e){}
+
+function _vnInitLoginV6(){
+  // Remover pantalla existente si hay (V5 pudo haberla creado)
   var existing = document.getElementById('vnLoginScreen');
   if(existing) existing.remove();
- 
+
   // Si ya está logueado, no crear
-  if(sessionStorage.getItem('vnLoggedIn') === 'true') return;
- 
+  if(sessionStorage.getItem('vnLoggedIn') === 'true'){
+    setTimeout(_vnInyectarLogout, 500);
+    return;
+  }
+
   var overlay = document.createElement('div');
   overlay.id = 'vnLoginScreen';
- 
+
   var fechaHoy = new Date().toLocaleDateString('es-CO', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
   });
   fechaHoy = fechaHoy.charAt(0).toUpperCase() + fechaHoy.slice(1);
- 
+
   overlay.innerHTML =
     '<canvas id="vnLoginParticles"></canvas>'+
- 
+
     // Badge superior
     '<div class="vnTopBadge"><span class="vnDot"></span><span class="vnTopText">Sistema Activo · v5.2</span></div>'+
     '<div class="vnCornerDate">📅 '+fechaHoy+'</div>'+
- 
+
     '<div id="vnLoginContent">'+
- 
+
       // ===== COLUMNA IZQUIERDA: LOGO 3D + STATS FLOAT =====
       '<div id="vnLogoStage">'+
         '<div id="vnStatsFloat">'+
@@ -8304,7 +8319,7 @@ document.head.appendChild(_vnStyleExtra);
             '<div class="vnStatSub">Sincronizado</div>'+
           '</div>'+
         '</div>'+
- 
+
         '<div id="vnLogoCube">'+
           '<div class="vnLogoFace vnLogoFront">'+
             '<div class="vnLogoInner">'+
@@ -8357,28 +8372,28 @@ document.head.appendChild(_vnStyleExtra);
           '</div>'+
         '</div>'+
       '</div>'+
- 
+
       // ===== COLUMNA DERECHA: LOGIN FORM =====
       '<div id="vnLoginForm">'+
         '<div class="vnLoginBrand">Panel de Control</div>'+
         '<div class="vnLoginTitle">Bienvenido</div>'+
         '<div class="vnLoginSubtitle">Accede a tu sistema de gestión integral. Administra pedidos, contabilidad, cartera y nómina desde un solo lugar.</div>'+
- 
+
         '<div class="vnLoginField">'+
           '<label>Usuario</label>'+
           '<input class="vnLoginInput" id="vnLoginUser" type="text" placeholder="Ingresa tu usuario" autocomplete="username">'+
         '</div>'+
- 
+
         '<div class="vnLoginField">'+
           '<label>Contraseña</label>'+
           '<input class="vnLoginInput" id="vnLoginPass" type="password" placeholder="••••••••" autocomplete="current-password">'+
         '</div>'+
- 
+
         '<button class="vnLoginButton" id="vnLoginBtn">Acceder →</button>'+
- 
+
         '<div id="vnLoginError">❌ Usuario o contraseña incorrectos</div>'+
         '<div id="vnLoginLocked">🔒 Bloqueado por seguridad. Espera <span id="vnLockCount">30</span>s</div>'+
- 
+
         // ===== FEATURES EN 3 COLUMNAS =====
         '<div class="vnFeaturesRow">'+
           '<div class="vnFeatureCard">'+
@@ -8397,21 +8412,21 @@ document.head.appendChild(_vnStyleExtra);
             '<div class="vnFeatDesc">Empleados y adelantos</div>'+
           '</div>'+
         '</div>'+
- 
+
         '<div class="vnLoginFooter">VIANNY\'S · DESDE 2008 · PANEL PRO · v5.2</div>'+
       '</div>'+
- 
+
     '</div>'+
- 
+
     '<div class="vnBrandsFooter">'+
       '<span>🔒 SEGURO</span>'+
       '<span>⚡ RÁPIDO</span>'+
       '<span>☁️ EN LA NUBE</span>'+
       '<span>🛡️ PROTEGIDO</span>'+
     '</div>';
- 
+
   document.body.appendChild(overlay);
- 
+
   // ============ CARGAR STATS REALES ============
   setTimeout(function(){
     try {
@@ -8438,14 +8453,14 @@ document.head.appendChild(_vnStyleExtra);
       }
     } catch(e){}
   }, 300);
- 
+
   // ============ PARTÍCULAS DE HARINA ============
   var cv = document.getElementById('vnLoginParticles');
   var ctx = cv.getContext('2d');
   function resizeP(){ cv.width = window.innerWidth; cv.height = window.innerHeight; }
   resizeP();
   window.addEventListener('resize', resizeP);
- 
+
   var parts = [];
   for(var i=0; i<55; i++){
     parts.push({
@@ -8477,14 +8492,14 @@ document.head.appendChild(_vnStyleExtra);
     requestAnimationFrame(drawP);
   }
   drawP();
- 
+
   // ============ LÓGICA DE LOGIN CON VALIDACIÓN ============
   function intentarEntrar(){
     var user = document.getElementById('vnLoginUser').value.trim().toLowerCase();
     var pass = document.getElementById('vnLoginPass').value;
     var errEl = document.getElementById('vnLoginError');
     var lockEl = document.getElementById('vnLoginLocked');
- 
+
     // Validar que ambos campos estén llenos
     if(!user || !pass){
       errEl.textContent = '⚠️ Completa usuario y contraseña';
@@ -8492,7 +8507,7 @@ document.head.appendChild(_vnStyleExtra);
       setTimeout(function(){ errEl.classList.remove('visible'); }, 3500);
       return;
     }
- 
+
     // Verificar bloqueo
     var intentos = _vnLeerIntentos();
     var ahora = Date.now();
@@ -8516,12 +8531,12 @@ document.head.appendChild(_vnStyleExtra);
       }, 1000);
       return;
     }
- 
+
     // Validar credenciales
     var valido = VN_CREDENCIALES.some(function(c){
       return c.usuario.toLowerCase() === user && c.password === pass;
     });
- 
+
     if(!valido){
       intentos.n = (intentos.n||0) + 1;
       if(intentos.n >= VN_MAX_INTENTOS){
@@ -8543,17 +8558,17 @@ document.head.appendChild(_vnStyleExtra);
       setTimeout(function(){ errEl.style.animation = 'vnShake 0.4s ease'; }, 10);
       return;
     }
- 
+
     // LOGIN EXITOSO
     _vnGuardarIntentos({n:0, hasta:0});
     sessionStorage.setItem('vnLoggedIn', 'true');
     sessionStorage.setItem('vnUser', user);
- 
+
     var btn = document.getElementById('vnLoginBtn');
     btn.style.pointerEvents = 'none';
     btn.textContent = '✓ Accediendo...';
     btn.style.background = 'linear-gradient(180deg, #16A34A 0%, #15803D 100%)';
- 
+
     var ov = document.getElementById('vnLoginScreen');
     ov.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
     ov.style.opacity = '0';
@@ -8564,7 +8579,7 @@ document.head.appendChild(_vnStyleExtra);
       _vnInyectarLogout();
     }, 650);
   }
- 
+
   document.getElementById('vnLoginBtn').addEventListener('click', intentarEntrar);
   document.getElementById('vnLoginPass').addEventListener('keypress', function(e){
     if(e.key === 'Enter') intentarEntrar();
@@ -8572,10 +8587,19 @@ document.head.appendChild(_vnStyleExtra);
   document.getElementById('vnLoginUser').addEventListener('keypress', function(e){
     if(e.key === 'Enter') document.getElementById('vnLoginPass').focus();
   });
- 
+
   setTimeout(function(){ document.getElementById('vnLoginUser').focus(); }, 400);
-})();
- 
+}
+
+// Ejecutar V6 login con delay para asegurar que V5 ya corrió
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', function(){
+    setTimeout(_vnInitLoginV6, 100);
+  });
+} else {
+  setTimeout(_vnInitLoginV6, 100);
+}
+
 // =====================================================
 // BOTÓN CERRAR SESIÓN EN SIDEBAR
 // =====================================================
@@ -8583,7 +8607,7 @@ window._vnInyectarLogout = function(){
   if(document.getElementById('vnLogoutBtn')) return;
   var sidebar = document.querySelector('.sidebar');
   if(!sidebar) return;
- 
+
   var btn = document.createElement('button');
   btn.id = 'vnLogoutBtn';
   btn.innerHTML =
@@ -8602,7 +8626,7 @@ window._vnInyectarLogout = function(){
   };
   sidebar.appendChild(btn);
 };
- 
+
 // Si ya está logueado al cargar, inyectar logout
 if(sessionStorage.getItem('vnLoggedIn') === 'true'){
   if(document.readyState === 'loading'){
@@ -8613,7 +8637,8 @@ if(sessionStorage.getItem('vnLoggedIn') === 'true'){
     setTimeout(_vnInyectarLogout, 500);
   }
 }
-  console.log('🔐 Parche V6: Autenticación + Logout + Home enriquecido');
+
+console.log('🔐 Parche V6: Autenticación + Logout + Home enriquecido');
   console.log('✨ Rediseño PRO V5 activado');
 })();
 console.log('✅ Parche V4: Historial Excel + Rango + Diseño Apple');  
