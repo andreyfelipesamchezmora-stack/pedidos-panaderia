@@ -8816,6 +8816,677 @@ window.recaudoGuardarFila = function(nombre){
 };
  
 console.log('✅ Parche V7: Caja sincronizada con Recaudo (fuente única de verdad)');
+// =====================================================
+// PARCHE V8 — 3 MEJORAS
+// 1. Categorías: mostrar preestablecidas + arreglar botón
+// 2. Estadísticas: valor real (descontando faltantes/salidas)
+// 3. Nuevo módulo: Cuentas por Pagar (facturas a crédito)
+// =====================================================
+
+// =====================================================
+// 1. CATEGORÍAS — REESCRIBIR _uCategorias Y FUNCIONES
+// =====================================================
+
+// Forzar reset si está corrupto
+try {
+  var _vnCatRaw = localStorage.getItem('contabilidad_categorias');
+  if(_vnCatRaw){
+    var _vnCatP = JSON.parse(_vnCatRaw);
+    if(!_vnCatP.ingresos || _vnCatP.ingresos.length===0 ||
+       !_vnCatP.gastos  || _vnCatP.gastos.length===0){
+      localStorage.removeItem('contabilidad_categorias');
+    }
+  }
+} catch(e){ localStorage.removeItem('contabilidad_categorias'); }
+
+window._uCategorias = function(){
+  var body = document.getElementById("contaBody");
+  if(!body) return;
+
+  // Defaults garantizados
+  var DEFAULTS = {
+    ingresos: [
+      {nombre:'Venta de Reparto',color:'#4ade80',icono:'🚚'},
+      {nombre:'Venta de Caja',color:'#22d3ee',icono:'💵'},
+      {nombre:'Pago de Deuda',color:'#fbbf24',icono:'💰'},
+      {nombre:'Rendimientos',color:'#a855f7',icono:'📈'},
+      {nombre:'Intereses',color:'#60a5fa',icono:'🏦'},
+      {nombre:'Otro Ingreso',color:'#94a3b8',icono:'📥'}
+    ],
+    gastos: [
+      {nombre:'Nómina',color:'#f59e0b',icono:'👷'},
+      {nombre:'Materia Prima',color:'#ef4444',icono:'🌾'},
+      {nombre:'Servicios',color:'#8b5cf6',icono:'💡'},
+      {nombre:'Arriendo',color:'#ec4899',icono:'🏠'},
+      {nombre:'Transporte',color:'#06b6d4',icono:'🚗'},
+      {nombre:'Cuotas',color:'#f97316',icono:'💳'},
+      {nombre:'Mantenimiento',color:'#14b8a6',icono:'🔧'},
+      {nombre:'Otro Gasto',color:'#64748b',icono:'📤'}
+    ],
+    costos: [
+      {nombre:'Costo Producción',color:'#fb923c',icono:'🏭'},
+      {nombre:'Insumos',color:'#a3e635',icono:'📦'},
+      {nombre:'Otro Costo',color:'#94a3b8',icono:'⚙️'}
+    ]
+  };
+
+  var cats;
+  try {
+    var raw = localStorage.getItem('contabilidad_categorias');
+    cats = raw ? JSON.parse(raw) : DEFAULTS;
+    if(!cats.ingresos || cats.ingresos.length===0) cats.ingresos = DEFAULTS.ingresos;
+    if(!cats.gastos   || cats.gastos.length===0)   cats.gastos   = DEFAULTS.gastos;
+    if(!cats.costos   || cats.costos.length===0)   cats.costos   = DEFAULTS.costos;
+  } catch(e){ cats = DEFAULTS; }
+
+  // Guardar defaults si no existían
+  localStorage.setItem('contabilidad_categorias', JSON.stringify(cats));
+
+  // Acumular montos por categoría
+  var gPC = {}, iPC = {};
+  function nM(n){ return '$'+(Number(n)||0).toLocaleString('es-CO'); }
+
+  (gastosMemoria||[]).forEach(function(g){
+    var c = g.categoria || 'Otro Gasto';
+    gPC[c] = (gPC[c]||0) + (Number(g.monto)||0);
+  });
+  (movimientosContables||[]).forEach(function(m){
+    var t = (m.tipo||'').toLowerCase();
+    var c = m.categoria || 'Otro';
+    var d = (m.descripcion||'').toLowerCase();
+    if(d.indexOf('mina')>-1) c='Nómina';
+    else if(d.indexOf('cuota')>-1) c='Cuotas';
+    else if(d.indexOf('pago deuda')>-1) c='Pago de Deuda';
+    if(t==='ingreso') iPC[c] = (iPC[c]||0) + (Number(m.monto)||0);
+    else gPC[c] = (gPC[c]||0) + (Number(m.monto)||0);
+  });
+
+  // Inicializar todas las categorías en 0 (para que se vean aunque no tengan datos)
+  cats.ingresos.forEach(function(c){ if(iPC[c.nombre]===undefined) iPC[c.nombre]=0; });
+  cats.gastos.forEach(function(c){ if(gPC[c.nombre]===undefined) gPC[c.nombre]=0; });
+  cats.costos.forEach(function(c){ if(gPC[c.nombre]===undefined) gPC[c.nombre]=0; });
+
+  var tG = Object.values(gPC).reduce(function(s,v){ return s+v; },0);
+  var tI = Object.values(iPC).reduce(function(s,v){ return s+v; },0);
+  var gO = Object.entries(gPC).sort(function(a,b){ return b[1]-a[1]; });
+  var iO = Object.entries(iPC).sort(function(a,b){ return b[1]-a[1]; });
+
+  function getC(n,l){ var f=l.find(function(c){ return c.nombre===n; }); return f?f.color:'#94a3b8'; }
+  function getI(n,l){ var f=l.find(function(c){ return c.nombre===n; }); return f?f.icono:'•'; }
+
+  function buildBars(tit, dat, tot, list, col){
+    var mx = dat.length>0 ? Math.max.apply(null, dat.map(function(d){return d[1];})) : 1;
+    if(mx<=0) mx=1;
+    var bars = '';
+    if(dat.length===0){
+      bars = '<div style="padding:30px;text-align:center;color:#64748b;">Sin datos</div>';
+    } else {
+      dat.forEach(function(d){
+        var p = d[1]>0 ? Math.max(((d[1]/mx)*100), 2) : 2;
+        var pt = tot>0 ? ((d[1]/tot)*100).toFixed(1) : 0;
+        var cc = getC(d[0], list);
+        var ic = getI(d[0], list);
+        var valor = d[1]>0 ? nM(d[1]) : '<span style="color:#64748b;">$0</span>';
+        bars +=
+          '<div style="margin-bottom:10px;">'+
+            '<div style="display:flex;justify-content:space-between;margin-bottom:3px;">'+
+              '<span style="font-size:12px;color:#e2e8f0;font-weight:600;">'+ic+' '+d[0]+'</span>'+
+              '<span style="font-size:12px;color:'+cc+';font-weight:800;">'+valor+' ('+pt+'%)</span>'+
+            '</div>'+
+            '<div style="height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden;">'+
+              '<div style="height:100%;width:'+p+'%;background:'+cc+';border-radius:4px;'+(d[1]===0?'opacity:0.2;':'')+'"></div>'+
+            '</div>'+
+          '</div>';
+      });
+    }
+    return '<div style="background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:20px;">'+
+      '<div style="font-size:15px;font-weight:800;color:'+col+';margin-bottom:14px;">'+tit+'</div>'+
+      bars+
+      '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);text-align:right;font-size:13px;color:#94a3b8;">Total: <span style="color:white;font-weight:800;">'+nM(tot)+'</span></div>'+
+    '</div>';
+  }
+
+  // Lista de categorías configuradas (editables)
+  function buildCategoryList(tipo, list, color){
+    var items = '';
+    if(list.length===0){
+      items = '<div style="padding:14px;color:#64748b;font-size:12px;text-align:center;">Sin categorías</div>';
+    } else {
+      list.forEach(function(c, idx){
+        items +=
+          '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;margin-bottom:4px;">'+
+            '<div style="display:flex;align-items:center;gap:8px;">'+
+              '<span style="width:24px;height:24px;border-radius:6px;background:'+c.color+';display:inline-flex;align-items:center;justify-content:center;font-size:13px;">'+c.icono+'</span>'+
+              '<span style="font-size:13px;color:#e2e8f0;font-weight:600;">'+c.nombre+'</span>'+
+            '</div>'+
+            '<button onclick="catEliminar(\''+tipo+'\','+idx+')" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);border-radius:6px;color:#f87171;padding:3px 8px;cursor:pointer;font-size:11px;">✕</button>'+
+          '</div>';
+      });
+    }
+    return '<div style="background:#1e293b;border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:14px;">'+
+      '<div style="font-size:12px;color:'+color+';font-weight:800;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">'+tipo+' ('+list.length+')</div>'+
+      items+
+    '</div>';
+  }
+
+  var html = _contaTabsU("categorias");
+  html +=
+    '<div class="cuentas-page-header" style="margin-bottom:16px;">'+
+      '<div>'+
+        '<div class="cuentas-page-title">📊 Dashboard Categorías</div>'+
+        '<div class="cuentas-page-subtitle">Ingresos · Gastos · Costos</div>'+
+      '</div>'+
+      '<button class="btn-nueva-cuenta" onclick="catAgregarNueva()" style="background:#7c3aed;">+ Categoría</button>'+
+    '</div>';
+
+  html +=
+    '<div class="conta-kpi-grid" style="margin-bottom:20px;">'+
+      '<div class="kpi-card green"><div class="kpi-label">Total ingresos</div><div class="kpi-value" style="font-size:1.25rem;">'+nM(tI)+'</div></div>'+
+      '<div class="kpi-card"><div class="kpi-label">Total gastos</div><div class="kpi-value" style="font-size:1.25rem;color:#f87171;">'+nM(tG)+'</div></div>'+
+      '<div class="kpi-card '+(tI-tG>=0?'green':'')+'"><div class="kpi-label">Balance</div><div class="kpi-value" style="font-size:1.25rem;'+(tI-tG<0?'color:#f87171;':'')+'">'+nM(tI-tG)+'</div></div>'+
+    '</div>';
+
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">'+
+    buildBars('🔴 Gastos', gO, tG, cats.gastos.concat(cats.costos), '#f87171')+
+    buildBars('🟢 Ingresos', iO, tI, cats.ingresos, '#4ade80')+
+  '</div>';
+
+  // Listas administrables de categorías
+  html += '<div class="section-title" style="margin-bottom:12px;">⚙️ Categorías configuradas</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px;">'+
+    buildCategoryList('ingresos', cats.ingresos, '#4ade80')+
+    buildCategoryList('gastos', cats.gastos, '#f87171')+
+    buildCategoryList('costos', cats.costos, '#fbbf24')+
+  '</div>';
+
+  body.innerHTML = html;
+};
+
+// Botón Agregar Categoría — versión robusta
+window.catAgregarNueva = function(){
+  if(typeof mostrarMC !== 'function'){ alert('Modal no disponible'); return; }
+  mostrarMC(
+    '<h3>➕ Nueva categoría</h3>'+
+    '<div class="mc-field"><label>Tipo</label>'+
+      '<select id="catTipo" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;">'+
+        '<option value="ingresos">🟢 Ingreso</option>'+
+        '<option value="gastos">🔴 Gasto</option>'+
+        '<option value="costos">🟡 Costo</option>'+
+      '</select>'+
+    '</div>'+
+    '<div class="mc-field"><label>Nombre</label>'+
+      '<input id="catNom" placeholder="Ej: Publicidad" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;">'+
+    '</div>'+
+    '<div class="mc-field"><label>Icono (emoji)</label>'+
+      '<input id="catIco" value="📌" maxlength="4" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;font-size:18px;">'+
+    '</div>'+
+    '<div class="mc-field"><label>Color</label>'+
+      '<select id="catCol" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;">'+
+        '<option value="#4ade80">🟢 Verde</option>'+
+        '<option value="#60a5fa">🔵 Azul</option>'+
+        '<option value="#fbbf24">🟡 Amarillo</option>'+
+        '<option value="#f87171">🔴 Rojo</option>'+
+        '<option value="#a855f7">🟣 Morado</option>'+
+        '<option value="#06b6d4">🩵 Cyan</option>'+
+        '<option value="#f97316">🟠 Naranja</option>'+
+        '<option value="#94a3b8">⚪ Gris</option>'+
+      '</select>'+
+    '</div>'+
+    '<div class="mc-btns">'+
+      '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
+      '<button class="mc-btn-ok" style="background:#7c3aed;" onclick="catConfirmarNueva()">Crear</button>'+
+    '</div>'
+  );
+};
+
+window.catConfirmarNueva = function(){
+  var t = document.getElementById('catTipo').value;
+  var n = (document.getElementById('catNom').value||'').trim();
+  var i = (document.getElementById('catIco').value||'📌').trim();
+  var c = document.getElementById('catCol').value;
+  if(!n){ alert('Ingresa un nombre'); return; }
+
+  var cats;
+  try { cats = JSON.parse(localStorage.getItem('contabilidad_categorias')||'{}'); }
+  catch(e){ cats = {}; }
+  if(!cats[t]) cats[t] = [];
+
+  // Evitar duplicados
+  if(cats[t].some(function(x){ return x.nombre.toLowerCase() === n.toLowerCase(); })){
+    alert('Esa categoría ya existe');
+    return;
+  }
+
+  cats[t].push({ nombre: n, color: c, icono: i });
+  localStorage.setItem('contabilidad_categorias', JSON.stringify(cats));
+  cerrarMC();
+  if(typeof renderConta === 'function') renderConta('categorias');
+};
+
+window.catEliminar = function(tipo, idx){
+  var cats;
+  try { cats = JSON.parse(localStorage.getItem('contabilidad_categorias')||'{}'); }
+  catch(e){ return; }
+  if(!cats[tipo] || !cats[tipo][idx]) return;
+  if(!confirm('¿Eliminar la categoría "'+cats[tipo][idx].nombre+'"?')) return;
+  cats[tipo].splice(idx, 1);
+  localStorage.setItem('contabilidad_categorias', JSON.stringify(cats));
+  if(typeof renderConta === 'function') renderConta('categorias');
+};
+
+// =====================================================
+// 2. ESTADÍSTICAS — USAR VALOR NETO DEL RECAUDO
+// =====================================================
+var _origCargarStats = window.cargarStats;
+window.cargarStats = async function(filtro){
+  // Ejecutar la función original primero
+  if(typeof _origCargarStats === 'function') await _origCargarStats(filtro);
+
+  // Precargar recaudo si es filtro "hoy" para obtener neto real
+  try {
+    if(filtro === 'hoy' && typeof vnPrecargarRecaudo === 'function'){
+      await vnPrecargarRecaudo();
+    }
+  } catch(e){}
+
+  // Ajustar el valor mostrado de "Ventas del período" si es filtro "hoy"
+  setTimeout(function(){
+    try {
+      if(filtro !== 'hoy') return;
+      var cache = window._recaudoCache;
+      if(!cache || !cache.resumen) return;
+
+      // Calcular ventas netas reales: bruto - faltantes - salidas - deudas descontadas
+      var resumen = cache.resumen;
+      var bruto = Number(resumen.bruto)||0;
+      var faltantes = Number(resumen.faltantes)||0;
+      var salidas = Number(resumen.salidas)||0;
+      var deudasDesc = 0;
+      (cache.rows||[]).forEach(function(r){ deudasDesc += Number(r.deudaMiaPagada)||0; });
+
+      var ventasNetas = bruto - faltantes - salidas - deudasDesc;
+      if(ventasNetas < 0) ventasNetas = 0;
+
+      // Buscar la tarjeta KPI de "Ventas del período" y actualizarla
+      var kpiCards = document.querySelectorAll('#statsBody .kpi-card');
+      kpiCards.forEach(function(card){
+        var label = card.querySelector('.kpi-label');
+        var value = card.querySelector('.kpi-value');
+        if(label && value && label.textContent.toLowerCase().indexOf('ventas') > -1){
+          value.textContent = '$' + ventasNetas.toLocaleString('es-CO');
+          // Agregar anotación
+          if(!card.querySelector('.kpi-net-note')){
+            var note = document.createElement('div');
+            note.className = 'kpi-net-note';
+            note.style.cssText = 'font-size:10px;color:#4ade80;margin-top:4px;font-weight:600;';
+            note.textContent = '✓ Neto real (descontado faltantes/salidas)';
+            card.appendChild(note);
+          }
+        }
+      });
+    } catch(e){ console.error('Error ajustando stats:', e); }
+  }, 400);
+};
+
+// =====================================================
+// 3. NUEVO MÓDULO: CUENTAS POR PAGAR
+// =====================================================
+var CXP_KEY = 'cuentas_por_pagar';
+
+function _cxpLeer(){
+  try { return JSON.parse(localStorage.getItem(CXP_KEY)||'[]'); }
+  catch(e){ return []; }
+}
+function _cxpGuardar(data){
+  localStorage.setItem(CXP_KEY, JSON.stringify(data));
+}
+function _cxpFmt(n){ return '$'+(Number(n)||0).toLocaleString('es-CO'); }
+
+// ============ BOTÓN EN SIDEBAR ============
+window._vnInyectarCxpBtn = function(){
+  if(document.getElementById('cxpSidebarBtn')) return;
+  var sidebar = document.querySelector('.sidebar .module-btns');
+  if(!sidebar) return;
+
+  var btn = document.createElement('button');
+  btn.id = 'cxpSidebarBtn';
+  btn.className = 'module-btn';
+  btn.style.cssText = 'border-left:3px solid #8b5cf6;';
+  btn.innerHTML =
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'+
+      '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>'+
+      '<polyline points="14 2 14 8 20 8"/>'+
+      '<line x1="16" y1="13" x2="8" y2="13"/>'+
+      '<line x1="16" y1="17" x2="8" y2="17"/>'+
+      '<polyline points="10 9 9 9 8 9"/>'+
+    '</svg>'+
+    'Cuentas por Pagar';
+  btn.onclick = function(){ abrirCxp(); };
+  sidebar.appendChild(btn);
+};
+
+// ============ CREAR PANEL DRAWER ============
+window._vnCrearCxpPanel = function(){
+  if(document.getElementById('panelCxp')) return;
+  var panel = document.createElement('div');
+  panel.className = 'overlay-panel';
+  panel.id = 'panelCxp';
+  panel.innerHTML =
+    '<div class="panel-drawer" style="width:min(1200px, 96vw);">'+
+      '<div class="panel-header">'+
+        '<h2>📄 Cuentas por Pagar</h2>'+
+        '<button class="panel-close" onclick="cerrarPanel(\'panelCxp\')">Cerrar</button>'+
+      '</div>'+
+      '<div class="panel-body" id="cxpBody"></div>'+
+    '</div>';
+  document.body.appendChild(panel);
+};
+
+// ============ ABRIR PANEL ============
+window.abrirCxp = function(){
+  _vnCrearCxpPanel();
+
+  // Cerrar otros paneles
+  ['panelStats','panelConta','panelRecaudo','panelCartera','panelNomina'].forEach(function(id){
+    var p = document.getElementById(id);
+    if(p){ p.classList.remove('open'); p.style.display='none'; }
+  });
+
+  var panel = document.getElementById('panelCxp');
+  panel.style.display = 'flex';
+  panel.classList.add('open');
+  renderCxp();
+};
+
+// ============ RENDERIZAR CONTENIDO ============
+window.renderCxp = function(){
+  var body = document.getElementById('cxpBody');
+  if(!body) return;
+
+  var data = _cxpLeer();
+
+  // Totales
+  var totalDeuda = 0, totalPagado = 0, facturasActivas = 0, facturasPagadas = 0;
+  data.forEach(function(f){
+    var valor = Number(f.valor)||0;
+    var pagado = Number(f.pagado)||0;
+    totalDeuda += Math.max(valor - pagado, 0);
+    totalPagado += pagado;
+    if(pagado >= valor) facturasPagadas++;
+    else facturasActivas++;
+  });
+
+  var html = '';
+
+  // Header
+  html +=
+    '<div class="cuentas-page-header" style="margin-bottom:16px;">'+
+      '<div>'+
+        '<div class="cuentas-page-title">📄 Cuentas por Pagar</div>'+
+        '<div class="cuentas-page-subtitle">Control de facturas a crédito · Solo referencia (no afecta el ecosistema contable)</div>'+
+      '</div>'+
+      '<button class="btn-nueva-cuenta" onclick="cxpAbrirModalNueva()" style="background:#8b5cf6;">+ Nueva Factura</button>'+
+    '</div>';
+
+  // KPIs
+  html +=
+    '<div class="conta-kpi-grid" style="margin-bottom:20px;">'+
+      '<div class="kpi-card"><div class="kpi-label">Deuda pendiente</div><div class="kpi-value" style="font-size:1.5rem;color:#f87171;">'+_cxpFmt(totalDeuda)+'</div></div>'+
+      '<div class="kpi-card green"><div class="kpi-label">Total pagado</div><div class="kpi-value" style="font-size:1.5rem;">'+_cxpFmt(totalPagado)+'</div></div>'+
+      '<div class="kpi-card orange"><div class="kpi-label">Facturas activas</div><div class="kpi-value" style="font-size:1.5rem;">'+facturasActivas+'</div></div>'+
+      '<div class="kpi-card blue"><div class="kpi-label">Facturas pagadas</div><div class="kpi-value" style="font-size:1.5rem;">'+facturasPagadas+'</div></div>'+
+    '</div>';
+
+  // Tabla
+  if(data.length === 0){
+    html +=
+      '<div style="padding:60px 20px;text-align:center;background:#1e293b;border:1px dashed rgba(255,255,255,0.1);border-radius:16px;">'+
+        '<div style="font-size:48px;margin-bottom:14px;">📋</div>'+
+        '<div style="color:#e2e8f0;font-size:16px;font-weight:700;margin-bottom:6px;">No hay facturas registradas</div>'+
+        '<div style="color:#94a3b8;font-size:13px;margin-bottom:20px;">Agrega tu primera factura de crédito para empezar</div>'+
+        '<button class="btn-nueva-cuenta" onclick="cxpAbrirModalNueva()" style="background:#8b5cf6;">+ Agregar Factura</button>'+
+      '</div>';
+  } else {
+    // Ordenar: activas primero (por fecha desc), luego pagadas
+    var ordenados = data.slice().map(function(f,i){ return {f:f, idx:i}; });
+    ordenados.sort(function(a,b){
+      var pA = (Number(a.f.pagado)||0) >= (Number(a.f.valor)||0) ? 1 : 0;
+      var pB = (Number(b.f.pagado)||0) >= (Number(b.f.valor)||0) ? 1 : 0;
+      if(pA !== pB) return pA - pB;
+      return (b.f.fecha||'').localeCompare(a.f.fecha||'');
+    });
+
+    html +=
+      '<div style="background:#1e293b;border:1px solid rgba(255,255,255,0.08);border-radius:16px;overflow:hidden;">'+
+        '<div style="overflow-x:auto;">'+
+          '<table style="width:100%;min-width:900px;border-collapse:collapse;color:#e2e8f0;font-size:13px;">'+
+            '<thead><tr style="background:#162033;">'+
+              '<th style="padding:12px;text-align:left;font-size:11px;color:#94a3b8;text-transform:uppercase;font-weight:700;">Estado</th>'+
+              '<th style="padding:12px;text-align:left;font-size:11px;color:#94a3b8;text-transform:uppercase;font-weight:700;">N° Factura</th>'+
+              '<th style="padding:12px;text-align:left;font-size:11px;color:#94a3b8;text-transform:uppercase;font-weight:700;">Proveedor</th>'+
+              '<th style="padding:12px;text-align:left;font-size:11px;color:#94a3b8;text-transform:uppercase;font-weight:700;">Fecha</th>'+
+              '<th style="padding:12px;text-align:right;font-size:11px;color:#94a3b8;text-transform:uppercase;font-weight:700;">Valor</th>'+
+              '<th style="padding:12px;text-align:right;font-size:11px;color:#94a3b8;text-transform:uppercase;font-weight:700;">Pagado</th>'+
+              '<th style="padding:12px;text-align:right;font-size:11px;color:#94a3b8;text-transform:uppercase;font-weight:700;">Saldo</th>'+
+              '<th style="padding:12px;text-align:center;font-size:11px;color:#94a3b8;text-transform:uppercase;font-weight:700;">Acciones</th>'+
+            '</tr></thead><tbody>';
+
+    ordenados.forEach(function(o){
+      var f = o.f;
+      var realIdx = o.idx;
+      var valor = Number(f.valor)||0;
+      var pagado = Number(f.pagado)||0;
+      var saldo = Math.max(valor - pagado, 0);
+      var pagada = pagado >= valor && valor > 0;
+      var pct = valor>0 ? Math.min((pagado/valor)*100, 100) : 0;
+
+      var estadoBadge;
+      if(pagada){
+        estadoBadge = '<span style="padding:4px 10px;background:rgba(34,197,94,0.15);color:#4ade80;border-radius:999px;font-size:11px;font-weight:700;">✓ PAGADA</span>';
+      } else if(pagado > 0){
+        estadoBadge = '<span style="padding:4px 10px;background:rgba(245,158,11,0.15);color:#fbbf24;border-radius:999px;font-size:11px;font-weight:700;">◐ PARCIAL</span>';
+      } else {
+        estadoBadge = '<span style="padding:4px 10px;background:rgba(239,68,68,0.15);color:#f87171;border-radius:999px;font-size:11px;font-weight:700;">● PENDIENTE</span>';
+      }
+
+      var fechaFmt = '—';
+      if(f.fecha){
+        try {
+          var d = new Date(f.fecha+'T00:00:00');
+          if(!isNaN(d.getTime())){
+            fechaFmt = d.toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'});
+          }
+        } catch(e){}
+      }
+
+      html +=
+        '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);'+(pagada?'opacity:0.6;':'')+'">'+
+          '<td style="padding:12px;">'+estadoBadge+'</td>'+
+          '<td style="padding:12px;font-weight:700;color:#e2e8f0;">'+(f.numero||'—')+'</td>'+
+          '<td style="padding:12px;color:#e2e8f0;">'+(f.proveedor||'—')+'</td>'+
+          '<td style="padding:12px;color:#94a3b8;font-size:12px;">'+fechaFmt+'</td>'+
+          '<td style="padding:12px;text-align:right;font-weight:700;color:#e2e8f0;">'+_cxpFmt(valor)+'</td>'+
+          '<td style="padding:12px;text-align:right;font-weight:700;color:#4ade80;">'+_cxpFmt(pagado)+'</td>'+
+          '<td style="padding:12px;text-align:right;font-weight:800;color:'+(pagada?'#4ade80':'#f87171')+';">'+_cxpFmt(saldo)+'</td>'+
+          '<td style="padding:12px;text-align:center;">'+
+            '<button onclick="cxpAbonar('+realIdx+')" '+(pagada?'disabled':'')+' style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);border-radius:6px;color:#4ade80;padding:4px 8px;cursor:'+(pagada?'not-allowed':'pointer')+';font-size:11px;margin-right:3px;'+(pagada?'opacity:0.4;':'')+'" title="Abonar">💰</button>'+
+            '<button onclick="cxpEditar('+realIdx+')" style="background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.2);border-radius:6px;color:#60a5fa;padding:4px 8px;cursor:pointer;font-size:11px;margin-right:3px;" title="Editar">✏️</button>'+
+            '<button onclick="cxpEliminar('+realIdx+')" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);border-radius:6px;color:#f87171;padding:4px 8px;cursor:pointer;font-size:11px;" title="Eliminar">✕</button>'+
+          '</td>'+
+        '</tr>';
+
+      // Barra de progreso si es parcial
+      if(!pagada && pagado > 0){
+        html +=
+          '<tr><td colspan="8" style="padding:0 12px 8px;">'+
+            '<div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;">'+
+              '<div style="height:100%;width:'+pct+'%;background:#fbbf24;"></div>'+
+            '</div>'+
+          '</td></tr>';
+      }
+    });
+
+    html += '</tbody></table></div>'+
+      '<div style="padding:12px;background:rgba(255,255,255,0.02);border-top:1px solid rgba(255,255,255,0.05);font-size:12px;color:#94a3b8;display:flex;justify-content:space-between;">'+
+        '<span><strong style="color:#e2e8f0;">'+data.length+'</strong> factura(s) total</span>'+
+        '<span>Deuda pendiente: <strong style="color:#f87171;">'+_cxpFmt(totalDeuda)+'</strong></span>'+
+      '</div>'+
+    '</div>';
+  }
+
+  body.innerHTML = html;
+};
+
+// ============ MODALES ============
+window.cxpAbrirModalNueva = function(){
+  var hoy = new Date().toISOString().slice(0,10);
+  mostrarMC(
+    '<h3>📄 Nueva factura</h3>'+
+    '<div class="mc-field"><label>N° de factura</label>'+
+      '<input id="cxpNum" placeholder="Ej: FAC-001234" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;">'+
+    '</div>'+
+    '<div class="mc-field"><label>Proveedor</label>'+
+      '<input id="cxpProv" placeholder="Ej: Distribuidora Trigo S.A." style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;">'+
+    '</div>'+
+    '<div class="mc-field"><label>Valor total</label>'+
+      '<input id="cxpVal" type="number" placeholder="0" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;font-size:16px;font-weight:700;">'+
+    '</div>'+
+    '<div class="mc-field"><label>Fecha de la factura</label>'+
+      '<input id="cxpFecha" type="date" value="'+hoy+'" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;">'+
+    '</div>'+
+    '<div class="mc-field"><label>Notas (opcional)</label>'+
+      '<input id="cxpNotas" placeholder="Ej: Vence el 30" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;">'+
+    '</div>'+
+    '<div class="mc-btns">'+
+      '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
+      '<button class="mc-btn-ok" style="background:#8b5cf6;" onclick="cxpGuardarNueva()">Guardar</button>'+
+    '</div>'
+  );
+};
+
+window.cxpGuardarNueva = function(){
+  var num = (document.getElementById('cxpNum').value||'').trim();
+  var prov = (document.getElementById('cxpProv').value||'').trim();
+  var val = Number(document.getElementById('cxpVal').value)||0;
+  var fecha = document.getElementById('cxpFecha').value;
+  var notas = (document.getElementById('cxpNotas').value||'').trim();
+
+  if(!num){ alert('Ingresa el número de factura'); return; }
+  if(!prov){ alert('Ingresa el proveedor'); return; }
+  if(val <= 0){ alert('Ingresa un valor válido'); return; }
+
+  var data = _cxpLeer();
+  data.push({
+    numero: num, proveedor: prov, valor: val,
+    fecha: fecha || new Date().toISOString().slice(0,10),
+    pagado: 0, notas: notas,
+    creado: new Date().toISOString()
+  });
+  _cxpGuardar(data);
+  cerrarMC();
+  renderCxp();
+};
+
+window.cxpEditar = function(idx){
+  var data = _cxpLeer();
+  if(!data[idx]) return;
+  var f = data[idx];
+  mostrarMC(
+    '<h3>✏️ Editar factura</h3>'+
+    '<div class="mc-field"><label>N° de factura</label>'+
+      '<input id="cxpENum" value="'+(f.numero||'').replace(/"/g,'&quot;')+'" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;">'+
+    '</div>'+
+    '<div class="mc-field"><label>Proveedor</label>'+
+      '<input id="cxpEProv" value="'+(f.proveedor||'').replace(/"/g,'&quot;')+'" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;">'+
+    '</div>'+
+    '<div class="mc-field"><label>Valor total</label>'+
+      '<input id="cxpEVal" type="number" value="'+(Number(f.valor)||0)+'" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;font-size:16px;font-weight:700;">'+
+    '</div>'+
+    '<div class="mc-field"><label>Fecha</label>'+
+      '<input id="cxpEFecha" type="date" value="'+(f.fecha||new Date().toISOString().slice(0,10))+'" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;">'+
+    '</div>'+
+    '<div class="mc-field"><label>Notas</label>'+
+      '<input id="cxpENotas" value="'+(f.notas||'').replace(/"/g,'&quot;')+'" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;">'+
+    '</div>'+
+    '<div class="mc-btns">'+
+      '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
+      '<button class="mc-btn-ok" style="background:#3b82f6;" onclick="cxpGuardarEdit('+idx+')">Guardar cambios</button>'+
+    '</div>'
+  );
+};
+
+window.cxpGuardarEdit = function(idx){
+  var data = _cxpLeer();
+  if(!data[idx]) return;
+  data[idx].numero = (document.getElementById('cxpENum').value||'').trim();
+  data[idx].proveedor = (document.getElementById('cxpEProv').value||'').trim();
+  data[idx].valor = Number(document.getElementById('cxpEVal').value)||0;
+  data[idx].fecha = document.getElementById('cxpEFecha').value;
+  data[idx].notas = (document.getElementById('cxpENotas').value||'').trim();
+  _cxpGuardar(data);
+  cerrarMC();
+  renderCxp();
+};
+
+window.cxpAbonar = function(idx){
+  var data = _cxpLeer();
+  if(!data[idx]) return;
+  var f = data[idx];
+  var saldo = (Number(f.valor)||0) - (Number(f.pagado)||0);
+  mostrarMC(
+    '<h3>💰 Abonar a factura</h3>'+
+    '<div style="background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2);border-radius:10px;padding:12px;margin-bottom:14px;">'+
+      '<div style="font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;margin-bottom:4px;">Factura '+(f.numero||'')+'</div>'+
+      '<div style="font-size:13px;color:#e2e8f0;margin-bottom:8px;">'+(f.proveedor||'')+'</div>'+
+      '<div style="display:flex;justify-content:space-between;font-size:12px;">'+
+        '<span style="color:#94a3b8;">Saldo pendiente:</span>'+
+        '<span style="color:#f87171;font-weight:800;">'+_cxpFmt(saldo)+'</span>'+
+      '</div>'+
+    '</div>'+
+    '<div class="mc-field"><label>Monto a abonar</label>'+
+      '<input id="cxpAbonoMonto" type="number" value="'+saldo+'" max="'+saldo+'" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;font-size:18px;font-weight:800;text-align:center;">'+
+      '<div style="font-size:10px;color:#64748b;margin-top:4px;text-align:center;">Máximo: '+_cxpFmt(saldo)+'</div>'+
+    '</div>'+
+    '<div class="mc-btns">'+
+      '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
+      '<button class="mc-btn-ok" style="background:#16a34a;" onclick="cxpConfirmarAbono('+idx+')">Confirmar abono</button>'+
+    '</div>'
+  );
+};
+
+window.cxpConfirmarAbono = function(idx){
+  var data = _cxpLeer();
+  if(!data[idx]) return;
+  var monto = Number(document.getElementById('cxpAbonoMonto').value)||0;
+  if(monto <= 0){ alert('Ingresa un monto válido'); return; }
+  var saldo = (Number(data[idx].valor)||0) - (Number(data[idx].pagado)||0);
+  if(monto > saldo){ alert('El monto excede el saldo pendiente'); return; }
+  data[idx].pagado = (Number(data[idx].pagado)||0) + monto;
+  if(!data[idx].historialAbonos) data[idx].historialAbonos = [];
+  data[idx].historialAbonos.push({ monto: monto, fecha: new Date().toISOString() });
+  _cxpGuardar(data);
+  cerrarMC();
+  renderCxp();
+};
+
+window.cxpEliminar = function(idx){
+  var data = _cxpLeer();
+  if(!data[idx]) return;
+  if(!confirm('¿Eliminar la factura "'+(data[idx].numero||'')+'"?\n\nEsta acción no se puede deshacer.')) return;
+  data.splice(idx, 1);
+  _cxpGuardar(data);
+  renderCxp();
+};
+
+// ============ INICIALIZAR (inyectar botón después de login) ============
+setTimeout(_vnInyectarCxpBtn, 800);
+setInterval(function(){
+  if(!document.getElementById('cxpSidebarBtn')){
+    _vnInyectarCxpBtn();
+  }
+}, 2500);
+
+console.log('✅ Parche V8: Categorías + Stats real + Cuentas por Pagar');
 console.log('🔐 Parche V6: Autenticación + Logout + Home enriquecido');
   console.log('✨ Rediseño PRO V5 activado');
 })();
