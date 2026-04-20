@@ -8637,7 +8637,185 @@ if(sessionStorage.getItem('vnLoggedIn') === 'true'){
     setTimeout(_vnInyectarLogout, 500);
   }
 }
-
+// =====================================================
+// 1. PRECARGAR DATOS DE RECAUDO SIN ABRIR EL PANEL
+// =====================================================
+window.vnPrecargarRecaudo = async function(){
+  try {
+    if(typeof recaudoConstruirData !== 'function') return null;
+    if(typeof cajaFechaHoy !== 'function') return null;
+ 
+    var rows = await recaudoConstruirData();
+    if(!Array.isArray(rows)) return null;
+ 
+    var bruto = 0, recaudoDomi = 0, nequiVentas = 0, bancolombiaVentas = 0;
+    var pagoDeudaEfectivo = 0, pagoDeudaNequi = 0, pagoDeudaBancolombia = 0;
+    var faltantes = 0, salidas = 0, deudasDescontadas = 0, efectivoVentasTotal = 0;
+ 
+    rows.forEach(function(r){
+      bruto += Number(r.subtotal)||0;
+      recaudoDomi += Number(r.recaudoDomi)||0;
+      nequiVentas += Number(r.nequi)||0;
+      bancolombiaVentas += Number(r.bancolombia)||0;
+      faltantes += Number(r.faltantes)||0;
+      salidas += Number(r.salidas)||0;
+      deudasDescontadas += Number(r.deudaMiaPagada)||0;
+      efectivoVentasTotal += Number(r.efectivoNeto)||0;
+ 
+      if(r.deudaMetodo === 'efectivo'){
+        pagoDeudaEfectivo += Number(r.deudasPagadas)||0;
+      } else if(r.deudaMetodo === 'transferencia'){
+        var bancoUp = (r.deudaBanco||'').toUpperCase();
+        if(bancoUp.indexOf('NEQUI') > -1){
+          pagoDeudaNequi += Number(r.deudasPagadas)||0;
+        } else {
+          pagoDeudaBancolombia += Number(r.deudasPagadas)||0;
+        }
+      }
+    });
+ 
+    var efectivoTotal = efectivoVentasTotal + pagoDeudaEfectivo;
+    var transferenciasVentas = nequiVentas + bancolombiaVentas;
+    var pagosDeudaTransf = pagoDeudaNequi + pagoDeudaBancolombia;
+    var totalRecaudado = efectivoTotal + transferenciasVentas + pagosDeudaTransf;
+ 
+    window._recaudoCache = {
+      fecha: cajaFechaHoy(),
+      rows: rows,
+      resumen: {
+        bruto: bruto,
+        recaudoDomi: recaudoDomi,
+        faltantes: faltantes,
+        salidas: salidas,
+        netoEfectivo: efectivoTotal,
+        transferencias: transferenciasVentas,
+        pagosDeudaTransf: pagosDeudaTransf,
+        desglose: {
+          efectivoVentas: efectivoVentasTotal,
+          efectivoDeudas: pagoDeudaEfectivo,
+          efectivoTotal: efectivoTotal,
+          nequi: nequiVentas + pagoDeudaNequi,
+          bancolombia: bancolombiaVentas + pagoDeudaBancolombia,
+          pagosDeudaTransf: pagosDeudaTransf,
+          totalRecaudado: totalRecaudado
+        }
+      }
+    };
+ 
+    return window._recaudoCache;
+  } catch(e){
+    console.error('Error precargando recaudo:', e);
+    return null;
+  }
+};
+ 
+// =====================================================
+// 2. OVERRIDE cajaCargarResumenDia — SIEMPRE PRECARGAR RECAUDO
+// =====================================================
+var _origCajaCargarResumen = window.cajaCargarResumenDia;
+window.cajaCargarResumenDia = async function(){
+  // SIEMPRE precargar recaudo ANTES de calcular caja
+  await vnPrecargarRecaudo();
+  // Llamar al original que ahora usará _recaudoCache correctamente
+  if(typeof _origCajaCargarResumen === 'function'){
+    return await _origCajaCargarResumen();
+  }
+};
+ 
+// =====================================================
+// 3. OVERRIDE cajaCalcularResumen — USAR RECAUDO COMO FUENTE
+// =====================================================
+var _origCajaCalcularResumen = window.cajaCalcularResumen;
+window.cajaCalcularResumen = function(ventas, movimientos, sesion){
+  ventas = ventas || [];
+  movimientos = movimientos || [];
+  sesion = sesion || null;
+ 
+  var recCache = window._recaudoCache && window._recaudoCache.resumen;
+  var recDesg = recCache && recCache.desglose;
+ 
+  // Contar ventas del día (desde pedidos)
+  var ventasCount = ventas.length;
+ 
+  // ====== USAR DATOS DE RECAUDO SI EXISTEN ======
+  var ventasTotal, efectivo, transferencias, otros;
+ 
+  if(recCache && recDesg){
+    // Recaudo disponible: usar sus cálculos netos
+    efectivo = Number(recDesg.efectivoVentas)||0;
+    transferencias = (Number(recDesg.nequi)||0) + (Number(recDesg.bancolombia)||0) - (Number(recDesg.pagosDeudaTransf)||0);
+    if(transferencias < 0) transferencias = 0;
+    otros = 0;
+    // Ventas del día = efectivo de ventas + transferencias de ventas
+    // (no incluye pagos de deuda porque esos NO son ventas nuevas)
+    ventasTotal = efectivo + transferencias;
+  } else {
+    // Fallback: calcular desde pedidos raw (modo antiguo)
+    ventasTotal = 0;
+    efectivo = 0;
+    transferencias = 0;
+    otros = 0;
+    ventas.forEach(function(v){
+      var total = Number(v.total)||0;
+      var mp = (v.metodo_pago||"efectivo").toLowerCase();
+      ventasTotal += total;
+      if(mp.indexOf("trans")>-1) transferencias += total;
+      else if(mp.indexOf("efec")>-1) efectivo += total;
+      else otros += total;
+    });
+  }
+ 
+  // Ingresos extra / egresos de movimientos de caja
+  var ingresosExtra = 0;
+  var egresos = 0;
+  movimientos.forEach(function(m){
+    var valor = Number(m.valor)||0;
+    var tipo = (m.tipo||"").toLowerCase();
+    if(tipo==="ingreso") ingresosExtra += valor;
+    if(tipo==="egreso") egresos += valor;
+  });
+ 
+  // Pagos de deuda en efectivo (suman al efectivo esperado)
+  var pagoDeudaEfec = recDesg ? (Number(recDesg.efectivoDeudas)||0) : 0;
+ 
+  var aperturaMonto = Number(sesion && sesion.apertura_monto || 0);
+  var esperado = aperturaMonto + efectivo + pagoDeudaEfec + ingresosExtra - egresos;
+  var contado = Number(sesion && sesion.cierre_monto_contado || 0);
+  var diferencia = contado ? (contado - esperado) : 0;
+  var ticketPromedio = ventasCount>0 ? (ventasTotal/ventasCount) : 0;
+ 
+  return {
+    ventas: ventasTotal,
+    ventasCount: ventasCount,
+    ticketPromedio: ticketPromedio,
+    ingresosExtra: ingresosExtra,
+    egresos: egresos,
+    esperado: esperado,
+    contado: contado,
+    diferencia: diferencia,
+    efectivo: efectivo,
+    transferencias: transferencias,
+    otros: otros,
+    saldoFinal: esperado,
+    // Campos extra para debug/inspección
+    _recaudoSync: !!(recCache && recDesg),
+    _pagoDeudaEfec: pagoDeudaEfec,
+    _faltantes: recCache ? (Number(recCache.faltantes)||0) : 0,
+    _salidas: recCache ? (Number(recCache.salidas)||0) : 0
+  };
+};
+ 
+// =====================================================
+// 4. RE-SINCRONIZAR DESPUÉS DE GUARDAR RECAUDO
+// =====================================================
+var _origRecaudoGuardarFila = window.recaudoGuardarFila;
+window.recaudoGuardarFila = function(nombre){
+  if(typeof _origRecaudoGuardarFila === 'function') _origRecaudoGuardarFila(nombre);
+  // Invalidar cache para forzar recarga en próxima consulta de caja
+  setTimeout(function(){ vnPrecargarRecaudo(); }, 200);
+};
+ 
+console.log('✅ Parche V7: Caja sincronizada con Recaudo (fuente única de verdad)');
 console.log('🔐 Parche V6: Autenticación + Logout + Home enriquecido');
   console.log('✨ Rediseño PRO V5 activado');
 })();
