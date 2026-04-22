@@ -6330,7 +6330,21 @@ window.cargar=async function(){
 // DEUDAS Y COMENTARIOS POR CLIENTE
 // =====================================================
 var _bG=window.guardar;window.guardar=async function(){var n=window.actualCliente;if(n){var cd={};try{cd=JSON.parse(localStorage.getItem('clientesDatos')||'{}');}catch(e){}if(!cd[n])cd[n]={};var ld=document.getElementById('leDebo'),md=document.getElementById('meDebeCheck'),ldv=document.getElementById('leDeboValor'),mdv=document.getElementById('meDebeValor'),com=document.getElementById('comentarios');cd[n].leDebo=!!(ld&&ld.checked);cd[n].meDebeCheck=!!(md&&md.checked);cd[n].leDeboValor=ldv?ldv.value:'';cd[n].meDebeValor=mdv?mdv.value:'';cd[n].comentario=com?com.value:'';localStorage.setItem('clientesDatos',JSON.stringify(cd));}if(typeof _bG==='function')await _bG();};
-var _bA=window.abrir;window.abrir=async function(n,id){if(typeof _bA==='function')await _bA(n,id);setTimeout(function(){var cd={};try{cd=JSON.parse(localStorage.getItem('clientesDatos')||'{}');}catch(e){}var d=cd[n];if(!d)return;var ld=document.getElementById('leDebo'),md=document.getElementById('meDebeCheck'),ldv=document.getElementById('leDeboValor'),mdv=document.getElementById('meDebeValor'),com=document.getElementById('comentarios');if(ld&&d.leDebo)ld.checked=true;if(md&&d.meDebeCheck)md.checked=true;if(ldv&&d.leDeboValor)ldv.value=d.leDeboValor;if(mdv&&d.meDebeValor)mdv.value=d.meDebeValor;if(com&&d.comentario)com.value=d.comentario;if(typeof calcular==='function')calcular();},300);};
+var _bA=window.abrir;window.abrir=async function(n,id){if(typeof _bA==='function')await _bA(n,id);setTimeout(function(){
+  var cd={};try{cd=JSON.parse(localStorage.getItem('clientesDatos')||'{}');}catch(e){}
+  var d=cd[n]||{};
+  var ld=document.getElementById('leDebo'),md=document.getElementById('meDebeCheck'),
+      ldv=document.getElementById('leDeboValor'),mdv=document.getElementById('meDebeValor'),
+      com=document.getElementById('comentarios');
+  var h={deudaCliente:0,deudaMia:0};
+  try{if(typeof recaudoGetDeudaHistorica==='function')h=recaudoGetDeudaHistorica(n);}catch(e){}
+  if(ldv) ldv.value = (d.leDeboValor && Number(d.leDeboValor)>0) ? d.leDeboValor : (h.deudaMia>0 ? h.deudaMia : '');
+  if(mdv) mdv.value = (d.meDebeValor && Number(d.meDebeValor)>0) ? d.meDebeValor : (h.deudaCliente>0 ? h.deudaCliente : '');
+  if(ld) ld.checked = d.leDebo ? true : (!d.meDebeCheck && h.deudaMia>0);
+  if(md) md.checked = d.meDebeCheck ? true : (!d.leDebo && h.deudaCliente>0);
+  if(com&&d.comentario) com.value=d.comentario;
+  if(typeof calcular==='function')calcular();
+},300);};
 
 // =====================================================
 // EXPORTAR EXCEL RECAUDO — PROFESIONAL
