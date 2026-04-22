@@ -9494,6 +9494,430 @@ console.log('✅ Parche V4: Historial Excel + Rango + Diseño Apple');
 console.log('✅ Parche Unificado V2: Todo activo');
 })();
 
+// =====================================================
+// 1. RECAUDO — ORDENAR SEGÚN PANEL PRINCIPAL
+// =====================================================
+var _origRecaudoConstruirData = window.recaudoConstruirData;
+window.recaudoConstruirData = async function(){
+  var rows = [];
+  if(typeof _origRecaudoConstruirData === 'function'){
+    rows = await _origRecaudoConstruirData();
+  }
+ 
+  // Obtener orden del panel principal (array clientes en localStorage)
+  var clientesOrden = [];
+  try { clientesOrden = JSON.parse(localStorage.getItem('clientes')||'[]'); } catch(e){}
+ 
+  if(clientesOrden.length > 0){
+    // Crear mapa de posición: nombre → índice
+    var posMap = {};
+    clientesOrden.forEach(function(c, i){
+      var n = (typeof c === 'string' ? c : (c.nombre||'')).toUpperCase().trim();
+      posMap[n] = i;
+    });
+ 
+    rows.sort(function(a, b){
+      var nA = (a.cliente||'').toUpperCase().trim();
+      var nB = (b.cliente||'').toUpperCase().trim();
+      var pA = posMap[nA] !== undefined ? posMap[nA] : 99999;
+      var pB = posMap[nB] !== undefined ? posMap[nB] : 99999;
+      return pA - pB;
+    });
+  }
+ 
+  return rows;
+};
+ 
+// =====================================================
+// 2. RECAUDO — RESALTAR $0 EN AMARILLO
+// =====================================================
+var _origRR_v9 = window.renderRecaudo;
+window.renderRecaudo = async function(){
+  if(typeof _origRR_v9 === 'function') await _origRR_v9();
+ 
+  // Aplicar estilo a celdas con $0
+  setTimeout(function(){
+    var body = document.getElementById('recaudoBody');
+    if(!body) return;
+ 
+    // Buscar todas las celdas de "EFECTIVO NETO" / columna subtotal
+    var tds = body.querySelectorAll('td');
+    tds.forEach(function(td){
+      var txt = td.textContent.trim();
+      // Si es exactamente $0 en la columna de efectivo neto o subtotal
+      if(txt === '$0' || txt === '$0.00'){
+        td.style.background = 'rgba(251, 191, 36, 0.15)';
+        td.style.color = '#fbbf24';
+        td.style.fontWeight = '800';
+        td.style.borderRadius = '6px';
+      }
+    });
+ 
+    // También resaltar subtotal $0 en la columna SUBTOTAL
+    var rows = body.querySelectorAll('tr');
+    rows.forEach(function(row){
+      var cells = row.querySelectorAll('td');
+      if(cells.length < 5) return;
+ 
+      // Columna SUBTOTAL (índice 2 normalmente)
+      cells.forEach(function(cell, ci){
+        var val = cell.textContent.trim();
+        if(val === '$0' && ci >= 1 && ci <= 3){
+          cell.style.background = 'rgba(251, 191, 36, 0.12)';
+          cell.style.color = '#fbbf24';
+          cell.style.fontWeight = '800';
+        }
+      });
+    });
+  }, 400);
+};
+ 
+// =====================================================
+// 3. CATEGORÍAS — FORZAR DEFAULTS Y ARREGLAR catLeer
+// =====================================================
+ 
+// Resetear localStorage si está vacío o corrupto
+(function(){
+  var KEY = 'contabilidad_categorias';
+  try {
+    var raw = localStorage.getItem(KEY);
+    if(!raw){
+      // No hay nada — no hacer nada, catDefaults() ya se encarga
+      return;
+    }
+    var parsed = JSON.parse(raw);
+    // Si alguna lista está vacía, resetear todo
+    if(!parsed.ingresos || parsed.ingresos.length === 0 ||
+       !parsed.gastos || parsed.gastos.length === 0 ||
+       !parsed.costos || parsed.costos.length === 0){
+      localStorage.removeItem(KEY);
+    }
+  } catch(e){
+    localStorage.removeItem(KEY);
+  }
+})();
+ 
+// Override catLeer para que SIEMPRE valide que tenga contenido
+(function(){
+  // Buscar la IIFE que define catLeer (es local) y parchear desde afuera
+  // La solución: sobrescribir _renderCategorias globalmente
+ 
+  var _origRenderContaV9 = window.renderConta;
+  window.renderConta = function(tab){
+    if(tab === 'categorias'){
+      _v9RenderCategorias();
+      return;
+    }
+    if(typeof _origRenderContaV9 === 'function') _origRenderContaV9(tab);
+  };
+})();
+ 
+function _v9CatDefaults(){
+  return {
+    ingresos: [
+      {nombre:'Venta de Reparto',color:'#4ade80',icono:'🚚'},
+      {nombre:'Venta de Caja',color:'#22d3ee',icono:'💵'},
+      {nombre:'Pago de Deuda',color:'#fbbf24',icono:'💰'},
+      {nombre:'Rendimientos',color:'#a855f7',icono:'📈'},
+      {nombre:'Intereses',color:'#60a5fa',icono:'🏦'},
+      {nombre:'Otro Ingreso',color:'#94a3b8',icono:'📥'}
+    ],
+    gastos: [
+      {nombre:'Nómina',color:'#f59e0b',icono:'👷'},
+      {nombre:'Materia Prima',color:'#ef4444',icono:'🌾'},
+      {nombre:'Servicios',color:'#8b5cf6',icono:'💡'},
+      {nombre:'Arriendo',color:'#ec4899',icono:'🏠'},
+      {nombre:'Transporte',color:'#06b6d4',icono:'🚗'},
+      {nombre:'Cuotas',color:'#f97316',icono:'💳'},
+      {nombre:'Mantenimiento',color:'#14b8a6',icono:'🔧'},
+      {nombre:'Otro Gasto',color:'#64748b',icono:'📤'}
+    ],
+    costos: [
+      {nombre:'Costo Producción',color:'#fb923c',icono:'🏭'},
+      {nombre:'Insumos',color:'#a3e635',icono:'📦'},
+      {nombre:'Otro Costo',color:'#94a3b8',icono:'⚙️'}
+    ]
+  };
+}
+ 
+function _v9CatLeer(){
+  var KEY = 'contabilidad_categorias';
+  try {
+    var raw = localStorage.getItem(KEY);
+    if(!raw) return _v9CatDefaults();
+    var p = JSON.parse(raw);
+    if(!p.ingresos || p.ingresos.length===0) p.ingresos = _v9CatDefaults().ingresos;
+    if(!p.gastos || p.gastos.length===0) p.gastos = _v9CatDefaults().gastos;
+    if(!p.costos || p.costos.length===0) p.costos = _v9CatDefaults().costos;
+    return p;
+  } catch(e){ return _v9CatDefaults(); }
+}
+ 
+function _v9CatGuardar(d){
+  localStorage.setItem('contabilidad_categorias', JSON.stringify(d));
+}
+ 
+function _v9RenderCategorias(){
+  var body = document.getElementById('contaBody');
+  if(!body) return;
+ 
+  var cats = _v9CatLeer();
+  // Guardar para que no quede vacío
+  _v9CatGuardar(cats);
+ 
+  var gPC = {}, iPC = {};
+  function nM(n){ return '$'+(Number(n)||0).toLocaleString('es-CO'); }
+ 
+  (window.gastosMemoria||[]).forEach(function(g){
+    var c = g.categoria||'Otro Gasto';
+    gPC[c] = (gPC[c]||0)+(Number(g.monto)||0);
+  });
+  (window.movimientosContables||[]).forEach(function(m){
+    var t = (m.tipo||'').toLowerCase();
+    var c = m.categoria||'Otro';
+    var d = (m.descripcion||'').toLowerCase();
+    if(d.indexOf('mina')>-1) c='Nómina';
+    else if(d.indexOf('cuota')>-1) c='Cuotas';
+    else if(d.indexOf('pago deuda')>-1) c='Pago de Deuda';
+    if(t==='ingreso') iPC[c]=(iPC[c]||0)+(Number(m.monto)||0);
+    else gPC[c]=(gPC[c]||0)+(Number(m.monto)||0);
+  });
+ 
+  // Asegurar que TODAS las categorías aparezcan aunque tengan $0
+  cats.ingresos.forEach(function(c){ if(iPC[c.nombre]===undefined) iPC[c.nombre]=0; });
+  cats.gastos.forEach(function(c){ if(gPC[c.nombre]===undefined) gPC[c.nombre]=0; });
+  cats.costos.forEach(function(c){ if(gPC[c.nombre]===undefined) gPC[c.nombre]=0; });
+ 
+  var tG = Object.values(gPC).reduce(function(s,v){ return s+v; },0);
+  var tI = Object.values(iPC).reduce(function(s,v){ return s+v; },0);
+  var gO = Object.entries(gPC).sort(function(a,b){ return b[1]-a[1]; });
+  var iO = Object.entries(iPC).sort(function(a,b){ return b[1]-a[1]; });
+ 
+  function gc(n,l){ var f=l.find(function(c){ return c.nombre===n; }); return f?f.color:'#94a3b8'; }
+  function gi(n,l){ var f=l.find(function(c){ return c.nombre===n; }); return f?f.icono:'•'; }
+ 
+  function barC(tit,dat,tot,cl,col){
+    var mx=dat.length>0?Math.max.apply(null,dat.map(function(d){return d[1];})):1;if(mx<=0)mx=1;
+    var bars='';
+    if(dat.length===0) bars='<div style="padding:30px;text-align:center;color:#64748b;">Sin datos</div>';
+    else dat.forEach(function(d){
+      var p=d[1]>0?Math.max(((d[1]/mx)*100),2):2;
+      var pt=tot>0?((d[1]/tot)*100).toFixed(1):0;
+      var cc=gc(d[0],cl);var ic=gi(d[0],cl);
+      bars+='<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:12px;color:#e2e8f0;font-weight:600;">'+ic+' '+d[0]+'</span><span style="font-size:12px;color:'+cc+';font-weight:800;">'+(d[1]>0?nM(d[1]):'<span style="color:#475569;">$0</span>')+' ('+pt+'%)</span></div><div style="height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden;"><div style="height:100%;width:'+p+'%;background:'+cc+';border-radius:4px;'+(d[1]===0?'opacity:0.15;':'')+'"></div></div></div>';
+    });
+    return'<div style="background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:20px;"><div style="font-size:15px;font-weight:800;color:'+col+';margin-bottom:14px;">'+tit+'</div>'+bars+'<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);text-align:right;font-size:13px;color:#94a3b8;">Total: <span style="color:white;font-weight:800;">'+nM(tot)+'</span></div></div>';
+  }
+ 
+  function catList(tipo, list, color, label){
+    var items='';
+    list.forEach(function(c,i){
+      items+='<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);border-radius:10px;margin-bottom:4px;"><div style="display:flex;align-items:center;gap:8px;"><span style="width:22px;height:22px;border-radius:6px;background:'+c.color+';display:inline-flex;align-items:center;justify-content:center;font-size:12px;">'+c.icono+'</span><span style="font-size:12px;color:#e2e8f0;font-weight:600;">'+c.nombre+'</span></div><button onclick="v9CatEliminar(\''+tipo+'\','+i+')" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);border-radius:6px;color:#f87171;padding:3px 8px;cursor:pointer;font-size:11px;">✕</button></div>';
+    });
+    return'<div style="background:#1e293b;border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:14px;"><div style="font-size:12px;color:'+color+';font-weight:800;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">'+label+' ('+list.length+')</div>'+items+'</div>';
+  }
+ 
+  // TABS
+  var tabs='<div class="filter-tabs">'+
+    '<button class="ftab" onclick="renderConta(\'resumen\')">📊 Resumen</button>'+
+    '<button class="ftab" onclick="renderConta(\'cuentas\')">🏦 Cuentas</button>'+
+    '<button class="ftab" onclick="renderConta(\'flujo\')">📊 Flujo de Caja</button>'+
+    '<button class="ftab" onclick="renderConta(\'cuotas\')">💳 Cuotas</button>'+
+    '<button class="ftab" onclick="renderConta(\'historial\')">📚 Historial</button>'+
+    '<button class="ftab active" onclick="renderConta(\'categorias\')">📊 Categorías</button>'+
+    '<button class="ftab" onclick="(typeof cajaCargarResumenDia===\'function\'?cajaCargarResumenDia():Promise.resolve()).then(function(){renderConta(\'caja\');})">💵 Caja</button>'+
+  '</div>';
+ 
+  var html = tabs;
+  html+='<div class="cuentas-page-header" style="margin-bottom:16px;"><div><div class="cuentas-page-title">📊 Dashboard Categorías</div><div class="cuentas-page-subtitle">Ingresos · Gastos · Costos</div></div><button class="btn-nueva-cuenta" onclick="v9CatAgregarNueva()" style="background:#7c3aed;">+ Categoría</button></div>';
+  html+='<div class="conta-kpi-grid" style="margin-bottom:20px;"><div class="kpi-card green"><div class="kpi-label">Total ingresos</div><div class="kpi-value" style="font-size:1.25rem;">'+nM(tI)+'</div></div><div class="kpi-card"><div class="kpi-label">Total gastos</div><div class="kpi-value" style="font-size:1.25rem;color:#f87171;">'+nM(tG)+'</div></div><div class="kpi-card '+(tI-tG>=0?'green':'')+'"><div class="kpi-label">Balance</div><div class="kpi-value" style="font-size:1.25rem;'+(tI-tG<0?'color:#f87171;':'')+'">'+nM(tI-tG)+'</div></div></div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">'+barC('🔴 Gastos',gO,tG,cats.gastos.concat(cats.costos),'#f87171')+barC('🟢 Ingresos',iO,tI,cats.ingresos,'#4ade80')+'</div>';
+  html+='<div class="section-title" style="margin-bottom:12px;">⚙️ Categorías configuradas</div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">'+
+    catList('ingresos',cats.ingresos,'#4ade80','📥 Ingresos')+
+    catList('gastos',cats.gastos,'#f87171','📤 Gastos')+
+    catList('costos',cats.costos,'#fbbf24','⚙️ Costos')+
+  '</div>';
+ 
+  body.innerHTML = html;
+}
+ 
+// Funciones globales de categorías
+window.v9CatAgregarNueva = function(){
+  mostrarMC(
+    '<h3>➕ Nueva categoría</h3>'+
+    '<div class="mc-field"><label>Tipo</label><select id="catTipo" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;"><option value="ingresos">🟢 Ingreso</option><option value="gastos">🔴 Gasto</option><option value="costos">🟡 Costo</option></select></div>'+
+    '<div class="mc-field"><label>Nombre</label><input id="catNom" placeholder="Ej: Publicidad" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;"></div>'+
+    '<div class="mc-field"><label>Icono</label><input id="catIco" value="📌" maxlength="4" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;font-size:18px;"></div>'+
+    '<div class="mc-field"><label>Color</label><select id="catCol" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;"><option value="#4ade80">🟢 Verde</option><option value="#60a5fa">🔵 Azul</option><option value="#fbbf24">🟡 Amarillo</option><option value="#f87171">🔴 Rojo</option><option value="#a855f7">🟣 Morado</option><option value="#06b6d4">🩵 Cyan</option><option value="#f97316">🟠 Naranja</option><option value="#94a3b8">⚪ Gris</option></select></div>'+
+    '<div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button><button class="mc-btn-ok" style="background:#7c3aed;" onclick="v9CatConfirmar()">Crear</button></div>'
+  );
+};
+ 
+window.v9CatConfirmar = function(){
+  var t=document.getElementById('catTipo').value;
+  var n=(document.getElementById('catNom').value||'').trim();
+  var i=(document.getElementById('catIco').value||'📌');
+  var c=document.getElementById('catCol').value;
+  if(!n){alert('Nombre');return;}
+  var cats=_v9CatLeer();
+  if(cats[t].some(function(x){return x.nombre.toLowerCase()===n.toLowerCase();})){alert('Ya existe');return;}
+  cats[t].push({nombre:n,color:c,icono:i});
+  _v9CatGuardar(cats);
+  cerrarMC();
+  renderConta('categorias');
+};
+ 
+window.v9CatEliminar = function(tipo,idx){
+  var cats=_v9CatLeer();
+  if(!cats[tipo]||!cats[tipo][idx])return;
+  if(!confirm('¿Eliminar "'+cats[tipo][idx].nombre+'"?'))return;
+  cats[tipo].splice(idx,1);
+  _v9CatGuardar(cats);
+  renderConta('categorias');
+};
+ 
+// =====================================================
+// 4. NÓMINA — BOTÓN EDITAR/BORRAR EN CADA EMPLEADO
+// =====================================================
+var _origRenderNomina = window.renderNomina;
+window.renderNomina = function(){
+  if(typeof _origRenderNomina === 'function') _origRenderNomina();
+ 
+  // Inyectar botones de editar/borrar en cada tarjeta de empleado
+  setTimeout(function(){
+    var body = document.getElementById('nominaBody');
+    if(!body) return;
+ 
+    var NK = 'nomina_data';
+    var data;
+    try { data = JSON.parse(localStorage.getItem(NK)||'{}'); } catch(e){ return; }
+    if(!data.empleados) return;
+ 
+    data.empleados.forEach(function(e, idx){
+      // Buscar el div con el nombre del empleado (17px, uppercase, bold)
+      var divs = body.querySelectorAll('div');
+      divs.forEach(function(d){
+        if(d.textContent.trim() === e.nombre &&
+           d.style.fontWeight === '800' &&
+           d.style.textTransform === 'uppercase' &&
+           !d.dataset.v9patched){
+          d.dataset.v9patched = 'true';
+ 
+          // Crear botones al lado del nombre
+          var wrapper = d.parentElement;
+          if(!wrapper) return;
+ 
+          // Verificar que no se haya agregado ya
+          if(wrapper.querySelector('.v9-nom-btns')) return;
+ 
+          var btns = document.createElement('div');
+          btns.className = 'v9-nom-btns';
+          btns.style.cssText = 'display:flex;gap:4px;margin-top:4px;';
+ 
+          // Botón editar
+          var editBtn = document.createElement('button');
+          editBtn.style.cssText = 'background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);border-radius:6px;color:#60a5fa;padding:3px 8px;cursor:pointer;font-size:10px;font-weight:600;';
+          editBtn.textContent = '✏️ Editar';
+          editBtn.onclick = function(ev){
+            ev.stopPropagation();
+            v9NomEditarEmpleado(idx);
+          };
+ 
+          // Botón borrar
+          var delBtn = document.createElement('button');
+          delBtn.style.cssText = 'background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:6px;color:#f87171;padding:3px 8px;cursor:pointer;font-size:10px;font-weight:600;';
+          delBtn.textContent = '🗑️';
+          delBtn.onclick = function(ev){
+            ev.stopPropagation();
+            v9NomEliminarEmpleado(idx);
+          };
+ 
+          btns.appendChild(editBtn);
+          btns.appendChild(delBtn);
+          wrapper.appendChild(btns);
+        }
+      });
+    });
+  }, 300);
+};
+ 
+window.v9NomEditarEmpleado = function(idx){
+  var NK = 'nomina_data';
+  var data;
+  try { data = JSON.parse(localStorage.getItem(NK)||'{}'); } catch(e){ return; }
+  if(!data.empleados || !data.empleados[idx]) return;
+  var e = data.empleados[idx];
+ 
+  mostrarMC(
+    '<h3>✏️ Editar empleado</h3>'+
+    '<div class="mc-field"><label>Nombre</label>'+
+      '<input id="v9NomEN" value="'+e.nombre+'" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;font-size:16px;font-weight:700;">'+
+    '</div>'+
+    '<div class="mc-field"><label>Tipo</label>'+
+      '<select id="v9NomET" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;">'+
+        '<option value="semanal"'+(e.tipo==='semanal'?' selected':'')+'>Semanal</option>'+
+        '<option value="quincenal"'+(e.tipo==='quincenal'?' selected':'')+'>Quincenal</option>'+
+      '</select>'+
+    '</div>'+
+    '<div class="mc-field"><label>Salario diario</label>'+
+      '<input id="v9NomESD" type="number" value="'+(Number(e.salarioDia)||0)+'" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;">'+
+    '</div>'+
+    '<div class="mc-field"><label>Salario quincena</label>'+
+      '<input id="v9NomESQ" type="number" value="'+(Number(e.salarioQuincena)||0)+'" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;">'+
+    '</div>'+
+    '<div class="mc-field"><label>Color</label>'+
+      '<select id="v9NomEC" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px 12px;">'+
+        '<option value="#16a34a"'+(e.color==='#16a34a'?' selected':'')+'>🟢 Verde</option>'+
+        '<option value="#2563eb"'+(e.color==='#2563eb'?' selected':'')+'>🔵 Azul</option>'+
+        '<option value="#7c3aed"'+(e.color==='#7c3aed'?' selected':'')+'>🟣 Morado</option>'+
+        '<option value="#eab308"'+(e.color==='#eab308'?' selected':'')+'>🟡 Amarillo</option>'+
+        '<option value="#f59e0b"'+(e.color==='#f59e0b'?' selected':'')+'>🟠 Naranja</option>'+
+        '<option value="#e11d48"'+(e.color==='#e11d48'?' selected':'')+'>🔴 Rojo</option>'+
+        '<option value="#06b6d4"'+(e.color==='#06b6d4'?' selected':'')+'>🩵 Cyan</option>'+
+      '</select>'+
+    '</div>'+
+    '<div class="mc-btns">'+
+      '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
+      '<button class="mc-btn-ok" onclick="v9NomGuardarEdit('+idx+')">Guardar</button>'+
+    '</div>'
+  );
+};
+ 
+window.v9NomGuardarEdit = function(idx){
+  var NK = 'nomina_data';
+  var data;
+  try { data = JSON.parse(localStorage.getItem(NK)||'{}'); } catch(e){ return; }
+  if(!data.empleados || !data.empleados[idx]) return;
+ 
+  var nom = (document.getElementById('v9NomEN').value||'').trim().toUpperCase();
+  if(!nom){ alert('Ingresa nombre'); return; }
+ 
+  data.empleados[idx].nombre = nom;
+  data.empleados[idx].tipo = document.getElementById('v9NomET').value;
+  data.empleados[idx].salarioDia = Number(document.getElementById('v9NomESD').value)||0;
+  data.empleados[idx].salarioQuincena = Number(document.getElementById('v9NomESQ').value)||0;
+  data.empleados[idx].color = document.getElementById('v9NomEC').value;
+ 
+  localStorage.setItem(NK, JSON.stringify(data));
+  cerrarMC();
+  renderNomina();
+};
+ 
+window.v9NomEliminarEmpleado = function(idx){
+  var NK = 'nomina_data';
+  var data;
+  try { data = JSON.parse(localStorage.getItem(NK)||'{}'); } catch(e){ return; }
+  if(!data.empleados || !data.empleados[idx]) return;
+ 
+  if(!confirm('¿Eliminar a '+data.empleados[idx].nombre+' de la nómina?')) return;
+  data.empleados.splice(idx, 1);
+  localStorage.setItem(NK, JSON.stringify(data));
+  cerrarMC();
+  renderNomina();
+};
+ 
+console.log('✅ Parche V9: Recaudo orden + $0 amarillo + Categorías + Nómina edit');
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
