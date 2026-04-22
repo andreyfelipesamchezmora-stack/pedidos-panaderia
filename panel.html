@@ -3579,9 +3579,22 @@ async function renderRecaudo(){
                   </td>
                   <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.nequi > 0 ? r.nequi.toLocaleString('es-CO') : ''}" data-raw="${r.nequi}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
                   <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.bancolombia > 0 ? r.bancolombia.toLocaleString('es-CO') : ''}" data-raw="${r.bancolombia}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
-                  <td><input id="rec_dc_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudaCliente > 0 ? r.deudaCliente.toLocaleString('es-CO') : ''}" data-raw="${r.deudaCliente}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}');"></td>
+                  <td><input id="rec_dc_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"
+  value="${r.deudaCliente > 0 ? r.deudaCliente.toLocaleString('es-CO') : ''}"
+  data-raw="${r.deudaCliente}"
+  style="background:rgba(239,68,68,0.13)!important;border:1px solid rgba(239,68,68,0.35)!important;color:#fca5a5!important;"
+  onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); recaudoAutoCheckDeuda('${safe}');"></td>
+<td><input id="rec_dm_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"
+  value="${r.deudaMia > 0 ? r.deudaMia.toLocaleString('es-CO') : ''}"
+  data-raw="${r.deudaMia}"
+  style="background:rgba(59,130,246,0.13)!important;border:1px solid rgba(59,130,246,0.35)!important;color:#93c5fd!important;"
+  onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); recaudoAutoCheckDeuda('${safe}');"></td>
                   <td><input id="rec_dm_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudaMia > 0 ? r.deudaMia.toLocaleString('es-CO') : ''}" data-raw="${r.deudaMia}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}');"></td>
-                  <td><input id="rec_fal_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.faltantes > 0 ? r.faltantes.toLocaleString('es-CO') : ''}" data-raw="${r.faltantes}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
+                  <td><input id="rec_fal_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"
+  value="${r.faltantes > 0 ? r.faltantes.toLocaleString('es-CO') : ''}"
+  data-raw="${r.faltantes}"
+  style="background:rgba(234,179,8,0.13)!important;border:1px solid rgba(234,179,8,0.35)!important;color:#fde047!important;"
+  onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo()"></td>
                   <td><input id="rec_sal_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.salidas > 0 ? r.salidas.toLocaleString('es-CO') : ''}" data-raw="${r.salidas}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
                   <td><div class="recaudo-resumen ${r.resumen.clase}">${r.resumen.texto}</div></td>
                   <td style="font-weight:800;">${recaudoMoney(r.efectivoNeto)}</td>
@@ -3632,6 +3645,8 @@ async function renderRecaudo(){
     `;
  
     body.innerHTML = html;
+  // Inyectar valores sugeridos de cartera en campos vacíos
+setTimeout(function(){ recaudoInyectarSugeridos(rows); }, 80);
   }catch(e){
     console.error("Error en recaudo:", e);
     body.innerHTML = `<div class="empty-state"><p>Error: ${e.message}</p></div>`;
@@ -3657,6 +3672,58 @@ function recaudoGuardarFila(nombre){
  
   recaudoGuardarEstado(estado);
 }
+
+// ─── AUTO-CHECK & VALOR SUGERIDO SEGÚN CARTERA ────────────────────────────
+function recaudoAutoCheckDeuda(nombre) {
+  // Lee los valores actuales de los inputs
+  var dcInput = document.getElementById('rec_dc_' + nombre);
+  var dmInput = document.getElementById('rec_dm_' + nombre);
+  var cbSaldo = document.getElementById('rec_deudasaldo_' + nombre);
+  if (!dcInput || !dmInput) return;
+
+  var dc = getRawRecaudo(dcInput);
+  var dm = getRawRecaudo(dmInput);
+
+  // Marcar checkbox según cuál columna tiene valor
+  if (cbSaldo) {
+    if (dc > 0 || dm > 0) {
+      cbSaldo.checked = false; // no auto-marcar pago, solo sugiere el valor
+    }
+  }
+}
+
+// Inyectar valores sugeridos desde cartera al abrir/renderizar recaudo
+function recaudoInyectarSugeridos(rows) {
+  rows.forEach(function(r) {
+    var safe = r.cliente.replace(/[^a-zA-Z0-9]/g, '_');
+    var dcInput = document.getElementById('rec_dc_' + safe);
+    var dmInput = document.getElementById('rec_dm_' + safe);
+    var cbSaldo = document.getElementById('rec_deudasaldo_' + safe);
+
+    // Si el input está vacío (sin dato manual guardado), poner sugerido de cartera
+    if (dcInput && getRawRecaudo(dcInput) === 0 && r.deudaCliente > 0) {
+      dcInput.value = r.deudaCliente.toLocaleString('es-CO');
+      dcInput.dataset.raw = r.deudaCliente;
+      dcInput.style.opacity = '0.75'; // visual: es sugerido
+      dcInput.title = 'Valor sugerido según cartera';
+    }
+    if (dmInput && getRawRecaudo(dmInput) === 0 && r.deudaMia > 0) {
+      dmInput.value = r.deudaMia.toLocaleString('es-CO');
+      dmInput.dataset.raw = r.deudaMia;
+      dmInput.style.opacity = '0.75';
+      dmInput.title = 'Valor sugerido: le debes esto al cliente';
+    }
+
+    // Marcar checkbox automáticamente según deuda histórica
+    if (cbSaldo && !cbSaldo.checked) {
+      if (r.deudaCliente > 0 || r.deudaMia > 0) {
+        // No se marca como pagado, pero se deja listo para que el usuario decida
+        // Si quieres auto-marcar: cbSaldo.checked = true;
+      }
+    }
+  });
+}
+// ──────────────────────────────────────────────────────────────────────────
   
 // Toggle recibido
 function recaudoToggleRecibido(nombre){
