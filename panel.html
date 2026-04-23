@@ -3202,6 +3202,8 @@ async function recaudoPedidosDelDia(){
 }
 function recaudoGetDeudaHistorica(nombre) {
   let deudaCliente = 0, deudaMia = 0;
+  // Normalizar el nombre igual que se hace en el HTML
+  let nombreSafe = nombre.replace(/[^a-zA-Z0-9]/g, '_');
   const claveHoy = recaudoFechaKey(); // excluir el día activo para no duplicar
 
   for (let i = 0; i < localStorage.length; i++) {
@@ -3257,7 +3259,8 @@ async function recaudoConstruirData(){
  
   let rows = (clientes || []).map(function(c){
     let ped = mapaPedidos[c.nombre] || null;
-    let saved = estado[c.nombre] || {};
+    let _safeNombre = c.nombre.replace(/[^a-zA-Z0-9]/g, '_');
+let saved = estado[c.nombre] || estado[_safeNombre] || {};
  
     let subtotal = Number(ped && ped.total || 0);
     let deudaHist = recaudoGetDeudaHistorica(c.nombre);
@@ -3524,7 +3527,7 @@ async function renderRecaudo(){
           </thead>
           <tbody>
             ${rows.map(function(r){
-              let safe = r.cliente.replace(/"/g, '&quot;');
+              let safe = r.cliente.replace(/[^a-zA-Z0-9]/g, '_');
  
               // COLOR DE FILA según estado
               let bgColor = '';
@@ -3683,7 +3686,8 @@ setTimeout(function(){ recaudoInyectarSugeridos(rows); }, 80);
 
 function recaudoGuardarFila(nombre){
   let estado = recaudoLeerEstado();
-  let base = estado[nombre] || {};
+  let nombreReal = nombre; // nombre ya viene como safe desde el HTML
+  let base = estado[nombreReal] || {};
  
   let q = function(id){ return document.getElementById(id); };
  
@@ -10360,9 +10364,10 @@ console.log('✅ Parche historial deuda por día cargado');
       if (key && key.startsWith('recaudo_') && key !== keyActivo) {
         try {
           let obj = JSON.parse(localStorage.getItem(key));
-          if (obj && obj[nombre]) {
-            deudaCliente += Number(obj[nombre].deudaCliente) || 0;
-            deudaMia     += Number(obj[nombre].deudaMia)     || 0;
+          let datos = obj && (obj[nombre] || obj[nombreSafe]);
+if (datos) {
+  deudaCliente += Number(datos.deudaCliente) || 0;
+  deudaMia     += Number(datos.deudaMia)     || 0;
           }
         } catch(e) {}
       }
