@@ -3732,19 +3732,7 @@ function recaudoToggleRecibido(nombre){
   if(!estado[nombre]) estado[nombre] = {};
   estado[nombre].recibido = !!(cb && cb.checked);
   recaudoGuardarEstado(estado);
-  await subirFecha(
-'recaudo_diario',
-cajaFechaHoy(),
-estado
-);
-
-await subirFecha(
-'recaudo_diario',
-cajaFechaHoy(),
-estado
-);
-
-renderRecaudo();
+  renderRecaudo();
 }
 
 async function abrirRecaudo(){
@@ -4447,11 +4435,6 @@ function recaudoConfirmarPago(nombre, monto){
   estado[nombre].deudaBanco = nombreBanco;
   estado[nombre].fechaPago = hoy;
   recaudoGuardarEstado(estado);
-  await subirFecha(
-'recaudo_diario',
-cajaFechaHoy(),
-estado
-);
  
   // 2. Cartera permanente (se sincroniza con el módulo Cartera)
   let cartera = {};
@@ -4506,11 +4489,6 @@ function r3nP5oFahNL86vESFrkKjmuupsQa1mPzN7(nombre, deudaMia){
   estado[nombre].deudaMiaPagada = deudaMia;
   estado[nombre].fechaDescuento = hoy;
   recaudoGuardarEstado(estado);
-  await subirFecha(
-'recaudo_diario',
-cajaFechaHoy(),
-estado
-);
  
   let cartera = {};
   try { cartera = JSON.parse(localStorage.getItem('cartera_deudas') || '{}'); } catch(e){}
@@ -4545,12 +4523,7 @@ function recaudoRevertirPagoDeuda(nombre){
     estado[nombre].deudaMiaPagada = 0;
   }
   recaudoGuardarEstado(estado);
- await subirFecha(
-'recaudo_diario',
-cajaFechaHoy(),
-estado
-);
-
+ 
   if(cartera[nombre]){
     cartera[nombre].deudasPagadas = 0;
     cartera[nombre].fechaPago = null;
@@ -10719,33 +10692,18 @@ console.log('✅ Parche historial deuda por día cargado');
       });
 
       // Recaudo diario
-   if(payload.new.fecha===hoy){
-
-console.log('sync recibido');
-
-_skipUpload=true;
-
-LS.set(
- 'recaudo_'+hoy,
- JSON.stringify(payload.new.datos)
-);
-
-if(typeof renderRecaudo==="function"){
- setTimeout(function(){
-   renderRecaudo();
- },150);
-}
-
-setTimeout(function(){
- _skipUpload=false;
-},500);
-
-}
- setTimeout(function(){
-   _skipUpload=false;
- },500);
-
-}
+      db.channel('rt-recaudo')
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'recaudo_diario' },
+          function(payload){
+            if(payload.new && payload.new.fecha && payload.new.datos){
+              var hoy = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
+              if(payload.new.fecha === hoy){
+                console.log('📡 Realtime: recaudo_'+hoy+' actualizado');
+                _skipUpload = true;
+                LS.set('recaudo_'+hoy, JSON.stringify(payload.new.datos));
+                setTimeout(function(){ _skipUpload = false; }, 500);
+              }
             }
           }
         )
@@ -10770,20 +10728,12 @@ setTimeout(function(){
           }
         }
       } catch(e){}
-      if(tabla==='recaudo_diario'){
- renderRecaudo();
-}
     }, 300);
   }
 
   // ==========================================
   // CARGA INICIAL DESDE SUPABASE
   // ==========================================
-if(tabla==='recaudo_diario'){
- if(typeof renderRecaudo==="function"){
-   renderRecaudo();
- }
-}
   async function cargaInicial(){
     console.log('☁️ Sincronizando con Supabase...');
     var descargados = 0, subidos = 0;
