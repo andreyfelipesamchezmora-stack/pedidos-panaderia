@@ -3203,29 +3203,21 @@ async function recaudoPedidosDelDia(){
 function recaudoGetDeudaHistorica(nombre) {
   let deudaCliente = 0, deudaMia = 0;
 
-  // Fecha activa del panel (si cambias a un día anterior, esta es la que manda)
-  let fechaActiva = (typeof cajaFechaHoy === 'function')
-    ? cajaFechaHoy()
-    : new Date().toISOString().split('T')[0];
-
-  let keyActivo = 'recaudo_' + fechaActiva;
-
   for (let i = 0; i < localStorage.length; i++) {
     let key = localStorage.key(i);
-
-    // IMPORTANTÍSIMO:
-    // Excluir el día activo para no duplicar lo que ya está guardado en saved.deudaCliente / saved.deudaMia
-    if (key && key.startsWith('recaudo_') && key !== keyActivo) {
+    if (key && key.startsWith('recaudo_')) {
       try {
         let obj = JSON.parse(localStorage.getItem(key));
         if (obj && obj[nombre]) {
           deudaCliente += Number(obj[nombre].deudaCliente) || 0;
           deudaMia     += Number(obj[nombre].deudaMia)     || 0;
+          // ← NO sumar deudasPagadas aquí, se lee de cartera_deudas
         }
       } catch(e) {}
     }
   }
 
+  // Pagos permanentes SOLO desde cartera_deudas
   let deudasPagadas = 0, fechaPago = '—';
   try {
     let cartera = JSON.parse(localStorage.getItem('cartera_deudas') || '{}');
@@ -3237,9 +3229,9 @@ function recaudoGetDeudaHistorica(nombre) {
 
   return {
     deudaCliente:  Math.max(deudaCliente - deudasPagadas, 0),
-    deudaMia:      Math.max(deudaMia - deudasPagadas, 0),
-    deudasPagadas: deudasPagadas,
-    fechaPago: fechaPago
+    deudaMia:      Math.max(deudaMia     - deudasPagadas, 0),
+    deudasPagadas,
+    fechaPago
   };
 }
 
@@ -3269,8 +3261,8 @@ async function recaudoConstruirData(){
       recibido: !!saved.recibido,
       nequi: Number(saved.nequi || 0),
       bancolombia: Number(saved.bancolombia || 0),
-      deudaCliente: (Number(saved.deudaCliente) || 0) + deudaHist.deudaCliente,
-      deudaMia: (Number(saved.deudaMia) || 0) + deudaHist.deudaMia,
+      deudaCliente: deudaHist.deudaCliente,
+      deudaMia: deudaHist.deudaMia,
       deudasPagadas: deudaHist.deudasPagadas,
       deudaMetodo: saved.deudaMetodo || null,
       deudaBanco: saved.deudaBanco || null,
@@ -10322,76 +10314,153 @@ console.log('✅ Parche historial deuda por día cargado');
 
 (function(){
 
-  // FORZAR que deudaCliente y deudaMia del día activo
-  // NO se descuenten por deudasPagadas históricas al mostrar en tabla.
-  // El descuento solo aplica al resumen/cartera, no al input editable del día.
+  // ══════════════════════════════════════════════════════
+  // FIX 1: recaudoGetDeudaHistorica — excluye el día activo
+  // para no duplicar la deuda al recargar
+  // ══════════════════════════════════════════════════════
+  window.recaudoGetDeudaHistorica = function(nombre) {
+    let deudaCliente = 0, deudaMia = 0;
 
-  var _origConstruirData = window.recaudoConstruirData;
+    let fechaActiva = (typeof cajaFechaHoy === 'function')
+      ? cajaFechaHoy()
+      : new Date().toISOString().split('T')[0];
+    let keyActivo = 'recaudo_' + fechaActiva;
 
-  // Parche directo sobre recaudoConstruirData
-  // Después de construir cada row, forzar que deudaCliente/deudaMia
-  // del día activo (saved) siempre se respete aunque el histórico dé 0
-  var _origGetDeudaHistorica = window.recaudoGetDeudaHistorica;
+    for (let i = 0; i < localStorage.length; i++) {
+      let key = localStorage.key(i);
+      // Solo días ANTERIORES al activo — el activo viene de saved directo
+      if (key && key.startsWith('recaudo_') && key !== keyActivo) {
+        try {
+          let obj = JSON.parse(localStorage.getItem(key));
+          if (obj && obj[nombre]) {
+            deudaCliente += Number(obj[nombre].deudaCliente) || 0;
+            deudaMia     += Number(obj[nombre].deudaMia)     || 0;
+          }
+        } catch(e) {}
+      }
+    }
 
-  window.recaudoGetDeudaHistorica = function(nombre){
-    let result = _origGetDeudaHistorica(nombre);
+    let deudasPagadas = 0, fechaPago = '—';
+    try {
+      let cartera = JSON.parse(localStorage.getItem('cartera_deudas') || '{}');
+      if (cartera[nombre]) {
+        deudasPagadas = Number(cartera[nombre].deudasPagadas) || 0;
+        fechaPago     = cartera[nombre].fechaPago || '—';
+      }
+    } catch(e) {}
 
-    // Leer lo que hay guardado en el día activo para este cliente
-    try{
-      let estado = recaudoLeerEstado();
-      let saved = estado[nombre] || {};
+    return {
+      deudaCliente:  Math.max(deudaCliente - deudasPagadas, 0),
+      deudaMia:      Math.max(deudaMia - deudasPagadas, 0),
+      deudasPagadas,
+      fechaPago
+    };
+  };
+
+  // ══════════════════════════════════════════════════════
+  // FIX 2: recaudoConstruirData — usar saved del día activo
+  // para que la deuda ingresada por fecha sea exactamente la que se muestra
+  // ══════════════════════════════════════════════════════
+  var _origConstruir = window.recaudoConstruirData;
+  window.recaudoConstruirData = async function() {
+    let rows = await _origConstruir.apply(this, arguments);
+    let estado = recaudoLeerEstado();
+
+    rows.forEach(function(row) {
+      let saved = estado[row.cliente] || {};
       let savedDC = Number(saved.deudaCliente) || 0;
       let savedDM = Number(saved.deudaMia)     || 0;
 
-      // Si el día activo tiene deuda guardada, asegurarse que se sume
-      // (ya lo hace el Parche 2 anterior, esto es seguridad extra)
-      // Pero si deudasPagadas borró todo, restaurar lo del día activo
-      if(savedDC > 0 && result.deudaCliente === 0){
-        result.deudaCliente = savedDC;
-      }
-      if(savedDM > 0 && result.deudaMia === 0){
-        result.deudaMia = savedDM;
-      }
-    }catch(e){}
+      // Si el día activo tiene deuda guardada, usarla directamente (estática)
+      // No acumular con el histórico — el histórico ya excluye este día (Fix 1)
+      if (savedDC > 0) row.deudaCliente = savedDC;
+      if (savedDM > 0) row.deudaMia     = savedDM;
 
-    return result;
+      // Cargar estado del checkbox de deuda-en-domi
+      row.deudaEnDomi = !!saved.deudaEnDomi;
+    });
+
+    return rows;
   };
 
-  // Parche sobre renderRecaudo: después de pintar la tabla,
-  // forzar los inputs de deuda con lo que hay guardado en el día activo
-  var _origRenderRecaudo = window.renderRecaudo;
-  window.renderRecaudo = async function(){
-    let r = await _origRenderRecaudo.apply(this, arguments);
+  // ══════════════════════════════════════════════════════
+  // FIX 3: Función nueva — checkbox sumar deuda a recaudo domi
+  // ══════════════════════════════════════════════════════
+  window.recaudoToggleDeudaDomi = function(nombre, deudaCliente) {
+    let cb    = document.getElementById('rec_deuda_domi_' + nombre);
+    let estado = recaudoLeerEstado();
+    if (!estado[nombre]) estado[nombre] = {};
 
-    setTimeout(function(){
-      try{
+    // Leer deuda actual del cliente desde el input por si el usuario la cambió
+    try {
+      let inputDC = document.getElementById('rec_dc_' + nombre);
+      if (inputDC) {
+        let val = Number(inputDC.dataset.raw || inputDC.value.replace(/\./g,'').replace(/,/g,'')) || 0;
+        if (val > 0) deudaCliente = val;
+      }
+    } catch(e) {}
+
+    let domiActual = Number(estado[nombre].recaudoDomi) || 0;
+
+    if (cb && cb.checked) {
+      estado[nombre].deudaEnDomi  = true;
+      estado[nombre].recaudoDomi  = domiActual + Number(deudaCliente);
+    } else {
+      estado[nombre].deudaEnDomi  = false;
+      estado[nombre].recaudoDomi  = Math.max(domiActual - Number(deudaCliente), 0);
+    }
+
+    recaudoGuardarEstado(estado);
+    renderRecaudo();
+  };
+
+  // ══════════════════════════════════════════════════════
+  // FIX 4: Inyectar el checkbox de deuda-domi en la tabla
+  // después de que renderRecaudo pinta el HTML
+  // ══════════════════════════════════════════════════════
+  var _origRender = window.renderRecaudo;
+  window.renderRecaudo = async function() {
+    let r = await _origRender.apply(this, arguments);
+
+    setTimeout(function() {
+      try {
         let estado = recaudoLeerEstado();
-        Object.keys(estado).forEach(function(nombre){
-          let saved = estado[nombre] || {};
-          let dc = Number(saved.deudaCliente) || 0;
-          let dm = Number(saved.deudaMia)     || 0;
 
-          // Input deuda cliente
-          let inputDC = document.getElementById('rec_dc_' + nombre);
-          if(inputDC && dc > 0 && (Number(inputDC.dataset.raw) || 0) === 0){
-            inputDC.value = dc.toLocaleString('es-CO');
-            inputDC.dataset.raw = dc;
-          }
+        // Buscar cada celda de recaudo-domi y agregar el checkbox izquierdo si no existe
+        document.querySelectorAll('[id^="rec_domi_"]').forEach(function(cbDomi) {
+          let nombre = cbDomi.id.replace('rec_domi_', '');
+          let idDeudaDomi = 'rec_deuda_domi_' + nombre;
 
-          // Input yo le debo
-          let inputDM = document.getElementById('rec_dm_' + nombre);
-          if(inputDM && dm > 0 && (Number(inputDM.dataset.raw) || 0) === 0){
-            inputDM.value = dm.toLocaleString('es-CO');
-            inputDM.dataset.raw = dm;
-          }
+          // Si ya existe el checkbox de deuda domi, no duplicar
+          if (document.getElementById(idDeudaDomi)) return;
+
+          let saved      = estado[nombre] || {};
+          let deudaDC    = Number(saved.deudaCliente) || 0;
+          let deudaEnDomi = !!saved.deudaEnDomi;
+
+          let cbNuevo = document.createElement('input');
+          cbNuevo.type      = 'checkbox';
+          cbNuevo.id        = idDeudaDomi;
+          cbNuevo.className = 'recaudo-check';
+          cbNuevo.checked   = deudaEnDomi;
+          cbNuevo.title     = 'Sumar deuda del cliente al recaudo domi';
+          cbNuevo.style.cssText = 'margin-right:4px;accent-color:#f59e0b;';
+          cbNuevo.setAttribute('onchange',
+            "recaudoToggleDeudaDomi('" + nombre.replace(/'/g, "\\'") + "'," + deudaDC + ")"
+          );
+
+          // Insertar ANTES del checkbox domi original
+          cbDomi.parentNode.insertBefore(cbNuevo, cbDomi);
         });
-      }catch(e){}
-    }, 150);
+      } catch(e) {
+        console.error('Parche deuda-domi checkbox:', e);
+      }
+    }, 120);
 
     return r;
   };
 
-  console.log('✅ Parche: forzar deuda visible en todos los clientes');
+  console.log('✅ Parche recaudo: sin duplicación + deuda estática + checkbox deuda-domi');
 
 })();
 </script>
