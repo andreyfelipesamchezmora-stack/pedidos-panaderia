@@ -10466,84 +10466,219 @@ console.log('✅ Parche historial deuda por día cargado');
 
 (function(){
 
-  // ══════════════════════════════════════════════════════════
-  // PARCHE PERSISTENCIA TOTAL — Todo en localStorage
-  // Corrige: gastos en sessionStorage → localStorage
-  //          movimientosContables sin persistencia → localStorage
-  // ══════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════
+  // SINCRONIZACIÓN SUPABASE — Persistencia 24/7
+  // Módulos: Cuentas, Gastos, Cartera, Movimientos
+  // ══════════════════════════════════════════════════════
 
-  var KEYS = {
-    gastos:       'vn_gastos_perm',
-    movimientos:  'vn_movimientos_perm',
-    nomina:       'vn_nomina_perm',
-    clientes:     'vn_clientes_perm',
-  };
+  // ── UTILIDADES ─────────────────────────────────────────
+  function lsGet(key, fb){ try{ let v=JSON.parse(localStorage.getItem(key)); return v!==null?v:fb; }catch(e){return fb;} }
+  function lsSet(key,val){ try{ localStorage.setItem(key,JSON.stringify(val)); }catch(e){} }
 
-  function lsGet(key, fallback){
+  function log(msg){ console.log('[Supabase Sync]', msg); }
+
+  // ── 1. CUENTAS BANCARIAS ───────────────────────────────
+
+  async function sbCargarCuentas(){
     try{
-      let v = localStorage.getItem(key);
-      if(!v) return fallback;
-      let p = JSON.parse(v);
-      return p !== null ? p : fallback;
-    }catch(e){ return fallback; }
-  }
-
-  function lsSet(key, val){
-    try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){}
-  }
-
-  // ── 1. GASTOS: migrar de sessionStorage → localStorage ─────────────────
-  (function migrateGastos(){
-    // Si hay datos en sessionStorage, migrarlos primero
-    try{
-      let fromSession = JSON.parse(sessionStorage.getItem('gastos') || '[]');
-      let fromLocal   = lsGet(KEYS.gastos, []);
-
-      // Fusionar sin duplicar (por descripcion+monto+categoria)
-      if(Array.isArray(fromSession) && fromSession.length > 0){
-        let merged = fromLocal.slice();
-        fromSession.forEach(function(g){
-          let dup = merged.some(function(m){
-            return m.descripcion === g.descripcion && m.monto === g.monto && m.categoria === g.categoria;
-          });
-          if(!dup) merged.push(g);
+      let { data, error } = await db.from('vn_cuentas').select('*').order('nombre');
+      if(error) throw error;
+      if(data && data.length > 0){
+        window.cuentasMemoria = data.map(function(c){
+          return { id: c.id, nombre: c.nombre, tipo: c.tipo, color: c.color||'teal', saldo: Number(c.saldo||0) };
         });
-        lsSet(KEYS.gastos, merged);
+        lsSet('cuentasMemoria', window.cuentasMemoria);
+        log('Cuentas cargadas: ' + data.length);
+        return true;
       }
-    }catch(e){}
+    }catch(e){ log('Error cargando cuentas: '+e.message); }
+    return false;
+  }
 
-    // Cargar gastosMemoria desde localStorage
+  async function sbGuardarCuenta(cuenta, idx){
     try{
-      let saved = lsGet(KEYS.gastos, null);
-      if(Array.isArray(saved) && saved.length > 0){
-        window.gastosMemoria = saved;
+      if(cuenta.id){
+        await db.from('vn_cuentas').update({
+          nombre: cuenta.nombre, tipo: cuenta.tipo,
+          color: cuenta.color||'teal', saldo: Number(cuenta.saldo||0),
+          updated_at: new Date().toISOString()
+        }).eq('id', cuenta.id);
+      } else {
+        let { data, error } = await db.from('vn_cuentas').insert({
+          nombre: cuenta.nombre, tipo: cuenta.tipo,
+          color: cuenta.color||'teal', saldo: Number(cuenta.saldo||0)
+        }).select().single();
+        if(!error && data){
+          window.cuentasMemoria[idx].id = data.id;
+          lsSet('cuentasMemoria', window.cuentasMemoria);
+        }
       }
-    }catch(e){}
-  })();
+    }catch(e){ log('Error guardando cuenta: '+e.message); }
+  }
 
-  // Parchear todas las funciones que hacen sessionStorage.setItem('gastos',...)
-  // para que también guarden en localStorage
-  var _origSS_setItem = sessionStorage.setItem.bind(sessionStorage);
-  sessionStorage.setItem = function(key, value){
-    _origSS_setItem(key, value);
-    if(key === 'gastos'){
-      try{
-        lsSet(KEYS.gastos, JSON.parse(value));
-      }catch(e){}
+  async function sbEliminarCuenta(id){
+    try{
+      if(id) await db.from('vn_cuentas').delete().eq('id', id);
+    }catch(e){}
+  }
+
+  // Parchear cuentasGuardar para sincronizar con Supabase
+  var _origCuentasGuardar = window.cuentasGuardar;
+  window.cuentasGuardar = async function(){
+    if(typeof _origCuentasGuardar === 'function') _origCuentasGuardar.apply(this, arguments);
+    if(Array.isArray(window.cuentasMemoria)){
+      for(let i=0; i<window.cuentasMemoria.length; i++){
+        await sbGuardarCuenta(window.cuentasMemoria[i], i);
+      }
     }
   };
 
-  // ── 2. movimientosContables: persistencia completa ─────────────────────
-  (function initMovimientos(){
-    let saved = lsGet(KEYS.movimientos, []);
-    if(Array.isArray(saved) && saved.length > 0){
-      if(!Array.isArray(window.movimientosContables) || window.movimientosContables.length === 0){
-        window.movimientosContables = saved;
-      }
-    }
-  })();
+  // ── 2. GASTOS ──────────────────────────────────────────
 
-  // Interceptar pushes a movimientosContables para auto-guardar
+  async function sbCargarGastos(){
+    try{
+      let { data, error } = await db.from('vn_gastos').select('*').order('created_at', {ascending:false});
+      if(error) throw error;
+      if(data && data.length > 0){
+        window.gastosMemoria = data.map(function(g){
+          return { id: g.id, descripcion: g.descripcion, categoria: g.categoria,
+                   monto: Number(g.monto||0), cuentaIdx: Number(g.cuenta_idx||-1) };
+        });
+        try{ sessionStorage.setItem('gastos', JSON.stringify(window.gastosMemoria)); }catch(e){}
+        lsSet('vn_gastos_perm', window.gastosMemoria);
+        log('Gastos cargados: ' + data.length);
+        return true;
+      }
+    }catch(e){ log('Error cargando gastos: '+e.message); }
+    return false;
+  }
+
+  async function sbGuardarGasto(gasto){
+    try{
+      if(gasto.id){
+        await db.from('vn_gastos').update({
+          descripcion: gasto.descripcion, categoria: gasto.categoria,
+          monto: Number(gasto.monto||0), cuenta_idx: Number(gasto.cuentaIdx||-1)
+        }).eq('id', gasto.id);
+      } else {
+        let { data, error } = await db.from('vn_gastos').insert({
+          descripcion: gasto.descripcion, categoria: gasto.categoria,
+          monto: Number(gasto.monto||0), cuenta_idx: Number(gasto.cuentaIdx||-1),
+          fecha: new Date().toISOString().split('T')[0]
+        }).select().single();
+        if(!error && data) gasto.id = data.id;
+      }
+    }catch(e){ log('Error guardando gasto: '+e.message); }
+  }
+
+  async function sbEliminarGasto(id){
+    try{ if(id) await db.from('vn_gastos').delete().eq('id', id); }catch(e){}
+  }
+
+  // Parchear agregarGasto
+  var _origAgregarGasto = window.agregarGasto;
+  window.agregarGasto = async function(){
+    if(typeof _origAgregarGasto === 'function') _origAgregarGasto.apply(this, arguments);
+    if(Array.isArray(window.gastosMemoria)){
+      let ultimo = window.gastosMemoria[window.gastosMemoria.length - 1];
+      if(ultimo && !ultimo.id) await sbGuardarGasto(ultimo);
+    }
+  };
+
+  // Parchear eliminarGasto
+  var _origEliminarGasto = window.eliminarGasto;
+  window.eliminarGasto = async function(i){
+    let id = Array.isArray(window.gastosMemoria) && window.gastosMemoria[i] ? window.gastosMemoria[i].id : null;
+    if(typeof _origEliminarGasto === 'function') _origEliminarGasto.apply(this, arguments);
+    if(id) await sbEliminarGasto(id);
+  };
+
+  // ── 3. CARTERA — deudas y pagos ────────────────────────
+
+  async function sbCargarCartera(){
+    try{
+      let { data, error } = await db.from('vn_cartera').select('*');
+      if(error) throw error;
+      if(data && data.length > 0){
+        let cartera = {};
+        data.forEach(function(r){
+          cartera[r.cliente] = {
+            deudasPagadas: Number(r.deudas_pagadas||0),
+            fechaPago: r.fecha_pago||'—',
+            metodoPago: r.metodo_pago||'',
+            banco: r.banco||''
+          };
+        });
+        localStorage.setItem('cartera_deudas', JSON.stringify(cartera));
+        log('Cartera cargada: ' + data.length + ' clientes');
+        return true;
+      }
+    }catch(e){ log('Error cargando cartera: '+e.message); }
+    return false;
+  }
+
+  async function sbGuardarCarteraCliente(cliente, datos){
+    try{
+      let { data: existing } = await db.from('vn_cartera').select('id').eq('cliente', cliente).single();
+      if(existing){
+        await db.from('vn_cartera').update({
+          deudas_pagadas: Number(datos.deudasPagadas||0),
+          fecha_pago: datos.fechaPago||null,
+          metodo_pago: datos.metodoPago||null,
+          banco: datos.banco||null,
+          updated_at: new Date().toISOString()
+        }).eq('cliente', cliente);
+      } else {
+        await db.from('vn_cartera').insert({
+          cliente: cliente,
+          deudas_pagadas: Number(datos.deudasPagadas||0),
+          fecha_pago: datos.fechaPago||null,
+          metodo_pago: datos.metodoPago||null,
+          banco: datos.banco||null
+        });
+      }
+    }catch(e){ log('Error guardando cartera cliente '+cliente+': '+e.message); }
+  }
+
+  // Parchear recaudoConfirmarPago para sincronizar cartera
+  var _origConfirmarPago = window.recaudoConfirmarPago;
+  window.recaudoConfirmarPago = async function(nombre, monto){
+    if(typeof _origConfirmarPago === 'function') _origConfirmarPago.apply(this, arguments);
+    setTimeout(async function(){
+      try{
+        let cartera = JSON.parse(localStorage.getItem('cartera_deudas')||'{}');
+        if(cartera[nombre]) await sbGuardarCarteraCliente(nombre, cartera[nombre]);
+      }catch(e){}
+    }, 300);
+  };
+
+  // Parchear carteraRegistrarPagoTiberio
+  var _origRegPagoTiberio = window.carteraRegistrarPagoTiberio;
+  window.carteraRegistrarPagoTiberio = async function(){
+    if(typeof _origRegPagoTiberio === 'function') _origRegPagoTiberio.apply(this, arguments);
+    setTimeout(async function(){
+      try{
+        let cartera = JSON.parse(localStorage.getItem('cartera_deudas')||'{}');
+        for(let cliente in cartera){
+          await sbGuardarCarteraCliente(cliente, cartera[cliente]);
+        }
+      }catch(e){}
+    }, 300);
+  };
+
+  // ── 4. MOVIMIENTOS CONTABLES ───────────────────────────
+
+  async function sbGuardarMovimiento(mov){
+    try{
+      await db.from('vn_movimientos').insert({
+        tipo: mov.tipo||'', monto: Number(mov.monto||0),
+        cuenta: mov.cuenta||'', descripcion: mov.descripcion||'',
+        fecha: mov.fecha || new Date().toISOString()
+      });
+    }catch(e){}
+  }
+
+  // Proxy sobre movimientosContables para auto-guardar en Supabase
   try{
     if(Array.isArray(window.movimientosContables)){
       let handler = {
@@ -10551,106 +10686,61 @@ console.log('✅ Parche historial deuda por día cargado');
           if(prop === 'push'){
             return function(){
               let result = Array.prototype.push.apply(target, arguments);
-              lsSet(KEYS.movimientos, target);
+              let ultimo = target[target.length-1];
+              if(ultimo) sbGuardarMovimiento(ultimo);
+              lsSet('vn_movimientos_perm', target);
               return result;
             };
           }
-          return target[prop];
+          return typeof target[prop] === 'function' ? target[prop].bind(target) : target[prop];
         }
       };
       window.movimientosContables = new Proxy(window.movimientosContables, handler);
     }
-  }catch(e){
-    // Fallback sin Proxy: guardar periódicamente
-    setInterval(function(){
-      if(Array.isArray(window.movimientosContables) && window.movimientosContables.length > 0){
-        lsSet(KEYS.movimientos, window.movimientosContables);
-      }
-    }, 3000);
-  }
+  }catch(e){}
 
-  // ── 3. cuentasMemoria: ya usa localStorage, pero forzar guardado extra ──
-  var _origCuentasGuardar = window.cuentasGuardar;
-  window.cuentasGuardar = function(){
-    if(typeof _origCuentasGuardar === 'function') _origCuentasGuardar.apply(this, arguments);
-    // Doble respaldo
-    try{ lsSet('cuentasMemoria_backup', window.cuentasMemoria); }catch(e){}
-  };
-
-  // Al cargar, restaurar cuentas desde respaldo si el principal está vacío
-  setTimeout(function(){
-    try{
-      let main = JSON.parse(localStorage.getItem('cuentasMemoria') || '[]');
-      if(!Array.isArray(main) || main.length === 0){
-        let backup = lsGet('cuentasMemoria_backup', []);
-        if(Array.isArray(backup) && backup.length > 0){
-          window.cuentasMemoria = backup;
-          localStorage.setItem('cuentasMemoria', JSON.stringify(backup));
-          console.log('✅ Cuentas restauradas desde backup:', backup.length);
-        }
-      }
-    }catch(e){}
-  }, 500);
-
-  // ── 4. cartera_deudas: ya usa localStorage, pero agregar auto-save ──────
-  // Si alguien borra localStorage accidentalmente, tener un respaldo en IndexedDB
-  // (simplificado: doble key)
-  function carteraBackup(){
-    try{
-      let cd = localStorage.getItem('cartera_deudas');
-      if(cd) localStorage.setItem('cartera_deudas_bk', cd);
-      let cp = localStorage.getItem('cartera_pagos_historial');
-      if(cp) localStorage.setItem('cartera_pagos_historial_bk', cp);
-    }catch(e){}
-  }
-
-  // Restaurar cartera desde backup si está vacía
-  setTimeout(function(){
-    try{
-      let cd = localStorage.getItem('cartera_deudas');
-      if(!cd || cd === '{}'){
-        let bk = localStorage.getItem('cartera_deudas_bk');
-        if(bk && bk !== '{}'){
-          localStorage.setItem('cartera_deudas', bk);
-          console.log('✅ cartera_deudas restaurada desde backup');
-        }
-      }
-    }catch(e){}
-  }, 600);
-
-  // ── 5. Auto-backup general cada 60 segundos ─────────────────────────────
-  setInterval(function(){
-    carteraBackup();
-    try{
-      if(Array.isArray(window.gastosMemoria) && window.gastosMemoria.length > 0){
-        lsSet(KEYS.gastos, window.gastosMemoria);
-      }
-      if(Array.isArray(window.movimientosContables) && window.movimientosContables.length > 0){
-        lsSet(KEYS.movimientos, window.movimientosContables);
-      }
-      if(Array.isArray(window.cuentasMemoria) && window.cuentasMemoria.length > 0){
-        lsSet('cuentasMemoria', window.cuentasMemoria);
-      }
-    }catch(e){}
-  }, 60000);
-
-  // ── 6. Guardar TODO antes de cerrar la pestaña ──────────────────────────
-  window.addEventListener('beforeunload', function(){
-    try{
-      if(Array.isArray(window.gastosMemoria)){
-        lsSet(KEYS.gastos, window.gastosMemoria);
-      }
-      if(Array.isArray(window.movimientosContables)){
-        lsSet(KEYS.movimientos, window.movimientosContables);
-      }
-      if(Array.isArray(window.cuentasMemoria)){
-        lsSet('cuentasMemoria', window.cuentasMemoria);
-      }
-      carteraBackup();
-    }catch(e){}
+  // ── 5. CARGA INICIAL AL ABRIR ──────────────────────────
+  window.addEventListener('DOMContentLoaded', async function(){
+    log('Cargando datos desde Supabase...');
+    await sbCargarCuentas();
+    await sbCargarGastos();
+    await sbCargarCartera();
+    log('✅ Datos cargados desde Supabase');
   });
 
-  console.log('✅ Parche persistencia total: gastos + movimientos + cuentas + cartera');
+  // Si DOMContentLoaded ya pasó (script al final), cargar igual
+  if(document.readyState === 'complete' || document.readyState === 'interactive'){
+    setTimeout(async function(){
+      log('Cargando datos desde Supabase...');
+      let cuentasOk = await sbCargarCuentas();
+      await sbCargarGastos();
+      await sbCargarCartera();
+      if(cuentasOk){
+        // Refrescar UI si hay módulo abierto
+        if(typeof renderConta === 'function') try{ renderConta('resumen'); }catch(e){}
+        if(typeof renderCartera === 'function') try{ renderCartera(); }catch(e){}
+      }
+      log('✅ Todo sincronizado con Supabase');
+    }, 800);
+  }
+
+  // ── 6. Auto-sync cada 5 minutos ────────────────────────
+  setInterval(async function(){
+    if(Array.isArray(window.cuentasMemoria) && window.cuentasMemoria.length > 0){
+      for(let i=0; i<window.cuentasMemoria.length; i++){
+        await sbGuardarCuenta(window.cuentasMemoria[i], i);
+      }
+    }
+    try{
+      let cartera = JSON.parse(localStorage.getItem('cartera_deudas')||'{}');
+      for(let cliente in cartera){
+        await sbGuardarCarteraCliente(cliente, cartera[cliente]);
+      }
+    }catch(e){}
+    log('Auto-sync completado');
+  }, 300000);
+
+  console.log('✅ Parche Supabase 24/7 activo — cuentas + gastos + cartera + movimientos');
 
 })();
 </script>
