@@ -10871,7 +10871,177 @@ console.log('✅ Parche historial deuda por día cargado');
   } else {
     iniciar();
   }
-
+// =====================================================
+// PARCHE V13 — 3 CORRECCIONES RECAUDO
+// 1. Deudas: solo mostrar el valor del día actual (no acumulado)
+// 2. Efectivo real: descontar deudas del efectivo
+// 3. Botón Reset checkboxes
+// Pegar JUSTO ANTES de la línea:
+// console.log('☁️ Supabase Realtime Sync V12 iniciado');
+// =====================================================
+ 
+// =====================================================
+// 1. DEUDAS: SOLO MOSTRAR VALOR DEL DÍA ACTUAL
+// recaudoGetDeudaHistorica ahora NO pre-llena los inputs
+// Solo retorna la deuda para mostrar el ícono/badge
+// Los inputs SOLO muestran lo que el usuario escribió HOY
+// =====================================================
+var _origRecaudoConstruirData_v13 = window.recaudoConstruirData;
+window.recaudoConstruirData = async function(){
+  // Llamar al original para obtener las filas
+  if(typeof _origRecaudoConstruirData_v13 !== 'function') return [];
+  var rows = await _origRecaudoConstruirData_v13();
+ 
+  // Leer el estado del día ACTUAL
+  var estado = {};
+  try {
+    var fk = 'recaudo_' + ((typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0]);
+    estado = JSON.parse(localStorage.getItem(fk) || '{}');
+  } catch(e){}
+ 
+  // Para cada fila: los inputs de deuda solo muestran lo que se guardó HOY
+  rows.forEach(function(r){
+    var saved = estado[r.cliente] || {};
+ 
+    // Guardar la deuda histórica para el badge/ícono
+    r._deudaHistCliente = r.deudaCliente;
+    r._deudaHistMia = r.deudaMia;
+ 
+    // Los valores de los INPUTS son solo lo del día actual
+    r.deudaCliente = Number(saved.deudaCliente) || 0;
+    r.deudaMia = Number(saved.deudaMia) || 0;
+ 
+    // Recalcular efectivoNeto con las deudas del día
+    r.totalTransferencia = r.nequi + r.bancolombia;
+    var efectivo = r.subtotal - r.totalTransferencia - r.faltantes - r.salidas - r.deudaMia;
+    // Si me deben (deudaCliente), eso es plata que NO me entregaron en efectivo
+    efectivo = efectivo - r.deudaCliente;
+    if(efectivo < 0) efectivo = 0;
+    r.efectivoNeto = efectivo;
+ 
+    // Reclasificar resumen
+    if(typeof recaudoClasificarResumen === 'function'){
+      // Usar la deuda histórica para el badge de estado
+      r.resumen = recaudoClasificarResumen(r._deudaHistCliente + r.deudaCliente, r._deudaHistMia + r.deudaMia);
+    }
+  });
+ 
+  return rows;
+};
+ 
+// =====================================================
+// 2. EFECTIVO REAL: DESCONTAR DEUDAS DEL DÍA
+// Override de renderRecaudo para recalcular el efectivo total
+// =====================================================
+var _origRenderRecaudo_v13 = window.renderRecaudo;
+window.renderRecaudo = async function(){
+  if(typeof _origRenderRecaudo_v13 === 'function') await _origRenderRecaudo_v13();
+ 
+  // Después del render, recalcular el EFECTIVO TOTAL descontando deudas
+  setTimeout(function(){
+    var body = document.getElementById('recaudoBody');
+    if(!body) return;
+ 
+    // Recalcular desde el cache
+    var cache = window._recaudoCache;
+    if(!cache || !cache.rows) return;
+ 
+    var efectivoReal = 0;
+    var totalDeudaCliente = 0;
+    var totalDeudaMia = 0;
+ 
+    cache.rows.forEach(function(r){
+      efectivoReal += r.efectivoNeto || 0;
+      totalDeudaCliente += r.deudaCliente || 0;
+      totalDeudaMia += r.deudaMia || 0;
+    });
+ 
+    // Actualizar la tarjeta EFECTIVO en el header
+    var cards = body.querySelectorAll('div');
+    cards.forEach(function(d){
+      // Buscar la tarjeta que dice "EFECTIVO" y tiene el monto
+      var spans = d.querySelectorAll('span');
+      spans.forEach(function(s){
+        if(s.textContent.trim() === 'Efectivo' && s.style.color === 'rgb(74, 222, 128)'){
+          // Encontrada la etiqueta "Efectivo"
+          var parent = s.closest('div[style*="background"]');
+          if(parent){
+            var valDiv = parent.querySelector('div[style*="font-weight:800"]');
+            if(valDiv){
+              valDiv.textContent = '$' + efectivoReal.toLocaleString('es-CO');
+            }
+          }
+        }
+      });
+    });
+ 
+    // Actualizar la barra de totales abajo
+    var miniDivs = body.querySelectorAll('.recaudo-mini');
+    miniDivs.forEach(function(mini){
+      var lab = mini.querySelector('.lab');
+      var val = mini.querySelector('.val');
+      if(lab && val){
+        if(lab.textContent.indexOf('Efectivo') > -1 && lab.textContent.indexOf('💵') > -1){
+          val.textContent = '$' + efectivoReal.toLocaleString('es-CO');
+        }
+      }
+    });
+ 
+    // Actualizar el cache con el valor real
+    if(cache.resumen){
+      cache.resumen.netoEfectivo = efectivoReal;
+      if(cache.resumen.desglose){
+        cache.resumen.desglose.efectivoVentas = efectivoReal;
+        cache.resumen.desglose.efectivoTotal = efectivoReal;
+      }
+    }
+ 
+    // =============================================
+    // INYECTAR BOTÓN RESET al lado de Actualizar
+    // =============================================
+    if(!document.getElementById('btnResetRecaudo')){
+      var actualizarBtn = body.querySelector('.btn-transferir[onclick*="renderRecaudo"]');
+      if(actualizarBtn && actualizarBtn.parentNode){
+        var resetBtn = document.createElement('button');
+        resetBtn.id = 'btnResetRecaudo';
+        resetBtn.className = 'btn-transferir';
+        resetBtn.style.cssText = 'background:rgba(239,68,68,0.2)!important;border:1px solid rgba(239,68,68,0.4)!important;color:#fca5a5!important;';
+        resetBtn.textContent = '🔄 Reset Checks';
+        resetBtn.title = 'Limpiar todos los checkboxes de Recaudo Domi y Recibido';
+        resetBtn.onclick = function(){
+          if(!confirm('¿Limpiar TODOS los checkboxes de Recaudo Domi y Recibido del día?')) return;
+          var fk = 'recaudo_' + cajaFechaHoy();
+          var est = {};
+          try { est = JSON.parse(localStorage.getItem(fk) || '{}'); } catch(e){}
+          Object.keys(est).forEach(function(nombre){
+            if(nombre.startsWith('__')) return;
+            if(est[nombre]){
+              est[nombre].recaudoDomi = 0;
+              est[nombre].recibido = false;
+            }
+          });
+          localStorage.setItem(fk, JSON.stringify(est));
+          renderRecaudo();
+        };
+        actualizarBtn.parentNode.insertBefore(resetBtn, actualizarBtn.nextSibling);
+      }
+    }
+ 
+    // =============================================
+    // Resaltar $0 en amarillo
+    // =============================================
+    var tds = body.querySelectorAll('td');
+    tds.forEach(function(td){
+      if(td.textContent.trim() === '$0' && td.style.fontWeight === '800'){
+        td.style.background = 'rgba(251,191,36,0.15)';
+        td.style.color = '#fbbf24';
+      }
+    });
+ 
+  }, 300);
+};
+ 
+console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
   console.log('☁️ Supabase Realtime Sync V12 iniciado');
 })();
 </script>
