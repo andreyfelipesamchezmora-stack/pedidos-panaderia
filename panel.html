@@ -1544,7 +1544,12 @@ async function imprimirTicket(){
   ventana.document.close();
 }
 
-// document.addEventListener("DOMContentLoaded",()=>cargar()); // reemplazado por parche sync
+document.addEventListener("DOMContentLoaded", async ()=>{
+  if(typeof vnSyncCargar==='function') await vnSyncCargar();
+  try{ var g=JSON.parse(localStorage.getItem('clientes')); if(Array.isArray(g)&&g.length>0) window.clientes=g; }catch(e){}
+  cargar();
+});
+
 document.addEventListener("keydown",function(e){
   let modal=document.getElementById("modalPedido");
   if(modal.style.display==="flex"){
