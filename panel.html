@@ -3526,40 +3526,59 @@ async function renderRecaudo(){
               }
  
               // HTML de deuda
-              let deudaHtml = '';
-              if(r.deudaCliente > 0 || r.deudaMia > 0){
-                if(r.deudasPagadas > 0 && r.deudaMetodo){
-                  let metodoIcono = r.deudaMetodo === 'efectivo' ? '💵' : '🏦';
-                  let metodoLabel = r.deudaMetodo === 'efectivo' ? 'Efectivo' : (r.deudaBanco || 'Transf.');
-                  deudaHtml = `
-                    <div style="font-size:10px;color:#4ade80;font-weight:700;margin-bottom:3px;">
-                      ✓ ${metodoIcono} ${metodoLabel}
-                    </div>
-                    <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox" checked
-                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})"
-                      title="Click para revertir">
-                  `;
-                } else if(r.deudaMiaPagada > 0){
-                  deudaHtml = `
-                    <div style="font-size:10px;color:#60a5fa;font-weight:700;margin-bottom:3px;">
-                      ✓ Descontado
-                    </div>
-                    <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox" checked
-                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})">
-                  `;
-                } else {
-                  deudaHtml = `
-                    <div style="font-size:11px;color:${r.deudaCliente > 0 ? '#fca5a5' : '#93c5fd'};font-weight:700;margin-bottom:3px;">
-                      ${r.deudaCliente > 0 ? '⚠️ ' + recaudoMoney(r.deudaCliente) : '💙 ' + recaudoMoney(r.deudaMia)}
-                    </div>
-                    <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox"
-                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})"
-                      title="${r.deudaCliente > 0 ? 'Marcar pago' : 'Descontar'}">
-                  `;
-                }
-              } else {
-                deudaHtml = '<span style="color:#4ade80;font-size:11px">✓ Sin deuda</span>';
-              }
+              // ✅ VERSIÓN CORREGIDA — deudaHtml definitivo
+let deudaCliente_r = Number(r.deudaCliente) || 0;
+let deudaMia_r     = Number(r.deudaMia)     || 0;
+let pagadas_r      = Number(r.deudasPagadas) || 0;
+
+let deudaHtml;
+if (deudaCliente_r <= 0 && deudaMia_r <= 0) {
+  // Sin deuda
+  deudaHtml = `<span style="color:#4ade80;font-size:11px">✓ Sin deuda</span>`;
+
+} else {
+  // Calcular si está pagado COMPLETAMENTE
+  let deudaPendiente = deudaCliente_r > 0
+    ? Math.max(deudaCliente_r - pagadas_r, 0)
+    : Math.max(deudaMia_r - pagadas_r, 0);
+
+  let pagadoCompleto = pagadas_r > 0 && r.deudaMetodo && deudaPendiente === 0;
+
+  if (pagadoCompleto) {
+    // ✅ PAGADO TOTAL
+    let icono = r.deudaMetodo === 'efectivo' ? '💵' : '🏦';
+    let banco  = r.deudaMetodo === 'efectivo' ? 'Efectivo' : (r.deudaBanco || 'Transf.');
+    deudaHtml = `
+      <div style="font-size:10px;color:#4ade80;font-weight:700;margin-bottom:3px">${icono} ${banco}</div>
+      <input id="recdeudasaldo_${safe}" class="recaudo-check" type="checkbox" checked
+        onchange="recaudoMarcarDeudaSaldada('${safe}',${deudaCliente_r},${deudaMia_r})"
+        title="Click para revertir">`;
+
+  } else if (r.deudaMiaPagada > 0 && deudaMia_r <= 0) {
+    // ✅ DEUDA MÍA DESCONTADA
+    deudaHtml = `
+      <div style="font-size:10px;color:#60a5fa;font-weight:700;margin-bottom:3px">✅ Descontado</div>
+      <input id="recdeudasaldo_${safe}" class="recaudo-check" type="checkbox" checked
+        onchange="recaudoMarcarDeudaSaldada('${safe}',${deudaCliente_r},${deudaMia_r})">`;
+
+  } else {
+    // 🔴🔵 DEUDA PENDIENTE — siempre mostrar monto y checkbox desmarcado
+    let color  = deudaCliente_r > 0 ? '#fca5a5' : '#93c5fd';
+    let emoji  = deudaCliente_r > 0 ? '🔴' : '🔵';
+    let label  = deudaCliente_r > 0
+      ? `${emoji} Me debe: ${recaudoMoney(deudaCliente_r)}`
+      : `${emoji} Le debo: ${recaudoMoney(deudaMia_r)}`;
+    let abono  = pagadas_r > 0
+      ? `<div style="font-size:10px;color:#fbbf24;font-weight:700;margin-top:2px">⚡ Abono: ${recaudoMoney(pagadas_r)} — Saldo: ${recaudoMoney(deudaPendiente)}</div>`
+      : '';
+    deudaHtml = `
+      <div style="font-size:11px;color:${color};font-weight:700;margin-bottom:3px">${label}</div>
+      ${abono}
+      <input id="recdeudasaldo_${safe}" class="recaudo-check" type="checkbox"
+        onchange="recaudoMarcarDeudaSaldada('${safe}',${deudaCliente_r},${deudaMia_r})"
+        title="${deudaCliente_r > 0 ? 'Marcar pago' : 'Descontar'}">`;
+  }
+}
  
               return `
                 <tr style="background:${bgColor}; transition:background 0.2s;">
@@ -11043,92 +11062,6 @@ window.renderRecaudo = async function(){
  
 console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
   console.log('☁️ Supabase Realtime Sync V12 iniciado');
-})();
-
-// ============================================================
-// PARCHE FIX-DEUDA-v2 — Checkbox y aviso de deuda correctos
-// ============================================================
-(function() {
-  'use strict';
-
-  var _origRender = window.renderRecaudo;
-
-  window.renderRecaudo = async function() {
-    // Ejecutar el render original
-    if (typeof _origRender === 'function') {
-      await _origRender.apply(this, arguments);
-    }
-
-    // Post-procesamiento: corregir cada celda de deuda en la tabla
-    setTimeout(function() {
-      var rows = window.recaudoCache && window.recaudoCache.rows;
-      if (!Array.isArray(rows)) return;
-
-      rows.forEach(function(r) {
-        var safe = r.cliente.replace(/[^a-zA-Z0-9]/g, '_');
-        var celda = document.getElementById('recdeudasaldo_' + safe);
-        if (!celda) return;
-
-        var contenedor = celda.closest ? celda.closest('td') : celda.parentNode;
-        if (!contenedor) return;
-
-        var deudaCliente = Number(r.deudaCliente) || 0;
-        var deudaMia     = Number(r.deudaMia)     || 0;
-        var deudasPagadas = Number(r.deudasPagadas) || 0;
-
-        // ── CASO 1: Sin deuda de ningún lado ──
-        if (deudaCliente === 0 && deudaMia === 0) {
-          contenedor.innerHTML = '<span style="color:#4ade80;font-size:11px">✅ Sin deuda</span>';
-          return;
-        }
-
-        // ── CASO 2: Deuda pagada COMPLETAMENTE hoy ──
-        // Solo se considera pagado si deudasPagadas >= la deuda pendiente
-        var estaPagadoCompleto = (deudasPagadas > 0) &&
-                                  (r.deudaMetodo) &&
-                                  (deudasPagadas >= deudaCliente) &&
-                                  (deudasPagadas >= deudaMia);
-
-        if (estaPagadoCompleto) {
-          contenedor.innerHTML =
-            '<div style="font-size:10px;color:#4ade80;font-weight:700;margin-bottom:3px">' +
-              (r.deudaMetodo === 'efectivo' ? '💵' : '🏦') + ' ' +
-              (r.deudaMetodo === 'efectivo' ? 'Efectivo' : (r.deudaBanco || 'Transf.')) +
-            '</div>' +
-            '<input id="recdeudasaldo_' + safe + '" class="recaudo-check" type="checkbox" checked ' +
-            'onchange="recaudoMarcarDeudaSaldada(\'' + safe + '\',' + deudaCliente + ',' + deudaMia + ')" ' +
-            'title="Click para revertir">';
-          return;
-        }
-
-        // ── CASO 3: Deuda PENDIENTE (total o con abono parcial) ──
-        var saldoPendiente = Math.max(deudaCliente - deudasPagadas, 0) ||
-                             Math.max(deudaMia - deudasPagadas, 0);
-        var tieneAbonoParcial = deudasPagadas > 0 && !estaPagadoCompleto;
-        var colorDeuda = deudaCliente > 0 ? '#fca5a5' : '#93c5fd';
-        var labelDeuda = deudaCliente > 0
-          ? '🔴 Me debe: ' + recaudoMoney(deudaCliente)
-          : '🔵 Le debo: ' + recaudoMoney(deudaMia);
-
-        // Si hay abono parcial, mostrar el saldo restante
-        var labelExtra = tieneAbonoParcial
-          ? '<div style="font-size:10px;color:#fbbf24;font-weight:700;margin-top:2px">⚡ Abono: ' +
-            recaudoMoney(deudasPagadas) + ' — Saldo: ' + recaudoMoney(saldoPendiente) + '</div>'
-          : '';
-
-        contenedor.innerHTML =
-          '<div style="font-size:11px;color:' + colorDeuda + ';font-weight:700;margin-bottom:3px">' +
-            labelDeuda +
-          '</div>' +
-          labelExtra +
-          '<input id="recdeudasaldo_' + safe + '" class="recaudo-check" type="checkbox" ' +
-          'onchange="recaudoMarcarDeudaSaldada(\'' + safe + '\',' + deudaCliente + ',' + deudaMia + ')" ' +
-          'title="' + (deudaCliente > 0 ? 'Marcar pago' : 'Descontar') + '">';
-      });
-    }, 200);
-  };
-
-  console.log('✅ PARCHE FIX-DEUDA-v2 aplicado — checkbox y aviso de deuda correctos');
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
