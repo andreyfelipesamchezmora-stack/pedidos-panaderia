@@ -10465,236 +10465,346 @@ console.log('✅ Parche historial deuda por día cargado');
 })();
 
 // =====================================================
-// SUPABASE CLOUD SYNC — V11 DEFINITIVO
-// Sistema simple: cada tabla = 1 fila JSON en Supabase
+// SUPABASE REALTIME SYNC V12
+// Sincronización en TIEMPO REAL entre navegadores
+// Cada cambio se refleja en 1-2 segundos en el otro
 // =====================================================
 (function(){
   'use strict';
 
-  // Mapeo: localStorage key → tabla Supabase
-  var SYNC_MAP = {
+  // ==========================================
+  // MAPEO COMPLETO
+  // ==========================================
+  var MAP = {
     'clientes':               'clientes_config',
-    'clientesDatos':           'clientes_datos',
-    'cuentasMemoria':          'cuentas_bancarias',
-    'transferenciasMem':       'transferencias',
-    'cuotas_obligaciones':     'cuotas_obligaciones',
-    'contabilidad_categorias': 'categorias_contables',
-    'cartera_deudas':          'cartera_deudas',
-    'cartera_pagos_historial': 'cartera_pagos',
-    'obs_marquee':             'observaciones_marquee',
-    'nomina_data':             'nomina_config',
-    'cuentas_por_pagar':       'cuentas_por_pagar'
+    'clientesDatos':          'clientes_datos',
+    'cuentasMemoria':         'cuentas_bancarias',
+    'transferenciasMem':      'transferencias',
+    'cuotas_obligaciones':    'cuotas_obligaciones',
+    'contabilidad_categorias':'categorias_contables',
+    'cartera_deudas':         'cartera_deudas',
+    'cartera_pagos_historial':'cartera_pagos',
+    'obs_marquee':            'observaciones_marquee',
+    'nomina_data':            'nomina_config',
+    'cuentas_por_pagar':      'cuentas_por_pagar'
   };
 
-  // Variables globales a sincronizar periódicamente
-  var GLOBALS = {
-    'movimientos_contables': function(){ return window.movimientosContables; },
-    'gastos_manuales': function(){
-      return window.gastosMemoria || (function(){
-        try { return JSON.parse(sessionStorage.getItem('gastos')||'[]'); } catch(e){ return []; }
-      })();
-    }
+  // Inverso: tabla → localStorage key
+  var RMAP = {};
+  for(var k in MAP) RMAP[MAP[k]] = k;
+
+  // Todas las tablas que necesitamos monitorear
+  var TODAS_TABLAS = Object.values(MAP).concat(['movimientos_contables','gastos_manuales','recaudo_diario','monedas_diario']);
+
+  // Guardar refs originales ANTES de interceptar
+  var LS = {
+    set: localStorage.setItem.bind(localStorage),
+    get: localStorage.getItem.bind(localStorage),
+    rem: localStorage.removeItem.bind(localStorage)
+  };
+  var SS = {
+    set: sessionStorage.setItem.bind(sessionStorage),
+    get: sessionStorage.getItem.bind(sessionStorage)
   };
 
-  var origSet = localStorage.setItem.bind(localStorage);
-  var origGet = localStorage.getItem.bind(localStorage);
+  // Flag para evitar loops infinitos (cuando recibimos un update de Realtime no queremos re-subir)
+  var _skipUpload = false;
 
-  // ========== SUBIR A SUPABASE ==========
-  async function subirTabla(tabla, datos){
+  // ==========================================
+  // ESCRIBIR A SUPABASE (upsert)
+  // ==========================================
+  async function subir(tabla, datos){
     try {
-      var res = await db.from(tabla).upsert(
-        { id: 1, datos: datos, updated_at: new Date().toISOString() },
-        { onConflict: 'id' }
+      var r = await db.from(tabla).upsert(
+        {id: 1, datos: datos, updated_at: new Date().toISOString()},
+        {onConflict: 'id', ignoreDuplicates: false}
       );
-      if(res.error){
-        console.error('☁️ ERROR subir '+tabla+':', res.error.message);
+      if(r.error){
+        console.error('☁️✗ '+tabla+': '+r.error.message);
         return false;
       }
       return true;
     } catch(e){
-      console.error('☁️ FALLO subir '+tabla+':', e);
+      console.error('☁️✗ '+tabla+': '+e.message);
       return false;
     }
   }
 
-  // Subir por fecha (recaudo, monedas)
   async function subirFecha(tabla, fecha, datos){
     try {
-      var res = await db.from(tabla).upsert(
-        { fecha: fecha, datos: datos, updated_at: new Date().toISOString() },
-        { onConflict: 'fecha' }
+      var r = await db.from(tabla).upsert(
+        {fecha: fecha, datos: datos, updated_at: new Date().toISOString()},
+        {onConflict: 'fecha', ignoreDuplicates: false}
       );
-      if(res.error){
-        console.error('☁️ ERROR subir '+tabla+'/'+fecha+':', res.error.message);
-        return false;
-      }
-      return true;
-    } catch(e){
-      console.error('☁️ FALLO subir '+tabla+'/'+fecha+':', e);
-      return false;
-    }
+      return !r.error;
+    } catch(e){ return false; }
   }
 
-  // ========== BAJAR DE SUPABASE ==========
-  async function bajarTabla(tabla){
+  // ==========================================
+  // LEER DE SUPABASE
+  // ==========================================
+  async function bajar(tabla){
     try {
-      var res = await db.from(tabla).select('datos').eq('id', 1).maybeSingle();
-      if(res.error){
-        console.error('☁️ ERROR bajar '+tabla+':', res.error.message);
-        return null;
-      }
-      if(!res.data) return null;
-      return res.data.datos;
-    } catch(e){
-      console.error('☁️ FALLO bajar '+tabla+':', e);
-      return null;
-    }
+      var r = await db.from(tabla).select('datos').eq('id',1).maybeSingle();
+      if(!r || r.error || !r.data) return null;
+      return r.data.datos;
+    } catch(e){ return null; }
   }
 
   async function bajarFecha(tabla, fecha){
     try {
-      var res = await db.from(tabla).select('datos').eq('fecha', fecha).maybeSingle();
-      if(res.error) return null;
-      if(!res.data) return null;
-      return res.data.datos;
+      var r = await db.from(tabla).select('datos').eq('fecha',fecha).maybeSingle();
+      if(!r || r.error || !r.data) return null;
+      return r.data.datos;
     } catch(e){ return null; }
   }
 
-  // ========== INTERCEPTAR localStorage.setItem ==========
-  localStorage.setItem = function(key, value){
-    // Siempre guardar localmente primero
-    origSet(key, value);
+  // ==========================================
+  // APLICAR DATOS A MEMORIA + LOCALSTORAGE
+  // ==========================================
+  function aplicar(tabla, datos){
+    if(!datos) return;
+    _skipUpload = true;
 
-    // Si es una key mapeada, subir a Supabase
-    if(SYNC_MAP[key]){
-      try {
-        var datos = JSON.parse(value);
-        subirTabla(SYNC_MAP[key], datos);
-      } catch(e){}
-    }
+    var lsKey = RMAP[tabla];
 
-    // Recaudo diario dinámico
-    if(key.indexOf('recaudo_') === 0 && key.length > 10){
-      try {
-        subirFecha('recaudo_diario', key.replace('recaudo_',''), JSON.parse(value));
-      } catch(e){}
-    }
-
-    // Monedas diario dinámico
-    if(key.indexOf('monedas_') === 0 && key.length > 10){
-      try {
-        subirFecha('monedas_diario', key.replace('monedas_',''), JSON.parse(value));
-      } catch(e){}
-    }
-  };
-
-  // Interceptar sessionStorage para gastos
-  var origSSSet = sessionStorage.setItem.bind(sessionStorage);
-  sessionStorage.setItem = function(key, value){
-    origSSSet(key, value);
-    if(key === 'gastos'){
-      try { subirTabla('gastos_manuales', JSON.parse(value)); } catch(e){}
-    }
-  };
-
-  // ========== SYNC PERIÓDICO DE VARIABLES GLOBALES ==========
-  var lastMovHash = '', lastGastHash = '';
-  setInterval(function(){
-    // movimientosContables
-    if(Array.isArray(window.movimientosContables) && window.movimientosContables.length > 0){
-      var h = JSON.stringify(window.movimientosContables).length + '_' + window.movimientosContables.length;
-      if(h !== lastMovHash){
-        lastMovHash = h;
-        subirTabla('movimientos_contables', window.movimientosContables);
+    if(tabla === 'clientes_config'){
+      if(Array.isArray(datos) && datos.length > 0){
+        window.clientes = datos;
+        LS.set('clientes', JSON.stringify(datos));
       }
+    }
+    else if(tabla === 'cuentas_bancarias'){
+      if(Array.isArray(datos) && datos.length > 0){
+        window.cuentasMemoria = datos;
+        LS.set('cuentasMemoria', JSON.stringify(datos));
+      }
+    }
+    else if(tabla === 'transferencias'){
+      window.transferenciasMem = datos;
+      LS.set('transferenciasMem', JSON.stringify(datos));
+    }
+    else if(tabla === 'movimientos_contables'){
+      if(Array.isArray(datos) && datos.length > 0){
+        window.movimientosContables = datos;
+      }
+    }
+    else if(tabla === 'gastos_manuales'){
+      if(Array.isArray(datos) && datos.length > 0){
+        window.gastosMemoria = datos;
+        SS.set('gastos', JSON.stringify(datos));
+      }
+    }
+    else if(lsKey){
+      LS.set(lsKey, JSON.stringify(datos));
+    }
+
+    setTimeout(function(){ _skipUpload = false; }, 500);
+  }
+
+  // ==========================================
+  // INTERCEPTAR localStorage.setItem
+  // ==========================================
+  localStorage.setItem = function(key, value){
+    LS.set(key, value);
+    if(_skipUpload) return;
+
+    // Tablas mapeadas
+    if(MAP[key]){
+      try { subir(MAP[key], JSON.parse(value)); } catch(e){}
+    }
+    // Recaudo dinámico
+    if(key.indexOf('recaudo_')===0 && key.length>10){
+      try { subirFecha('recaudo_diario', key.slice(8), JSON.parse(value)); } catch(e){}
+    }
+    // Monedas dinámico
+    if(key.indexOf('monedas_')===0 && key.length>10){
+      try { subirFecha('monedas_diario', key.slice(8), JSON.parse(value)); } catch(e){}
+    }
+  };
+
+  // Interceptar sessionStorage
+  sessionStorage.setItem = function(key, value){
+    SS.set(key, value);
+    if(_skipUpload) return;
+    if(key === 'gastos'){
+      try { subir('gastos_manuales', JSON.parse(value)); } catch(e){}
+    }
+  };
+
+  // ==========================================
+  // SYNC PERIÓDICO DE VARIABLES GLOBALES
+  // (estas no pasan por localStorage.setItem)
+  // ==========================================
+  var _lastMovLen = 0, _lastGasLen = 0;
+
+  setInterval(function(){
+    if(_skipUpload) return;
+    // movimientosContables
+    var mc = window.movimientosContables;
+    if(Array.isArray(mc) && mc.length > 0 && mc.length !== _lastMovLen){
+      _lastMovLen = mc.length;
+      subir('movimientos_contables', mc);
     }
     // gastosMemoria
     var gm = window.gastosMemoria;
-    if(!gm) try { gm = JSON.parse(sessionStorage.getItem('gastos')||'[]'); } catch(e){ gm = []; }
-    if(Array.isArray(gm) && gm.length > 0){
-      var h2 = JSON.stringify(gm).length + '_' + gm.length;
-      if(h2 !== lastGastHash){
-        lastGastHash = h2;
-        subirTabla('gastos_manuales', gm);
-      }
+    if(!Array.isArray(gm)){
+      try { gm = JSON.parse(SS.get('gastos')||'[]'); } catch(e){ gm = []; }
     }
-  }, 4000);
+    if(gm.length > 0 && gm.length !== _lastGasLen){
+      _lastGasLen = gm.length;
+      subir('gastos_manuales', gm);
+    }
+  }, 3000);
 
-  // ========== CARGA INICIAL DESDE SUPABASE ==========
-  async function cargarDesdeNube(){
-    console.log('☁️ Descargando datos de Supabase...');
-    var ok = 0, fail = 0;
+  // ==========================================
+  // REALTIME: ESCUCHAR CAMBIOS EN VIVO
+  // ==========================================
+  function iniciarRealtime(){
+    try {
+      // Escuchar TODAS las tablas singleton (id=1)
+      var tablasRT = [
+        'clientes_config','clientes_datos','cuentas_bancarias',
+        'transferencias','movimientos_contables','gastos_manuales',
+        'nomina_config','cartera_deudas','cartera_pagos',
+        'cuotas_obligaciones','categorias_contables',
+        'cuentas_por_pagar','observaciones_marquee'
+      ];
+
+      tablasRT.forEach(function(tabla){
+        db.channel('rt-'+tabla)
+          .on('postgres_changes',
+            { event: '*', schema: 'public', table: tabla, filter: 'id=eq.1' },
+            function(payload){
+              if(payload.new && payload.new.datos !== undefined){
+                console.log('📡 Realtime: '+tabla+' actualizado');
+                aplicar(tabla, payload.new.datos);
+                // Refrescar UI
+                _refrescarUI(tabla);
+              }
+            }
+          )
+          .subscribe(function(status){
+            if(status === 'SUBSCRIBED'){
+              console.log('📡 RT: '+tabla+' ✓');
+            }
+          });
+      });
+
+      // Recaudo diario
+      db.channel('rt-recaudo')
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'recaudo_diario' },
+          function(payload){
+            if(payload.new && payload.new.fecha && payload.new.datos){
+              var hoy = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
+              if(payload.new.fecha === hoy){
+                console.log('📡 Realtime: recaudo_'+hoy+' actualizado');
+                _skipUpload = true;
+                LS.set('recaudo_'+hoy, JSON.stringify(payload.new.datos));
+                setTimeout(function(){ _skipUpload = false; }, 500);
+              }
+            }
+          }
+        )
+        .subscribe();
+
+      console.log('📡 Realtime: escuchando cambios en vivo');
+    } catch(e){
+      console.error('📡 Realtime error:', e);
+    }
+  }
+
+  function _refrescarUI(tabla){
+    setTimeout(function(){
+      try {
+        if(tabla === 'clientes_config' && typeof cargar === 'function') cargar();
+        if(tabla === 'observaciones_marquee' && typeof actualizarMarquee === 'function') actualizarMarquee();
+        // Para las demás tablas, refrescar el panel si está abierto
+        var contaBody = document.getElementById('contaBody');
+        if(contaBody && contaBody.innerHTML.length > 0){
+          if(tabla === 'cuentas_bancarias' || tabla === 'movimientos_contables' || tabla === 'gastos_manuales'){
+            // Si contabilidad está abierta, no forzar refresh automático para no interrumpir
+          }
+        }
+      } catch(e){}
+    }, 300);
+  }
+
+  // ==========================================
+  // CARGA INICIAL DESDE SUPABASE
+  // ==========================================
+  async function cargaInicial(){
+    console.log('☁️ Sincronizando con Supabase...');
+    var descargados = 0, subidos = 0;
 
     // 1. Tablas mapeadas
-    var keys = Object.keys(SYNC_MAP);
-    for(var i = 0; i < keys.length; i++){
-      var lsKey = keys[i];
-      var tabla = SYNC_MAP[lsKey];
-      var datos = await bajarTabla(tabla);
+    for(var lsKey in MAP){
+      var tabla = MAP[lsKey];
+      var datos = await bajar(tabla);
 
       if(datos !== null){
-        var hasData = Array.isArray(datos) ? datos.length > 0 : (datos && typeof datos === 'object' && Object.keys(datos).length > 0);
-        if(hasData){
-          origSet(lsKey, JSON.stringify(datos));
-          // Actualizar variables globales
-          if(lsKey === 'clientes') window.clientes = datos;
-          if(lsKey === 'cuentasMemoria') window.cuentasMemoria = datos;
-          if(lsKey === 'transferenciasMem') window.transferenciasMem = datos;
-          ok++;
-          console.log('  ✓ ' + tabla);
+        var tiene = Array.isArray(datos) ? datos.length > 0 : (datos && typeof datos === 'object' && Object.keys(datos).length > 0);
+        if(tiene){
+          aplicar(tabla, datos);
+          descargados++;
+          continue;
         }
-      } else {
-        // Supabase vacío — subir lo que tenemos local
-        var local = origGet(lsKey);
-        if(local){
-          try {
-            var localData = JSON.parse(local);
-            var localHas = Array.isArray(localData) ? localData.length > 0 : (localData && Object.keys(localData).length > 0);
-            if(localHas){
-              var subido = await subirTabla(tabla, localData);
-              if(subido) console.log('  ⬆ ' + lsKey + ' subido a ' + tabla);
-            }
-          } catch(e){}
-        }
+      }
+
+      // Supabase vacío → subir local
+      var localRaw = LS.get(lsKey);
+      if(localRaw){
+        try {
+          var localD = JSON.parse(localRaw);
+          var localTiene = Array.isArray(localD) ? localD.length > 0 : (localD && typeof localD === 'object' && Object.keys(localD).length > 0);
+          if(localTiene){
+            var ok = await subir(tabla, localD);
+            if(ok){ subidos++; console.log('  ⬆ '+lsKey+' → '+tabla); }
+          }
+        } catch(e){}
       }
     }
 
     // 2. Variables globales
-    var movData = await bajarTabla('movimientos_contables');
-    if(movData && Array.isArray(movData) && movData.length > 0){
-      window.movimientosContables = movData;
-      lastMovHash = JSON.stringify(movData).length + '_' + movData.length;
-      ok++;
-      console.log('  ✓ movimientos_contables');
+    var mcD = await bajar('movimientos_contables');
+    if(mcD && Array.isArray(mcD) && mcD.length > 0){
+      window.movimientosContables = mcD;
+      _lastMovLen = mcD.length;
+      descargados++;
     } else if(Array.isArray(window.movimientosContables) && window.movimientosContables.length > 0){
-      await subirTabla('movimientos_contables', window.movimientosContables);
-      console.log('  ⬆ movimientosContables subido');
+      await subir('movimientos_contables', window.movimientosContables);
+      _lastMovLen = window.movimientosContables.length;
+      subidos++;
     }
 
-    var gastData = await bajarTabla('gastos_manuales');
-    if(gastData && Array.isArray(gastData) && gastData.length > 0){
-      window.gastosMemoria = gastData;
-      lastGastHash = JSON.stringify(gastData).length + '_' + gastData.length;
-      origSSSet('gastos', JSON.stringify(gastData));
-      ok++;
-      console.log('  ✓ gastos_manuales');
+    var gmD = await bajar('gastos_manuales');
+    if(gmD && Array.isArray(gmD) && gmD.length > 0){
+      window.gastosMemoria = gmD;
+      SS.set('gastos', JSON.stringify(gmD));
+      _lastGasLen = gmD.length;
+      descargados++;
     } else {
       var gLocal = window.gastosMemoria || [];
-      if(!gLocal.length) try { gLocal = JSON.parse(sessionStorage.getItem('gastos')||'[]'); } catch(e){}
+      if(!gLocal.length) try { gLocal = JSON.parse(SS.get('gastos')||'[]'); } catch(e){}
       if(gLocal.length > 0){
-        await subirTabla('gastos_manuales', gLocal);
-        console.log('  ⬆ gastosMemoria subido');
+        await subir('gastos_manuales', gLocal);
+        _lastGasLen = gLocal.length;
+        subidos++;
       }
     }
 
-    // 3. Recaudo del día
+    // 3. Recaudo + Monedas del día
     var hoy = (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
-    var recData = await bajarFecha('recaudo_diario', hoy);
-    if(recData && Object.keys(recData).length > 0){
-      origSet('recaudo_' + hoy, JSON.stringify(recData));
-      console.log('  ✓ recaudo_' + hoy);
+
+    var recD = await bajarFecha('recaudo_diario', hoy);
+    if(recD && Object.keys(recD).length > 0){
+      _skipUpload = true;
+      LS.set('recaudo_'+hoy, JSON.stringify(recD));
+      setTimeout(function(){ _skipUpload = false; }, 300);
+      descargados++;
     } else {
-      var recLocal = origGet('recaudo_' + hoy);
+      var recLocal = LS.get('recaudo_'+hoy);
       if(recLocal){
         try {
           var rl = JSON.parse(recLocal);
@@ -10703,62 +10813,66 @@ console.log('✅ Parche historial deuda por día cargado');
       }
     }
 
-    // 4. Monedas del día
-    var monData = await bajarFecha('monedas_diario', hoy);
-    if(monData && Array.isArray(monData) && monData.length > 0){
-      origSet('monedas_' + hoy, JSON.stringify(monData));
+    var monD = await bajarFecha('monedas_diario', hoy);
+    if(monD && Array.isArray(monD) && monD.length > 0){
+      _skipUpload = true;
+      LS.set('monedas_'+hoy, JSON.stringify(monD));
+      setTimeout(function(){ _skipUpload = false; }, 300);
     }
 
-    console.log('✅ Sincronización completa (' + ok + ' tablas descargadas)');
+    console.log('✅ Sync: '+descargados+' descargados, '+subidos+' subidos');
 
     // Refrescar UI
     try { if(typeof cargar === 'function') await cargar(); } catch(e){}
     try { if(typeof actualizarMarquee === 'function') actualizarMarquee(); } catch(e){}
+
+    // AHORA activar Realtime
+    iniciarRealtime();
   }
 
-  // ========== EJECUTAR ==========
-  function iniciarSync(){
-    setTimeout(function(){
-      cargarDesdeNube().catch(function(e){
-        console.error('❌ Error en sync inicial:', e);
-      });
-    }, 1000);
-  }
-
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', iniciarSync);
-  } else {
-    iniciarSync();
-  }
-
-  // ========== INDICADOR VISUAL ==========
-  setTimeout(function(){
+  // ==========================================
+  // BADGE VISUAL
+  // ==========================================
+  function crearBadge(){
     if(document.getElementById('vnSyncBadge')) return;
     var s = document.createElement('style');
-    s.textContent = '@keyframes vnPulse{0%,100%{opacity:1;}50%{opacity:0.4;}}';
+    s.textContent = '@keyframes vnP{0%,100%{opacity:1;}50%{opacity:0.4;}}';
     document.head.appendChild(s);
     var d = document.createElement('div');
     d.id = 'vnSyncBadge';
-    d.style.cssText = 'position:fixed;bottom:10px;right:10px;background:rgba(16,185,129,0.9);color:white;padding:6px 12px;border-radius:20px;font-size:11px;font-weight:600;z-index:99998;display:flex;align-items:center;gap:6px;box-shadow:0 4px 12px rgba(0,0,0,0.2);font-family:Inter,sans-serif;cursor:pointer;';
-    d.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:white;animation:vnPulse 2s infinite;"></span> Sincronizado con Supabase';
+    d.style.cssText = 'position:fixed;bottom:12px;right:12px;background:rgba(16,185,129,0.92);color:white;padding:7px 14px;border-radius:20px;font-size:11px;font-weight:600;z-index:99998;display:flex;align-items:center;gap:6px;box-shadow:0 4px 14px rgba(0,0,0,0.25);font-family:Inter,sans-serif;cursor:pointer;backdrop-filter:blur(8px);';
+    d.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:white;animation:vnP 2s infinite;"></span> En vivo · Supabase';
+    d.title = 'Click para forzar sincronización';
     d.onclick = function(){
-      d.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:#fbbf24;"></span> Sincronizando...';
-      cargarDesdeNube().then(function(){
-        d.innerHTML = '<span style="width:6px;height:6px;border-radius:50%;background:white;animation:vnPulse 2s infinite;"></span> Sincronizado ✓';
+      d.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:#fbbf24;"></span> Sincronizando...';
+      d.style.background = 'rgba(245,158,11,0.9)';
+      cargaInicial().then(function(){
+        d.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:white;animation:vnP 2s infinite;"></span> En vivo · Supabase ✓';
+        d.style.background = 'rgba(16,185,129,0.92)';
       });
     };
     document.body.appendChild(d);
-  }, 3000);
+  }
 
-  // Re-sync cada 30 segundos
-  setInterval(function(){
-    // Solo subir variables globales periódicamente
-    if(Array.isArray(window.movimientosContables) && window.movimientosContables.length > 0){
-      subirTabla('movimientos_contables', window.movimientosContables);
-    }
-  }, 30000);
+  // ==========================================
+  // INICIAR
+  // ==========================================
+  function iniciar(){
+    setTimeout(function(){
+      cargaInicial().catch(function(e){
+        console.error('❌ Sync error:', e);
+      });
+      crearBadge();
+    }, 1200);
+  }
 
-  console.log('☁️ Supabase Sync V11 iniciado');
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', iniciar);
+  } else {
+    iniciar();
+  }
+
+  console.log('☁️ Supabase Realtime Sync V12 iniciado');
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
