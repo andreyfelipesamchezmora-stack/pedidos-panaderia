@@ -11131,10 +11131,13 @@ window.vnSyncCargar = async function(){
 
     // Refrescar UI
     setTimeout(function(){
-      try{ if(typeof cargar==='function') cargar(); }catch(e){}
-      try{ if(typeof actualizarMarquee==='function') actualizarMarquee(); }catch(e){}
-      try{ if(typeof renderConta==='function') renderConta('resumen'); }catch(e){}
-    }, 200);
+  try{ if(typeof cargar==='function') cargar(); }catch(e){}
+  try{ if(typeof actualizarMarquee==='function') actualizarMarquee(); }catch(e){}
+  try{ if(typeof renderConta==='function') renderConta('resumen'); }catch(e){}
+  try{ if(typeof renderRecaudo==='function') renderRecaudo(); }catch(e){}
+  try{ if(typeof renderCartera==='function') renderCartera(); }catch(e){}
+}, 600);
+
 
   }catch(e){
     console.error('❌ [V10]', e);
@@ -11210,7 +11213,7 @@ setTimeout(function(){
 
 // ── ARRANQUE ───────────────────────────────────────────────────────────
 (async function(){
-  await new Promise(function(r){ setTimeout(r, document.readyState==='loading'?900:400); });
+  await new Promise(function(r){ setTimeout(r, document.readyState==='loading'?1500:1200); });
   await vnMigrar();
   await window.vnSyncCargar();
 })();
