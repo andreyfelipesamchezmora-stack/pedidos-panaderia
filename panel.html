@@ -10463,6 +10463,196 @@ console.log('✅ Parche historial deuda por día cargado');
   console.log('✅ Parche recaudo: sin duplicación + deuda estática + checkbox deuda-domi');
 
 })();
+
+(function(){
+
+  // ══════════════════════════════════════════════════════════
+  // PARCHE PERSISTENCIA TOTAL — Todo en localStorage
+  // Corrige: gastos en sessionStorage → localStorage
+  //          movimientosContables sin persistencia → localStorage
+  // ══════════════════════════════════════════════════════════
+
+  var KEYS = {
+    gastos:       'vn_gastos_perm',
+    movimientos:  'vn_movimientos_perm',
+    nomina:       'vn_nomina_perm',
+    clientes:     'vn_clientes_perm',
+  };
+
+  function lsGet(key, fallback){
+    try{
+      let v = localStorage.getItem(key);
+      if(!v) return fallback;
+      let p = JSON.parse(v);
+      return p !== null ? p : fallback;
+    }catch(e){ return fallback; }
+  }
+
+  function lsSet(key, val){
+    try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){}
+  }
+
+  // ── 1. GASTOS: migrar de sessionStorage → localStorage ─────────────────
+  (function migrateGastos(){
+    // Si hay datos en sessionStorage, migrarlos primero
+    try{
+      let fromSession = JSON.parse(sessionStorage.getItem('gastos') || '[]');
+      let fromLocal   = lsGet(KEYS.gastos, []);
+
+      // Fusionar sin duplicar (por descripcion+monto+categoria)
+      if(Array.isArray(fromSession) && fromSession.length > 0){
+        let merged = fromLocal.slice();
+        fromSession.forEach(function(g){
+          let dup = merged.some(function(m){
+            return m.descripcion === g.descripcion && m.monto === g.monto && m.categoria === g.categoria;
+          });
+          if(!dup) merged.push(g);
+        });
+        lsSet(KEYS.gastos, merged);
+      }
+    }catch(e){}
+
+    // Cargar gastosMemoria desde localStorage
+    try{
+      let saved = lsGet(KEYS.gastos, null);
+      if(Array.isArray(saved) && saved.length > 0){
+        window.gastosMemoria = saved;
+      }
+    }catch(e){}
+  })();
+
+  // Parchear todas las funciones que hacen sessionStorage.setItem('gastos',...)
+  // para que también guarden en localStorage
+  var _origSS_setItem = sessionStorage.setItem.bind(sessionStorage);
+  sessionStorage.setItem = function(key, value){
+    _origSS_setItem(key, value);
+    if(key === 'gastos'){
+      try{
+        lsSet(KEYS.gastos, JSON.parse(value));
+      }catch(e){}
+    }
+  };
+
+  // ── 2. movimientosContables: persistencia completa ─────────────────────
+  (function initMovimientos(){
+    let saved = lsGet(KEYS.movimientos, []);
+    if(Array.isArray(saved) && saved.length > 0){
+      if(!Array.isArray(window.movimientosContables) || window.movimientosContables.length === 0){
+        window.movimientosContables = saved;
+      }
+    }
+  })();
+
+  // Interceptar pushes a movimientosContables para auto-guardar
+  try{
+    if(Array.isArray(window.movimientosContables)){
+      let handler = {
+        get: function(target, prop){
+          if(prop === 'push'){
+            return function(){
+              let result = Array.prototype.push.apply(target, arguments);
+              lsSet(KEYS.movimientos, target);
+              return result;
+            };
+          }
+          return target[prop];
+        }
+      };
+      window.movimientosContables = new Proxy(window.movimientosContables, handler);
+    }
+  }catch(e){
+    // Fallback sin Proxy: guardar periódicamente
+    setInterval(function(){
+      if(Array.isArray(window.movimientosContables) && window.movimientosContables.length > 0){
+        lsSet(KEYS.movimientos, window.movimientosContables);
+      }
+    }, 3000);
+  }
+
+  // ── 3. cuentasMemoria: ya usa localStorage, pero forzar guardado extra ──
+  var _origCuentasGuardar = window.cuentasGuardar;
+  window.cuentasGuardar = function(){
+    if(typeof _origCuentasGuardar === 'function') _origCuentasGuardar.apply(this, arguments);
+    // Doble respaldo
+    try{ lsSet('cuentasMemoria_backup', window.cuentasMemoria); }catch(e){}
+  };
+
+  // Al cargar, restaurar cuentas desde respaldo si el principal está vacío
+  setTimeout(function(){
+    try{
+      let main = JSON.parse(localStorage.getItem('cuentasMemoria') || '[]');
+      if(!Array.isArray(main) || main.length === 0){
+        let backup = lsGet('cuentasMemoria_backup', []);
+        if(Array.isArray(backup) && backup.length > 0){
+          window.cuentasMemoria = backup;
+          localStorage.setItem('cuentasMemoria', JSON.stringify(backup));
+          console.log('✅ Cuentas restauradas desde backup:', backup.length);
+        }
+      }
+    }catch(e){}
+  }, 500);
+
+  // ── 4. cartera_deudas: ya usa localStorage, pero agregar auto-save ──────
+  // Si alguien borra localStorage accidentalmente, tener un respaldo en IndexedDB
+  // (simplificado: doble key)
+  function carteraBackup(){
+    try{
+      let cd = localStorage.getItem('cartera_deudas');
+      if(cd) localStorage.setItem('cartera_deudas_bk', cd);
+      let cp = localStorage.getItem('cartera_pagos_historial');
+      if(cp) localStorage.setItem('cartera_pagos_historial_bk', cp);
+    }catch(e){}
+  }
+
+  // Restaurar cartera desde backup si está vacía
+  setTimeout(function(){
+    try{
+      let cd = localStorage.getItem('cartera_deudas');
+      if(!cd || cd === '{}'){
+        let bk = localStorage.getItem('cartera_deudas_bk');
+        if(bk && bk !== '{}'){
+          localStorage.setItem('cartera_deudas', bk);
+          console.log('✅ cartera_deudas restaurada desde backup');
+        }
+      }
+    }catch(e){}
+  }, 600);
+
+  // ── 5. Auto-backup general cada 60 segundos ─────────────────────────────
+  setInterval(function(){
+    carteraBackup();
+    try{
+      if(Array.isArray(window.gastosMemoria) && window.gastosMemoria.length > 0){
+        lsSet(KEYS.gastos, window.gastosMemoria);
+      }
+      if(Array.isArray(window.movimientosContables) && window.movimientosContables.length > 0){
+        lsSet(KEYS.movimientos, window.movimientosContables);
+      }
+      if(Array.isArray(window.cuentasMemoria) && window.cuentasMemoria.length > 0){
+        lsSet('cuentasMemoria', window.cuentasMemoria);
+      }
+    }catch(e){}
+  }, 60000);
+
+  // ── 6. Guardar TODO antes de cerrar la pestaña ──────────────────────────
+  window.addEventListener('beforeunload', function(){
+    try{
+      if(Array.isArray(window.gastosMemoria)){
+        lsSet(KEYS.gastos, window.gastosMemoria);
+      }
+      if(Array.isArray(window.movimientosContables)){
+        lsSet(KEYS.movimientos, window.movimientosContables);
+      }
+      if(Array.isArray(window.cuentasMemoria)){
+        lsSet('cuentasMemoria', window.cuentasMemoria);
+      }
+      carteraBackup();
+    }catch(e){}
+  });
+
+  console.log('✅ Parche persistencia total: gastos + movimientos + cuentas + cartera');
+
+})();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
