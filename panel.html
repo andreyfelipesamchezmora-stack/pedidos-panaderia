@@ -10374,10 +10374,12 @@ console.log('✅ Parche historial deuda por día cargado');
       let savedDC = Number(saved.deudaCliente) || 0;
       let savedDM = Number(saved.deudaMia)     || 0;
 
-      // Si el día activo tiene deuda guardada, usarla directamente (estática)
-      // No acumular con el histórico — el histórico ya excluye este día (Fix 1)
+      // Si el día activo tiene deuda guardada, usarla
+      // Si no, mantener la deuda histórica acumulada
       if (savedDC > 0) row.deudaCliente = savedDC;
-      if (savedDM > 0) row.deudaMia     = savedDM;
+      else if (!row.deudaCliente) row.deudaCliente = row._deudaHistCliente || 0;
+      if (savedDM > 0) row.deudaMia = savedDM;
+      else if (!row.deudaMia) row.deudaMia = row._deudaHistMia || 0;
 
       // Cargar estado del checkbox de deuda-en-domi
       row.deudaEnDomi = !!saved.deudaEnDomi;
@@ -10909,10 +10911,12 @@ window.recaudoConstruirData = async function(){
     // Guardar la deuda histórica para el badge/ícono
     r._deudaHistCliente = r.deudaCliente;
     r._deudaHistMia = r.deudaMia;
- 
-    // Los valores de los INPUTS son solo lo del día actual
-    r.deudaCliente = Number(saved.deudaCliente) || 0;
-    r.deudaMia = Number(saved.deudaMia) || 0;
+
+    // Si hoy no tienen deuda guardada, usar la deuda histórica acumulada
+    var savedDC = Number(saved.deudaCliente) || 0;
+    var savedDM = Number(saved.deudaMia) || 0;
+    r.deudaCliente = savedDC > 0 ? savedDC : r._deudaHistCliente;
+    r.deudaMia     = savedDM > 0 ? savedDM : r._deudaHistMia;
  
     // Recalcular efectivoNeto con las deudas del día
     r.totalTransferencia = r.nequi + r.bancolombia;
