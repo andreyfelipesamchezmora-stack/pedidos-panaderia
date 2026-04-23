@@ -10967,6 +10967,256 @@ setTimeout(function(){
 
 console.log('☁️ Parche V10: Supabase Cloud Sync activado');
 })();
+
+(function(){
+'use strict';
+
+// ── Referencias originales (ANTES de interceptar) ──────────────────────
+var _LSset = localStorage.setItem.bind(localStorage);
+var _LSget = localStorage.getItem.bind(localStorage);
+var _SSset = sessionStorage.setItem.bind(sessionStorage);
+
+// ── Cache en memoria ────────────────────────────────────────────────────
+var _C = {}, _CT = {}, TTL = 4000;
+function cGet(k){ var n=Date.now(); return(_C[k]!==undefined&&(n-(_CT[k]||0))<TTL)?_C[k]:undefined; }
+function cSet(k,v){ _C[k]=v; _CT[k]=Date.now(); }
+
+// ── Mapa: localStorage key → tabla Supabase ─────────────────────────────
+var K2T = {
+  'clientes':               'clientes_config',
+  'clientesDatos':          'clientes_datos',
+  'cuentasMemoria':         'cuentas_bancarias',
+  'transferenciasMem':      'transferencias',
+  'cuotas_obligaciones':    'cuotas_obligaciones',
+  'contabilidad_categorias':'categorias_contables',
+  'cartera_deudas':         'cartera_deudas',
+  'cartera_pagos_historial':'cartera_pagos',
+  'obs_marquee':            'observaciones_marquee',
+  'nomina_data':            'nomina_config',
+  'cuentas_por_pagar':      'cuentas_por_pagar'
+};
+
+// ── Mapa inverso: tabla → localStorage key ─────────────────────────────
+var T2K = {};
+Object.keys(K2T).forEach(function(k){ T2K[K2T[k]] = k; });
+
+// ── Leer tabla singleton (id=1) ─────────────────────────────────────────
+async function sbLeer(tabla, fb){
+  var c = cGet(tabla);
+  if(c !== undefined) return c;
+  try{
+    var r = await db.from(tabla).select('datos').eq('id',1).single();
+    var v = (r.error || !r.data) ? (fb !== undefined ? fb : null) : r.data.datos;
+    cSet(tabla, v);
+    return v;
+  }catch(e){
+    try{ var raw=_LSget(T2K[tabla]||'__none'); return raw?JSON.parse(raw):(fb!==undefined?fb:null); }
+    catch(ex){ return fb !== undefined ? fb : null; }
+  }
+}
+
+// ── Escribir tabla singleton ────────────────────────────────────────────
+async function sbEscribir(tabla, datos){
+  cSet(tabla, datos);
+  var lk = T2K[tabla];
+  if(lk) try{ _LSset(lk, JSON.stringify(datos)); }catch(e){}
+  try{
+    var r = await db.from(tabla).update({datos:datos, updated_at:new Date().toISOString()}).eq('id',1);
+    if(r.error) await db.from(tabla).insert({id:1, datos:datos, updated_at:new Date().toISOString()});
+  }catch(e){ console.warn('[V10]', tabla, e.message); }
+}
+
+// ── Leer/Escribir por fecha (recaudo, monedas) ──────────────────────────
+async function sbLeerF(tabla, fecha, fb){
+  var ck = tabla+'|'+fecha, c = cGet(ck);
+  if(c !== undefined) return c;
+  try{
+    var r = await db.from(tabla).select('datos').eq('fecha',fecha).single();
+    var v = (r.error||!r.data) ? (fb!==undefined?fb:{}) : r.data.datos;
+    cSet(ck, v); return v;
+  }catch(e){ return fb!==undefined?fb:{}; }
+}
+
+async function sbEscribirF(tabla, fecha, datos){
+  cSet(tabla+'|'+fecha, datos);
+  try{ _LSset('recaudo_'+fecha, JSON.stringify(datos)); }catch(e){}
+  try{
+    await db.from(tabla).upsert(
+      {fecha:fecha, datos:datos, updated_at:new Date().toISOString()},
+      {onConflict:'fecha'}
+    );
+  }catch(e){ console.warn('[V10] fecha', e.message); }
+}
+
+// ── Interceptar localStorage.setItem ───────────────────────────────────
+localStorage.setItem = function(key, value){
+  _LSset(key, value);
+  try{
+    if(K2T[key]) sbEscribir(K2T[key], JSON.parse(value));
+    if(key.startsWith('recaudo_') && /\d{4}-\d{2}-\d{2}$/.test(key))
+      sbEscribirF('recaudo_diario', key.replace('recaudo_',''), JSON.parse(value));
+    if(key.startsWith('monedas_') && /\d{4}-\d{2}-\d{2}$/.test(key))
+      sbEscribirF('monedas_diario', key.replace('monedas_',''), JSON.parse(value));
+  }catch(e){}
+};
+
+// ── Interceptar sessionStorage (gastos) ────────────────────────────────
+sessionStorage.setItem = function(key, value){
+  _SSset(key, value);
+  if(key === 'gastos') try{ sbEscribir('gastos_manuales', JSON.parse(value)); }catch(e){}
+};
+
+// ── Auto-guardar variables globales cada 5s ────────────────────────────
+var _lm='', _lg='';
+setInterval(function(){
+  try{
+    if(Array.isArray(window.movimientosContables) && window.movimientosContables.length > 0){
+      var s = JSON.stringify(window.movimientosContables);
+      if(s !== _lm){ _lm=s; sbEscribir('movimientos_contables', window.movimientosContables); }
+    }
+    if(Array.isArray(window.gastosMemoria)){
+      var s = JSON.stringify(window.gastosMemoria);
+      if(s !== _lg){ _lg=s; sbEscribir('gastos_manuales', window.gastosMemoria); }
+    }
+  }catch(e){}
+}, 5000);
+
+// ── CARGA COMPLETA desde Supabase ──────────────────────────────────────
+window.vnSyncCargar = async function(){
+  var dot = document.getElementById('vnSyncDot');
+  var lbl = document.getElementById('vnSyncLbl');
+  if(dot) dot.style.background='#fbbf24';
+  if(lbl) lbl.textContent='Sincronizando...';
+  console.log('☁️ [V10] Cargando desde Supabase...');
+  try{
+    var hoy = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
+
+    // Singleton tables
+    var specs = [
+      ['clientes_config',      [], function(v){ window.clientes=v; _LSset('clientes',JSON.stringify(v)); }],
+      ['clientes_datos',       {}, function(v){ _LSset('clientesDatos',JSON.stringify(v)); }],
+      ['cuentas_bancarias',    [], function(v){ window.cuentasMemoria=v; _LSset('cuentasMemoria',JSON.stringify(v)); }],
+      ['transferencias',       [], function(v){ window.transferenciasMem=v; _LSset('transferenciasMem',JSON.stringify(v)); }],
+      ['movimientos_contables',[], function(v){ window.movimientosContables=v; _lm=JSON.stringify(v); }],
+      ['gastos_manuales',      [], function(v){ window.gastosMemoria=v; _lg=JSON.stringify(v); _SSset('gastos',JSON.stringify(v)); }],
+      ['nomina_config',        {}, function(v){ _LSset('nomina_data',JSON.stringify(v)); }],
+      ['cartera_deudas',       {}, function(v){ _LSset('cartera_deudas',JSON.stringify(v)); }],
+      ['cartera_pagos',        [], function(v){ _LSset('cartera_pagos_historial',JSON.stringify(v)); }],
+      ['cuotas_obligaciones',  [], function(v){ _LSset('cuotas_obligaciones',JSON.stringify(v)); }],
+      ['categorias_contables', {}, function(v){ _LSset('contabilidad_categorias',JSON.stringify(v)); }],
+      ['cuentas_por_pagar',    [], function(v){ _LSset('cuentas_por_pagar',JSON.stringify(v)); }],
+      ['observaciones_marquee',[], function(v){ _LSset('obs_marquee',JSON.stringify(v)); }],
+    ];
+
+    for(var i=0; i<specs.length; i++){
+      var tabla=specs[i][0], fb=specs[i][1], fn=specs[i][2];
+      var v = await sbLeer(tabla, fb);
+      if(v !== null && v !== undefined){
+        var empty = Array.isArray(v) ? v.length===0 : (typeof v==='object' ? Object.keys(v).length===0 : false);
+        if(!empty) try{ fn(v); }catch(e){}
+      }
+    }
+
+    // Recaudo del día
+    var rd = await sbLeerF('recaudo_diario', hoy, {});
+    if(rd && Object.keys(rd).length > 0) _LSset('recaudo_'+hoy, JSON.stringify(rd));
+
+    // Monedas del día
+    var md = await sbLeerF('monedas_diario', hoy, []);
+    if(Array.isArray(md) && md.length > 0) _LSset('monedas_'+hoy, JSON.stringify(md));
+
+    console.log('✅ [V10] Todo cargado');
+    if(dot) dot.style.background='#4ade80';
+    if(lbl) lbl.textContent='☁️ Supabase activo';
+
+    // Refrescar UI
+    setTimeout(function(){
+      try{ if(typeof cargar==='function') cargar(); }catch(e){}
+      try{ if(typeof actualizarMarquee==='function') actualizarMarquee(); }catch(e){}
+      try{ if(typeof renderConta==='function') renderConta('resumen'); }catch(e){}
+    }, 200);
+
+  }catch(e){
+    console.error('❌ [V10]', e);
+    if(dot) dot.style.background='#f87171';
+    if(lbl) lbl.textContent='❌ Error sync';
+  }
+};
+
+// ── MIGRACIÓN INICIAL localStorage → Supabase ─────────────────────────
+async function vnMigrar(){
+  if(_LSget('_vn_v10') === 'ok') return;
+  console.log('🔄 [V10] Migrando localStorage → Supabase...');
+  for(var key in K2T){
+    var raw = _LSget(key);
+    if(!raw) continue;
+    try{
+      var p = JSON.parse(raw);
+      var empty = Array.isArray(p)?p.length===0:(!p||Object.keys(p).length===0);
+      if(!empty){ await sbEscribir(K2T[key], p); console.log('  ✓', key); }
+    }catch(e){}
+  }
+  // Gastos de sessionStorage
+  try{
+    var gr = sessionStorage.getItem('gastos');
+    if(gr){ var g=JSON.parse(gr); if(g.length>0) await sbEscribir('gastos_manuales',g); }
+  }catch(e){}
+  // Movimientos globales
+  if(Array.isArray(window.movimientosContables) && window.movimientosContables.length > 0)
+    await sbEscribir('movimientos_contables', window.movimientosContables);
+  // Recaudo últimos 30 días
+  for(var d=0; d<30; d++){
+    var f = new Date(); f.setDate(f.getDate()-d);
+    var fs = f.toISOString().split('T')[0];
+    var rr=_LSget('recaudo_'+fs); if(rr){ try{ var rd=JSON.parse(rr); if(Object.keys(rd).length>0) await sbEscribirF('recaudo_diario',fs,rd); }catch(e){} }
+    var mr=_LSget('monedas_'+fs);  if(mr){ try{ var md=JSON.parse(mr);  if(md.length>0) await sbEscribirF('monedas_diario',fs,md); }catch(e){} }
+  }
+  _LSset('_vn_v10','ok');
+  console.log('✅ [V10] Migración completa');
+}
+
+// ── Auto-sync recaudo cada 60s ─────────────────────────────────────────
+setInterval(async function(){
+  try{
+    var hoy = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
+    var est = (typeof recaudoLeerEstado==='function') ? recaudoLeerEstado() : {};
+    if(est && Object.keys(est).length > 0) await sbEscribirF('recaudo_diario', hoy, est);
+  }catch(e){}
+}, 60000);
+
+// ── Guardar al cerrar ──────────────────────────────────────────────────
+window.addEventListener('beforeunload', function(){
+  try{
+    var hoy = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
+    if(typeof recaudoLeerEstado==='function') sbEscribirF('recaudo_diario', hoy, recaudoLeerEstado());
+    if(Array.isArray(window.cuentasMemoria)) sbEscribir('cuentas_bancarias', window.cuentasMemoria);
+    if(Array.isArray(window.gastosMemoria))  sbEscribir('gastos_manuales', window.gastosMemoria);
+  }catch(e){}
+});
+
+// ── INDICADOR VISUAL ───────────────────────────────────────────────────
+setTimeout(function(){
+  var s = document.createElement('style');
+  s.textContent = '@keyframes vnPulse{0%,100%{opacity:1}50%{opacity:.4}}';
+  document.head.appendChild(s);
+
+  var d = document.createElement('div');
+  d.style.cssText = 'position:fixed;bottom:14px;right:14px;background:rgba(15,23,42,0.95);border:1px solid rgba(255,255,255,0.08);color:#e2e8f0;padding:7px 14px;border-radius:20px;font-size:11px;font-weight:600;z-index:99999;display:flex;align-items:center;gap:7px;box-shadow:0 4px 20px rgba(0,0,0,0.5);cursor:pointer;font-family:Inter,sans-serif;';
+  d.innerHTML = '<span id="vnSyncDot" style="width:7px;height:7px;border-radius:50%;background:#4ade80;animation:vnPulse 2s infinite;flex-shrink:0;"></span><span id="vnSyncLbl">☁️ Supabase activo</span>';
+  d.title = 'Click para forzar sincronización';
+  d.onclick = function(){ window.vnSyncCargar(); };
+  document.body.appendChild(d);
+}, 2500);
+
+// ── ARRANQUE ───────────────────────────────────────────────────────────
+(async function(){
+  await new Promise(function(r){ setTimeout(r, document.readyState==='loading'?900:400); });
+  await vnMigrar();
+  await window.vnSyncCargar();
+})();
+
+console.log('☁️ [V10] Supabase Sync activo — todos los módulos cubiertos');
+})();  
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
