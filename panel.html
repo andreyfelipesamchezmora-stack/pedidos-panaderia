@@ -10487,24 +10487,63 @@ async function vnDbLeer(tabla, fallback){
     return window._vnCache[tabla];
   }
   try {
-    var res = await db.from(tabla).select('datos').eq('id', 1).single();
-    if(res.error || !res.data){
-      // Si no existe fila, crearla
-      if(res.error && res.error.code === 'PGRST116'){
-        await db.from(tabla).insert({id:1, datos: fallback !== undefined ? fallback : null});
+    var res = await db.from(tabla).select('datos').eq('id', 1).maybeSingle();
+    if(!res.data || res.data.datos === null || res.data.datos === undefined){
+      // No existe fila o datos es null — usar fallback
+      // Intentar leer de localStorage como respaldo
+      var lk = _vnTablaToLocalKey(tabla);
+      if(lk){
+        var raw = _origGetItem(lk);
+        if(raw){
+          var parsed = JSON.parse(raw);
+          var hasData = Array.isArray(parsed) ? parsed.length > 0 : (parsed && Object.keys(parsed).length > 0);
+          if(hasData){
+            window._vnCache[tabla] = parsed;
+            // Subir a Supabase lo que tenemos en local
+            vnDbEscribir(tabla, parsed);
+            window._vnCacheTime[tabla] = now;
+            return parsed;
+          }
+        }
       }
       window._vnCache[tabla] = fallback !== undefined ? fallback : null;
     } else {
-      window._vnCache[tabla] = res.data.datos;
+      // Verificar que datos no sea el valor inicial vacío
+      var d = res.data.datos;
+      var isEmpty = false;
+      if(Array.isArray(d) && d.length === 0) isEmpty = true;
+      if(d && typeof d === 'object' && !Array.isArray(d) && Object.keys(d).length === 0) isEmpty = true;
+      
+      if(isEmpty){
+        // Supabase tiene datos vacíos, intentar leer de localStorage
+        var lk2 = _vnTablaToLocalKey(tabla);
+        if(lk2){
+          var raw2 = _origGetItem(lk2);
+          if(raw2){
+            try {
+              var parsed2 = JSON.parse(raw2);
+              var hasData2 = Array.isArray(parsed2) ? parsed2.length > 0 : (parsed2 && Object.keys(parsed2).length > 0);
+              if(hasData2){
+                window._vnCache[tabla] = parsed2;
+                vnDbEscribir(tabla, parsed2);
+                window._vnCacheTime[tabla] = now;
+                return parsed2;
+              }
+            } catch(e3){}
+          }
+        }
+        window._vnCache[tabla] = fallback !== undefined ? fallback : null;
+      } else {
+        window._vnCache[tabla] = d;
+      }
     }
   } catch(e){
     console.error('vnDbLeer '+tabla+':', e);
-    // Fallback a localStorage si Supabase falla
     try {
-      var lk = _vnTablaToLocalKey(tabla);
-      if(lk){
-        var raw = localStorage.getItem(lk);
-        window._vnCache[tabla] = raw ? JSON.parse(raw) : (fallback !== undefined ? fallback : null);
+      var lk3 = _vnTablaToLocalKey(tabla);
+      if(lk3){
+        var raw3 = _origGetItem(lk3);
+        window._vnCache[tabla] = raw3 ? JSON.parse(raw3) : (fallback !== undefined ? fallback : null);
       } else {
         window._vnCache[tabla] = fallback !== undefined ? fallback : null;
       }
@@ -10520,12 +10559,15 @@ async function vnDbEscribir(tabla, datos){
   window._vnCacheTime[tabla] = Date.now();
   // También escribir localStorage como backup
   var lk = _vnTablaToLocalKey(tabla);
-  if(lk) try { localStorage.setItem(lk, JSON.stringify(datos)); } catch(e){}
+  if(lk) try { _origSetItem(lk, JSON.stringify(datos)); } catch(e){}
   try {
-    var res = await db.from(tabla).update({datos: datos, updated_at: new Date().toISOString()}).eq('id', 1);
+    // UPSERT: si existe actualiza, si no existe inserta
+    var res = await db.from(tabla).upsert(
+      {id: 1, datos: datos, updated_at: new Date().toISOString()},
+      {onConflict: 'id'}
+    );
     if(res.error){
-      // Si no existe, insertar
-      await db.from(tabla).insert({id:1, datos: datos, updated_at: new Date().toISOString()});
+      console.error('vnDbEscribir UPSERT '+tabla+':', res.error.message);
     }
   } catch(e){
     console.error('vnDbEscribir '+tabla+':', e);
@@ -10559,11 +10601,13 @@ async function vnDbEscribirFecha(tabla, fecha, datos){
   var cacheKey = tabla+'_'+fecha;
   window._vnCache[cacheKey] = datos;
   window._vnCacheTime[cacheKey] = Date.now();
-  // Backup localStorage
-  try { localStorage.setItem(tabla.replace('_diario','')+'_'+fecha, JSON.stringify(datos)); } catch(e){}
+  try { _origSetItem(tabla.replace('_diario','')+'_'+fecha, JSON.stringify(datos)); } catch(e){}
   try {
-    var res = await db.from(tabla).upsert({fecha: fecha, datos: datos, updated_at: new Date().toISOString()}, {onConflict: 'fecha'});
-    if(res.error) console.error('vnDbEscribirFecha:', res.error);
+    var res = await db.from(tabla).upsert(
+      {fecha: fecha, datos: datos, updated_at: new Date().toISOString()},
+      {onConflict: 'fecha'}
+    );
+    if(res.error) console.error('vnDbEscribirFecha:', res.error.message);
   } catch(e){
     console.error('vnDbEscribirFecha '+tabla+':', e);
   }
@@ -10696,7 +10740,7 @@ async function vnCargarTodoDesdeSupabase(){
 
     // 2. DATOS POR CLIENTE
     var cdData = await vnDbLeer('clientes_datos', {});
-    if(cdData && Object.keys(cdData).length > 0){
+    if(cdData && typeof cdData === 'object'){
       _origSetItem('clientesDatos', JSON.stringify(cdData));
     }
 
@@ -10705,14 +10749,12 @@ async function vnCargarTodoDesdeSupabase(){
     if(Array.isArray(cbData) && cbData.length > 0){
       window.cuentasMemoria = cbData;
       _origSetItem('cuentasMemoria', JSON.stringify(cbData));
-      if(typeof cuentasGuardar !== 'function'){
-        // Definir cuentasGuardar si no existe aún
-      }
     }
 
     // 4. TRANSFERENCIAS
     var trData = await vnDbLeer('transferencias', []);
     if(Array.isArray(trData)){
+      window.transferenciasMem = trData;
       _origSetItem('transferenciasMem', JSON.stringify(trData));
     }
 
@@ -10728,72 +10770,65 @@ async function vnCargarTodoDesdeSupabase(){
     if(Array.isArray(gmData) && gmData.length > 0){
       window.gastosMemoria = gmData;
       window._vnLastGastStr = JSON.stringify(gmData);
-      sessionStorage.setItem = _origSSSetItem; // Temporalmente restaurar
-      try { sessionStorage.setItem('gastos', JSON.stringify(gmData)); } catch(e){}
-      sessionStorage.setItem = function(key, value){ // Re-interceptar
-        _origSSSetItem(key, value);
-        if(key === 'gastos'){
-          try { vnDbEscribir('gastos_manuales', JSON.parse(value)); } catch(e){}
-        }
-      };
+      try { _origSSSetItem('gastos', JSON.stringify(gmData)); } catch(e){}
     }
 
     // 7. RECAUDO DEL DÍA
     var hoy = (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
     var recData = await vnDbLeerFecha('recaudo_diario', hoy, {});
-    if(recData && Object.keys(recData).length > 0){
+    if(recData && typeof recData === 'object'){
       _origSetItem('recaudo_'+hoy, JSON.stringify(recData));
     }
 
     // 8. MONEDAS DEL DÍA
     var monData = await vnDbLeerFecha('monedas_diario', hoy, []);
-    if(Array.isArray(monData) && monData.length > 0){
+    if(Array.isArray(monData)){
       _origSetItem('monedas_'+hoy, JSON.stringify(monData));
     }
 
     // 9. NÓMINA
     var nomData = await vnDbLeer('nomina_config', {});
-    if(nomData && nomData.empleados){
+    if(nomData && typeof nomData === 'object' && Object.keys(nomData).length > 0){
       _origSetItem('nomina_data', JSON.stringify(nomData));
     }
 
     // 10. CARTERA DEUDAS
     var carData = await vnDbLeer('cartera_deudas', {});
-    if(carData && Object.keys(carData).length > 0){
+    if(carData && typeof carData === 'object'){
       _origSetItem('cartera_deudas', JSON.stringify(carData));
     }
 
     // 11. CARTERA PAGOS
     var cpData = await vnDbLeer('cartera_pagos', []);
-    if(Array.isArray(cpData) && cpData.length > 0){
+    if(Array.isArray(cpData)){
       _origSetItem('cartera_pagos_historial', JSON.stringify(cpData));
     }
 
     // 12. CUOTAS
     var cuData = await vnDbLeer('cuotas_obligaciones', []);
-    if(Array.isArray(cuData) && cuData.length > 0){
+    if(Array.isArray(cuData)){
       _origSetItem('cuotas_obligaciones', JSON.stringify(cuData));
     }
 
     // 13. CATEGORÍAS
     var catData = await vnDbLeer('categorias_contables', {});
-    if(catData && catData.ingresos){
+    if(catData && typeof catData === 'object' && Object.keys(catData).length > 0){
       _origSetItem('contabilidad_categorias', JSON.stringify(catData));
     }
 
     // 14. CUENTAS POR PAGAR
     var cxpData = await vnDbLeer('cuentas_por_pagar', []);
-    if(Array.isArray(cxpData) && cxpData.length > 0){
+    if(Array.isArray(cxpData)){
       _origSetItem('cuentas_por_pagar', JSON.stringify(cxpData));
     }
 
     // 15. OBSERVACIONES MARQUESINA
     var obsData = await vnDbLeer('observaciones_marquee', []);
-    if(Array.isArray(obsData) && obsData.length > 0){
+    if(Array.isArray(obsData)){
       _origSetItem('obs_marquee', JSON.stringify(obsData));
     }
 
-    console.log('✅ Datos cargados desde Supabase');
+    console.log('✅ Datos cargados desde Supabase correctamente');
 
     // Recargar la UI
     if(typeof cargar === 'function') await cargar();
@@ -10803,29 +10838,39 @@ async function vnCargarTodoDesdeSupabase(){
     console.error('❌ Error cargando desde Supabase:', e);
   }
 }
-
 // =====================================================
 // MIGRACIÓN INICIAL: localStorage → Supabase (una sola vez)
 // =====================================================
 async function vnMigrarLocalASupabase(){
-  var migKey = 'vn_migrado_supabase';
-  if(localStorage.getItem(migKey) === 'v10') return;
-
-  console.log('🔄 Migrando datos locales a Supabase...');
+  // SIEMPRE intentar migrar datos locales a Supabase si hay datos locales
+  console.log('🔄 Sincronizando datos locales → Supabase...');
 
   try {
-    // Migrar cada key que tenga datos
     for(var key in VN_KEY_MAP){
       var raw = _origGetItem(key);
       if(raw){
         try {
           var parsed = JSON.parse(raw);
-          var isEmpty = Array.isArray(parsed) ? parsed.length === 0 : Object.keys(parsed).length === 0;
+          var isEmpty = Array.isArray(parsed) ? parsed.length === 0 : (!parsed || Object.keys(parsed).length === 0);
           if(!isEmpty){
-            await vnDbEscribir(VN_KEY_MAP[key], parsed);
-            console.log('  ✓ Migrado: '+key+' → '+VN_KEY_MAP[key]);
+            // Verificar si Supabase ya tiene datos más recientes
+            var tabla = VN_KEY_MAP[key];
+            var existing = await db.from(tabla).select('datos').eq('id', 1).maybeSingle();
+            var supaHasData = false;
+            if(existing && existing.data && existing.data.datos){
+              var ed = existing.data.datos;
+              supaHasData = Array.isArray(ed) ? ed.length > 0 : (ed && Object.keys(ed).length > 0);
+            }
+            // Si Supabase está vacío pero local tiene datos → subir
+            if(!supaHasData){
+              await db.from(tabla).upsert(
+                {id: 1, datos: parsed, updated_at: new Date().toISOString()},
+                {onConflict: 'id'}
+              );
+              console.log('  ✓ Subido: '+key+' → '+tabla);
+            }
           }
-        } catch(e){}
+        } catch(e){ console.error('  ✗ Error migrando '+key+':', e); }
       }
     }
 
@@ -10835,21 +10880,27 @@ async function vnMigrarLocalASupabase(){
       try {
         var gastos = JSON.parse(gastosRaw);
         if(gastos.length > 0){
-          await vnDbEscribir('gastos_manuales', gastos);
-          console.log('  ✓ Migrado: gastos → gastos_manuales');
+          var exG = await db.from('gastos_manuales').select('datos').eq('id',1).maybeSingle();
+          if(!exG || !exG.data || !exG.data.datos || exG.data.datos.length === 0){
+            await db.from('gastos_manuales').upsert({id:1, datos:gastos, updated_at:new Date().toISOString()},{onConflict:'id'});
+            console.log('  ✓ Subido: gastos → gastos_manuales');
+          }
         }
       } catch(e){}
     }
 
-    // Migrar movimientosContables (variable global)
+    // Migrar movimientosContables
     if(Array.isArray(window.movimientosContables) && window.movimientosContables.length > 0){
-      await vnDbEscribir('movimientos_contables', window.movimientosContables);
-      console.log('  ✓ Migrado: movimientosContables → movimientos_contables');
+      var exM = await db.from('movimientos_contables').select('datos').eq('id',1).maybeSingle();
+      if(!exM || !exM.data || !exM.data.datos || exM.data.datos.length === 0){
+        await db.from('movimientos_contables').upsert({id:1, datos:window.movimientosContables, updated_at:new Date().toISOString()},{onConflict:'id'});
+        console.log('  ✓ Subido: movimientosContables');
+      }
     }
 
-    // Migrar recaudo de los últimos 30 días
+    // Migrar recaudos recientes (últimos 7 días)
     var hoy = new Date();
-    for(var d = 0; d < 30; d++){
+    for(var d = 0; d < 7; d++){
       var fecha = new Date(hoy);
       fecha.setDate(fecha.getDate() - d);
       var fStr = fecha.toISOString().split('T')[0];
@@ -10858,25 +10909,15 @@ async function vnMigrarLocalASupabase(){
         try {
           var recData = JSON.parse(recRaw);
           if(Object.keys(recData).length > 0){
-            await vnDbEscribirFecha('recaudo_diario', fStr, recData);
-          }
-        } catch(e){}
-      }
-      var monRaw = _origGetItem('monedas_'+fStr);
-      if(monRaw){
-        try {
-          var monData = JSON.parse(monRaw);
-          if(monData.length > 0){
-            await vnDbEscribirFecha('monedas_diario', fStr, monData);
+            await db.from('recaudo_diario').upsert({fecha:fStr, datos:recData, updated_at:new Date().toISOString()},{onConflict:'fecha'});
           }
         } catch(e){}
       }
     }
 
-    localStorage.setItem(migKey, 'v10');
-    console.log('✅ Migración completada');
+    console.log('✅ Sincronización local → Supabase completada');
   } catch(e){
-    console.error('❌ Error en migración:', e);
+    console.error('❌ Error en sincronización:', e);
   }
 }
 
