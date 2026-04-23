@@ -3203,21 +3203,29 @@ async function recaudoPedidosDelDia(){
 function recaudoGetDeudaHistorica(nombre) {
   let deudaCliente = 0, deudaMia = 0;
 
+  // Fecha activa del panel (si cambias a un día anterior, esta es la que manda)
+  let fechaActiva = (typeof cajaFechaHoy === 'function')
+    ? cajaFechaHoy()
+    : new Date().toISOString().split('T')[0];
+
+  let keyActivo = 'recaudo_' + fechaActiva;
+
   for (let i = 0; i < localStorage.length; i++) {
     let key = localStorage.key(i);
-    if (key && key.startsWith('recaudo_')) {
+
+    // IMPORTANTÍSIMO:
+    // Excluir el día activo para no duplicar lo que ya está guardado en saved.deudaCliente / saved.deudaMia
+    if (key && key.startsWith('recaudo_') && key !== keyActivo) {
       try {
         let obj = JSON.parse(localStorage.getItem(key));
         if (obj && obj[nombre]) {
           deudaCliente += Number(obj[nombre].deudaCliente) || 0;
           deudaMia     += Number(obj[nombre].deudaMia)     || 0;
-          // ← NO sumar deudasPagadas aquí, se lee de cartera_deudas
         }
       } catch(e) {}
     }
   }
 
-  // Pagos permanentes SOLO desde cartera_deudas
   let deudasPagadas = 0, fechaPago = '—';
   try {
     let cartera = JSON.parse(localStorage.getItem('cartera_deudas') || '{}');
@@ -3229,9 +3237,9 @@ function recaudoGetDeudaHistorica(nombre) {
 
   return {
     deudaCliente:  Math.max(deudaCliente - deudasPagadas, 0),
-    deudaMia:      Math.max(deudaMia     - deudasPagadas, 0),
-    deudasPagadas,
-    fechaPago
+    deudaMia:      Math.max(deudaMia - deudasPagadas, 0),
+    deudasPagadas: deudasPagadas,
+    fechaPago: fechaPago
   };
 }
 
@@ -3261,8 +3269,8 @@ async function recaudoConstruirData(){
       recibido: !!saved.recibido,
       nequi: Number(saved.nequi || 0),
       bancolombia: Number(saved.bancolombia || 0),
-      deudaCliente: deudaHist.deudaCliente,
-      deudaMia: deudaHist.deudaMia,
+      deudaCliente: (Number(saved.deudaCliente) || 0) + deudaHist.deudaCliente,
+      deudaMia: (Number(saved.deudaMia) || 0) + deudaHist.deudaMia,
       deudasPagadas: deudaHist.deudasPagadas,
       deudaMetodo: saved.deudaMetodo || null,
       deudaBanco: saved.deudaBanco || null,
@@ -10309,6 +10317,81 @@ if(typeof window.renderCartera === 'function'){
 }
 
 console.log('✅ Parche historial deuda por día cargado');
+
+})();
+
+(function(){
+
+  // FORZAR que deudaCliente y deudaMia del día activo
+  // NO se descuenten por deudasPagadas históricas al mostrar en tabla.
+  // El descuento solo aplica al resumen/cartera, no al input editable del día.
+
+  var _origConstruirData = window.recaudoConstruirData;
+
+  // Parche directo sobre recaudoConstruirData
+  // Después de construir cada row, forzar que deudaCliente/deudaMia
+  // del día activo (saved) siempre se respete aunque el histórico dé 0
+  var _origGetDeudaHistorica = window.recaudoGetDeudaHistorica;
+
+  window.recaudoGetDeudaHistorica = function(nombre){
+    let result = _origGetDeudaHistorica(nombre);
+
+    // Leer lo que hay guardado en el día activo para este cliente
+    try{
+      let estado = recaudoLeerEstado();
+      let saved = estado[nombre] || {};
+      let savedDC = Number(saved.deudaCliente) || 0;
+      let savedDM = Number(saved.deudaMia)     || 0;
+
+      // Si el día activo tiene deuda guardada, asegurarse que se sume
+      // (ya lo hace el Parche 2 anterior, esto es seguridad extra)
+      // Pero si deudasPagadas borró todo, restaurar lo del día activo
+      if(savedDC > 0 && result.deudaCliente === 0){
+        result.deudaCliente = savedDC;
+      }
+      if(savedDM > 0 && result.deudaMia === 0){
+        result.deudaMia = savedDM;
+      }
+    }catch(e){}
+
+    return result;
+  };
+
+  // Parche sobre renderRecaudo: después de pintar la tabla,
+  // forzar los inputs de deuda con lo que hay guardado en el día activo
+  var _origRenderRecaudo = window.renderRecaudo;
+  window.renderRecaudo = async function(){
+    let r = await _origRenderRecaudo.apply(this, arguments);
+
+    setTimeout(function(){
+      try{
+        let estado = recaudoLeerEstado();
+        Object.keys(estado).forEach(function(nombre){
+          let saved = estado[nombre] || {};
+          let dc = Number(saved.deudaCliente) || 0;
+          let dm = Number(saved.deudaMia)     || 0;
+
+          // Input deuda cliente
+          let inputDC = document.getElementById('rec_dc_' + nombre);
+          if(inputDC && dc > 0 && (Number(inputDC.dataset.raw) || 0) === 0){
+            inputDC.value = dc.toLocaleString('es-CO');
+            inputDC.dataset.raw = dc;
+          }
+
+          // Input yo le debo
+          let inputDM = document.getElementById('rec_dm_' + nombre);
+          if(inputDM && dm > 0 && (Number(inputDM.dataset.raw) || 0) === 0){
+            inputDM.value = dm.toLocaleString('es-CO');
+            inputDM.dataset.raw = dm;
+          }
+        });
+      }catch(e){}
+    }, 150);
+
+    return r;
+  };
+
+  console.log('✅ Parche: forzar deuda visible en todos los clientes');
 
 })();
 </script>
