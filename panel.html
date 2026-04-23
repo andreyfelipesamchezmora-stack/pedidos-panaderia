@@ -10743,6 +10743,246 @@ console.log('✅ Parche historial deuda por día cargado');
   console.log('✅ Parche Supabase 24/7 activo — cuentas + gastos + cartera + movimientos');
 
 })();
+
+(function(){
+
+  // ══════════════════════════════════════════════════════
+  // PARCHE SUPABASE — RECAUDO DIARIO + NÓMINA
+  // Persistencia 24/7 completa
+  // ══════════════════════════════════════════════════════
+
+  function lsGet(k,fb){ try{ let v=JSON.parse(localStorage.getItem(k)); return v!==null?v:fb; }catch(e){return fb;} }
+  function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+  function log(m){ console.log('[Sync]',m); }
+
+  // ══════════════════════════════════════════════════════
+  // RECAUDO DIARIO
+  // ══════════════════════════════════════════════════════
+
+  async function sbCargarRecaudoFecha(fecha){
+    try{
+      let { data, error } = await db.from('vn_recaudo_estados')
+        .select('datos').eq('fecha', fecha).single();
+      if(error || !data) return false;
+      let key = 'recaudo_' + fecha;
+      lsSet(key, data.datos);
+      log('Recaudo cargado: ' + fecha);
+      return true;
+    }catch(e){ return false; }
+  }
+
+  async function sbGuardarRecaudoFecha(fecha, datos){
+    try{
+      await db.from('vn_recaudo_estados').upsert({
+        fecha: fecha,
+        datos: datos,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'fecha' });
+      log('Recaudo guardado: ' + fecha);
+    }catch(e){ log('Error recaudo: '+e.message); }
+  }
+
+  // Cargar TODOS los recaudos históricos del localStorage a Supabase (migración única)
+  async function sbMigrarTodosRecaudos(){
+    try{
+      for(let i=0; i<localStorage.length; i++){
+        let key = localStorage.key(i);
+        if(key && key.startsWith('recaudo_')){
+          let fecha = key.replace('recaudo_','');
+          // Validar que sea una fecha YYYY-MM-DD
+          if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) continue;
+          let datos = lsGet(key, null);
+          if(datos && typeof datos === 'object' && Object.keys(datos).length > 0){
+            await sbGuardarRecaudoFecha(fecha, datos);
+          }
+        }
+      }
+      log('Migración recaudos completa');
+    }catch(e){}
+  }
+
+  // Parchear recaudoGuardarEstado para sincronizar automáticamente
+  var _origRecaudoGuardar = window.recaudoGuardarEstado;
+  window.recaudoGuardarEstado = function(obj){
+    if(typeof _origRecaudoGuardar === 'function') _origRecaudoGuardar.apply(this, arguments);
+    // Guardar en Supabase en background
+    try{
+      let fecha = (typeof cajaFechaHoy === 'function')
+        ? cajaFechaHoy()
+        : new Date().toISOString().split('T')[0];
+      sbGuardarRecaudoFecha(fecha, obj || {});
+    }catch(e){}
+  };
+
+  // Parchear renderRecaudo para cargar desde Supabase si localStorage está vacío
+  var _origRenderRecaudo = window.renderRecaudo;
+  window.renderRecaudo = async function(){
+    try{
+      let fecha = (typeof cajaFechaHoy === 'function')
+        ? cajaFechaHoy()
+        : new Date().toISOString().split('T')[0];
+      let key = 'recaudo_' + fecha;
+      let local = lsGet(key, null);
+      // Si no hay datos locales, intentar cargar desde Supabase
+      if(!local || Object.keys(local).length === 0){
+        await sbCargarRecaudoFecha(fecha);
+      }
+    }catch(e){}
+    return await _origRenderRecaudo.apply(this, arguments);
+  };
+
+  // ══════════════════════════════════════════════════════
+  // NÓMINA
+  // ══════════════════════════════════════════════════════
+
+  var NOMINA_KEY = 'nominaData';
+
+  async function sbCargarNomina(){
+    try{
+      let { data, error } = await db.from('vn_nomina').select('datos').order('updated_at',{ascending:false}).limit(1).single();
+      if(error || !data) return false;
+      lsSet(NOMINA_KEY, data.datos);
+      // Aplicar a la variable en memoria si existe
+      if(data.datos && typeof window.nominaData !== 'undefined'){
+        try{ Object.assign(window.nominaData, data.datos); }catch(e){}
+      }
+      log('Nómina cargada desde Supabase');
+      return true;
+    }catch(e){ return false; }
+  }
+
+  async function sbGuardarNomina(datos){
+    try{
+      // Verificar si ya existe un registro
+      let { data: existing } = await db.from('vn_nomina').select('id').limit(1).single();
+      if(existing && existing.id){
+        await db.from('vn_nomina').update({
+          datos: datos,
+          updated_at: new Date().toISOString()
+        }).eq('id', existing.id);
+      } else {
+        await db.from('vn_nomina').insert({
+          datos: datos,
+          updated_at: new Date().toISOString()
+        });
+      }
+      log('Nómina guardada en Supabase');
+    }catch(e){ log('Error nómina: '+e.message); }
+  }
+
+  // Auto-detectar y parchear la función que guarda nómina
+  var nominaFns = ['guardarNomina','nominaGuardar','renderNomina','nominaSave'];
+  nominaFns.forEach(function(fnName){
+    if(typeof window[fnName] === 'function'){
+      var _orig = window[fnName];
+      window[fnName] = function(){
+        var r = _orig.apply(this, arguments);
+        try{
+          var datos = lsGet(NOMINA_KEY, null);
+          if(!datos){
+            // Intentar leer de otras claves comunes
+            ['nomina','nominaEmpleados','nomina_data'].forEach(function(k){
+              var v = lsGet(k, null);
+              if(v) datos = v;
+            });
+          }
+          if(datos) sbGuardarNomina(datos);
+        }catch(e){}
+        return r;
+      };
+      log('Nómina fn parcheada: ' + fnName);
+    }
+  });
+
+  // Guardar nómina al detectar cambios en localStorage
+  var _origLsSetItem = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = function(key, value){
+    _origLsSetItem(key, value);
+    try{
+      if(key === NOMINA_KEY || key === 'nomina' || key === 'nominaEmpleados'){
+        sbGuardarNomina(JSON.parse(value));
+      }
+      // También capturar recaudo por si acaso
+      if(key && key.startsWith('recaudo_')){
+        let fecha = key.replace('recaudo_','');
+        if(/^\d{4}-\d{2}-\d{2}$/.test(fecha)){
+          sbGuardarRecaudoFecha(fecha, JSON.parse(value));
+        }
+      }
+    }catch(e){}
+  };
+
+  // ══════════════════════════════════════════════════════
+  // CARGA INICIAL COMPLETA AL ABRIR
+  // ══════════════════════════════════════════════════════
+
+  async function iniciarSyncCompleto(){
+    log('Iniciando sync completo con Supabase...');
+
+    // Cargar recaudo del día activo
+    try{
+      let fechaHoy = (typeof cajaFechaHoy === 'function')
+        ? cajaFechaHoy()
+        : new Date().toISOString().split('T')[0];
+      await sbCargarRecaudoFecha(fechaHoy);
+    }catch(e){}
+
+    // Cargar nómina
+    await sbCargarNomina();
+
+    // Migrar todos los recaudos históricos del localStorage a Supabase (solo primera vez)
+    let migrado = lsGet('_sb_recaudo_migrado', false);
+    if(!migrado){
+      log('Primera vez: migrando histórico de recaudos...');
+      await sbMigrarTodosRecaudos();
+      lsSet('_sb_recaudo_migrado', true);
+    }
+
+    log('✅ Sync completo terminado');
+
+    // Refrescar UI si está abierto
+    try{ if(typeof renderRecaudo==='function' && document.getElementById('recaudoBody')?.style.display !== 'none') await renderRecaudo(); }catch(e){}
+  }
+
+  // Ejecutar al cargar
+  if(document.readyState === 'complete' || document.readyState === 'interactive'){
+    setTimeout(iniciarSyncCompleto, 1000);
+  } else {
+    window.addEventListener('DOMContentLoaded', function(){ setTimeout(iniciarSyncCompleto, 1000); });
+  }
+
+  // ══════════════════════════════════════════════════════
+  // AUTO-SYNC CADA 3 MINUTOS — por si algo se escapó
+  // ══════════════════════════════════════════════════════
+  setInterval(async function(){
+    try{
+      // Recaudo del día activo
+      let fecha = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
+      let estado = (typeof recaudoLeerEstado==='function') ? recaudoLeerEstado() : lsGet('recaudo_'+fecha, {});
+      if(estado && Object.keys(estado).length > 0) await sbGuardarRecaudoFecha(fecha, estado);
+
+      // Nómina
+      let nomina = lsGet(NOMINA_KEY, null) || lsGet('nomina', null);
+      if(nomina) await sbGuardarNomina(nomina);
+
+      log('Auto-sync 3min OK');
+    }catch(e){}
+  }, 180000);
+
+  // Guardar TODO antes de cerrar pestaña
+  window.addEventListener('beforeunload', function(){
+    try{
+      let fecha = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
+      let estado = (typeof recaudoLeerEstado==='function') ? recaudoLeerEstado() : {};
+      if(estado && Object.keys(estado).length > 0) sbGuardarRecaudoFecha(fecha, estado);
+      let nomina = lsGet(NOMINA_KEY, null);
+      if(nomina) sbGuardarNomina(nomina);
+    }catch(e){}
+  });
+
+  console.log('✅ Parche Supabase COMPLETO activo — Recaudo + Nómina + Auto-sync');
+
+})();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
