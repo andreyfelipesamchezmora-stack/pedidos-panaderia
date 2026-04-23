@@ -10311,6 +10311,162 @@ if(typeof window.renderCartera === 'function'){
 console.log('✅ Parche historial deuda por día cargado');
 
 })();
+
+(function(){
+
+  function recNum(v){
+    return Number(v || 0) || 0;
+  }
+
+  function recSafeEstado(){
+    try{
+      return (typeof recaudoLeerEstado === 'function') ? (recaudoLeerEstado() || {}) : {};
+    }catch(e){
+      return {};
+    }
+  }
+
+  function recGuardarEstadoSeguro(estado){
+    try{
+      if(typeof recaudoGuardarEstado === 'function') recaudoGuardarEstado(estado || {});
+    }catch(e){}
+  }
+
+  function recTieneDomiMarcado(nombre){
+    try{
+      var cb = document.getElementById('recdomi' + nombre);
+      if(cb) return !!cb.checked;
+
+      var estado = recSafeEstado();
+      return recNum(estado[nombre] && estado[nombre].recaudoDomi) > 0;
+    }catch(e){
+      return false;
+    }
+  }
+
+  function recSubirPagoDeudaAEfectivoSiEsDomi(nombre, monto){
+    try{
+      monto = recNum(monto);
+      if(monto <= 0) return;
+
+      var estado = recSafeEstado();
+      if(!estado[nombre]) estado[nombre] = {};
+
+      var tieneDomi = recTieneDomiMarcado(nombre);
+      if(!tieneDomi) return;
+
+      var actual = recNum(estado[nombre].recaudoDomi);
+      estado[nombre].recaudoDomi = actual + monto;
+
+      recGuardarEstadoSeguro(estado);
+    }catch(e){
+      console.error('Error sumando pago de deuda a recaudo domi:', e);
+    }
+  }
+
+  function recBajarPagoDeudaAEfectivoSiEsDomi(nombre, monto){
+    try{
+      monto = recNum(monto);
+      if(monto <= 0) return;
+
+      var estado = recSafeEstado();
+      if(!estado[nombre]) return;
+
+      var actual = recNum(estado[nombre].recaudoDomi);
+      estado[nombre].recaudoDomi = Math.max(actual - monto, 0);
+
+      recGuardarEstadoSeguro(estado);
+    }catch(e){
+      console.error('Error revirtiendo pago de deuda en recaudo domi:', e);
+    }
+  }
+
+  // PARCHE 1:
+  // Al confirmar pago de deuda en efectivo, si el cliente está en recaudo domi,
+  // sumar ese valor al recaudoDomi automáticamente.
+  if(typeof window.recaudoConfirmarPago === 'function'){
+    var _oldRecaudoConfirmarPago = window.recaudoConfirmarPago;
+    window.recaudoConfirmarPago = function(nombre, monto){
+      try{
+        var metodo = window.recMetSel || '';
+        var eraDomi = recTieneDomiMarcado(nombre);
+
+        var r = _oldRecaudoConfirmarPago.apply(this, arguments);
+
+        if(metodo === 'efectivo' && eraDomi){
+          setTimeout(function(){
+            recSubirPagoDeudaAEfectivoSiEsDomi(nombre, monto);
+            if(typeof renderRecaudo === 'function') renderRecaudo();
+          }, 60);
+        }
+
+        return r;
+      }catch(e){
+        console.error('Parche recaudoConfirmarPago:', e);
+        return _oldRecaudoConfirmarPago.apply(this, arguments);
+      }
+    };
+  }
+
+  // PARCHE 2:
+  // También cubrir la versión V3 si existe en tu archivo.
+  if(typeof window.recaudoConfirmarPagoV3 === 'function'){
+    var _oldRecaudoConfirmarPagoV3 = window.recaudoConfirmarPagoV3;
+    window.recaudoConfirmarPagoV3 = function(nombre){
+      try{
+        var metodo = window.recMetSel || '';
+        var montoInput = document.getElementById('recPagoMontoInput');
+        var monto = montoInput ? recNum(montoInput.value) : 0;
+        var eraDomi = recTieneDomiMarcado(nombre);
+
+        var r = _oldRecaudoConfirmarPagoV3.apply(this, arguments);
+
+        if(metodo === 'efectivo' && eraDomi && monto > 0){
+          setTimeout(function(){
+            recSubirPagoDeudaAEfectivoSiEsDomi(nombre, monto);
+            if(typeof renderRecaudo === 'function') renderRecaudo();
+          }, 60);
+        }
+
+        return r;
+      }catch(e){
+        console.error('Parche recaudoConfirmarPagoV3:', e);
+        return _oldRecaudoConfirmarPagoV3.apply(this, arguments);
+      }
+    };
+  }
+
+  // PARCHE 3:
+  // Si se revierte el pago de deuda, también reversa lo sumado a recaudoDomi.
+  if(typeof window.recaudoRevertirPagoDeuda === 'function'){
+    var _oldRecaudoRevertirPagoDeuda = window.recaudoRevertirPagoDeuda;
+    window.recaudoRevertirPagoDeuda = function(nombre){
+      try{
+        var estado = recSafeEstado();
+        var pagoAnterior = recNum(estado[nombre] && estado[nombre].deudasPagadas);
+        var metodoAnterior = String((estado[nombre] && estado[nombre].deudaMetodo) || '').toLowerCase();
+        var eraDomi = recTieneDomiMarcado(nombre);
+
+        var r = _oldRecaudoRevertirPagoDeuda.apply(this, arguments);
+
+        if(metodoAnterior === 'efectivo' && eraDomi && pagoAnterior > 0){
+          setTimeout(function(){
+            recBajarPagoDeudaAEfectivoSiEsDomi(nombre, pagoAnterior);
+            if(typeof renderRecaudo === 'function') renderRecaudo();
+          }, 60);
+        }
+
+        return r;
+      }catch(e){
+        console.error('Parche recaudoRevertirPagoDeuda:', e);
+        return _oldRecaudoRevertirPagoDeuda.apply(this, arguments);
+      }
+    };
+  }
+
+  console.log('✅ Parche: pago de deuda en efectivo suma a recaudo domi');
+
+})();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
