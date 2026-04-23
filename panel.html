@@ -3202,41 +3202,31 @@ async function recaudoPedidosDelDia(){
 }
 function recaudoGetDeudaHistorica(nombre) {
   let deudaCliente = 0, deudaMia = 0;
-  // Normalizar el nombre igual que se hace en el HTML
   let nombreSafe = nombre.replace(/[^a-zA-Z0-9]/g, '_');
-  const claveHoy = recaudoFechaKey(); // excluir el día activo para no duplicar
 
   for (let i = 0; i < localStorage.length; i++) {
     let key = localStorage.key(i);
-    // Solo días ANTERIORES — NO incluir el día activo
-    if (key && key.startsWith('recaudo_') && key !== claveHoy) {
+    if (key && key.startsWith('recaudo_')) {
       try {
         let obj = JSON.parse(localStorage.getItem(key));
-        if (obj && obj[nombre]) {
-          deudaCliente += Number(obj[nombre].deudaCliente) || 0;
-          deudaMia     += Number(obj[nombre].deudaMia)     || 0;
+        let datos = obj && (obj[nombre] || obj[nombreSafe]);
+        if (datos) {
+          deudaCliente += Number(datos.deudaCliente) || 0;
+          deudaMia     += Number(datos.deudaMia)     || 0;
         }
       } catch(e) {}
     }
   }
 
-  // Pagos desde cartera_deudas
+  // Pagos permanentes SOLO desde cartera_deudas
   let deudasPagadas = 0, fechaPago = '—';
   try {
     let cartera = JSON.parse(localStorage.getItem('cartera_deudas') || '{}');
-    if (cartera[nombre]) {
-      deudasPagadas = Number(cartera[nombre].deudasPagadas) || 0;
-      fechaPago     = cartera[nombre].fechaPago || '—';
+    let datosCartera = cartera[nombre] || cartera[nombreSafe];
+    if (datosCartera) {
+      deudasPagadas = Number(datosCartera.deudasPagadas) || 0;
+      fechaPago     = datosCartera.fechaPago || '—';
     }
-  } catch(e) {}
-
-  // Cruzar con historial real de pagos — usar el mayor para evitar subconteos
-  try {
-    let hist = JSON.parse(localStorage.getItem('cartera_pagos_historial') || '[]');
-    let totalHist = hist
-      .filter(p => p.cliente === nombre)
-      .reduce((s, p) => s + (Number(p.monto) || 0), 0);
-    if (totalHist > deudasPagadas) deudasPagadas = totalHist;
   } catch(e) {}
 
   return {
@@ -3246,6 +3236,7 @@ function recaudoGetDeudaHistorica(nombre) {
     fechaPago
   };
 }
+
 
 
 async function recaudoConstruirData(){
@@ -3259,8 +3250,8 @@ async function recaudoConstruirData(){
  
   let rows = (clientes || []).map(function(c){
     let ped = mapaPedidos[c.nombre] || null;
-    let _safeNombre = c.nombre.replace(/[^a-zA-Z0-9]/g, '_');
-let saved = estado[c.nombre] || estado[_safeNombre] || {};
+    let _safe = c.nombre.replace(/[^a-zA-Z0-9]/g, '_');
+    let saved = estado[c.nombre] || estado[_safe] || {};
  
     let subtotal = Number(ped && ped.total || 0);
     let deudaHist = recaudoGetDeudaHistorica(c.nombre);
@@ -3538,59 +3529,40 @@ async function renderRecaudo(){
               }
  
               // HTML de deuda
-              // ✅ VERSIÓN CORREGIDA — deudaHtml definitivo
-let deudaCliente_r = Number(r.deudaCliente) || 0;
-let deudaMia_r     = Number(r.deudaMia)     || 0;
-let pagadas_r      = Number(r.deudasPagadas) || 0;
-
-let deudaHtml;
-if (deudaCliente_r <= 0 && deudaMia_r <= 0) {
-  // Sin deuda
-  deudaHtml = `<span style="color:#4ade80;font-size:11px">✓ Sin deuda</span>`;
-
-} else {
-  // Calcular si está pagado COMPLETAMENTE
-  let deudaPendiente = deudaCliente_r > 0
-    ? Math.max(deudaCliente_r - pagadas_r, 0)
-    : Math.max(deudaMia_r - pagadas_r, 0);
-
-  let pagadoCompleto = pagadas_r > 0 && r.deudaMetodo && deudaPendiente === 0;
-
-  if (pagadoCompleto) {
-    // ✅ PAGADO TOTAL
-    let icono = r.deudaMetodo === 'efectivo' ? '💵' : '🏦';
-    let banco  = r.deudaMetodo === 'efectivo' ? 'Efectivo' : (r.deudaBanco || 'Transf.');
-    deudaHtml = `
-      <div style="font-size:10px;color:#4ade80;font-weight:700;margin-bottom:3px">${icono} ${banco}</div>
-      <input id="recdeudasaldo_${safe}" class="recaudo-check" type="checkbox" checked
-        onchange="recaudoMarcarDeudaSaldada('${safe}',${deudaCliente_r},${deudaMia_r})"
-        title="Click para revertir">`;
-
-  } else if (r.deudaMiaPagada > 0 && deudaMia_r <= 0) {
-    // ✅ DEUDA MÍA DESCONTADA
-    deudaHtml = `
-      <div style="font-size:10px;color:#60a5fa;font-weight:700;margin-bottom:3px">✅ Descontado</div>
-      <input id="recdeudasaldo_${safe}" class="recaudo-check" type="checkbox" checked
-        onchange="recaudoMarcarDeudaSaldada('${safe}',${deudaCliente_r},${deudaMia_r})">`;
-
-  } else {
-    // 🔴🔵 DEUDA PENDIENTE — siempre mostrar monto y checkbox desmarcado
-    let color  = deudaCliente_r > 0 ? '#fca5a5' : '#93c5fd';
-    let emoji  = deudaCliente_r > 0 ? '🔴' : '🔵';
-    let label  = deudaCliente_r > 0
-      ? `${emoji} Me debe: ${recaudoMoney(deudaCliente_r)}`
-      : `${emoji} Le debo: ${recaudoMoney(deudaMia_r)}`;
-    let abono  = pagadas_r > 0
-      ? `<div style="font-size:10px;color:#fbbf24;font-weight:700;margin-top:2px">⚡ Abono: ${recaudoMoney(pagadas_r)} — Saldo: ${recaudoMoney(deudaPendiente)}</div>`
-      : '';
-    deudaHtml = `
-      <div style="font-size:11px;color:${color};font-weight:700;margin-bottom:3px">${label}</div>
-      ${abono}
-      <input id="recdeudasaldo_${safe}" class="recaudo-check" type="checkbox"
-        onchange="recaudoMarcarDeudaSaldada('${safe}',${deudaCliente_r},${deudaMia_r})"
-        title="${deudaCliente_r > 0 ? 'Marcar pago' : 'Descontar'}">`;
-  }
-}
+              let deudaHtml = '';
+              if(r.deudaCliente > 0 || r.deudaMia > 0){
+                if(r.deudasPagadas > 0 && r.deudaMetodo){
+                  let metodoIcono = r.deudaMetodo === 'efectivo' ? '💵' : '🏦';
+                  let metodoLabel = r.deudaMetodo === 'efectivo' ? 'Efectivo' : (r.deudaBanco || 'Transf.');
+                  deudaHtml = `
+                    <div style="font-size:10px;color:#4ade80;font-weight:700;margin-bottom:3px;">
+                      ✓ ${metodoIcono} ${metodoLabel}
+                    </div>
+                    <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox" checked
+                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})"
+                      title="Click para revertir">
+                  `;
+                } else if(r.deudaMiaPagada > 0){
+                  deudaHtml = `
+                    <div style="font-size:10px;color:#60a5fa;font-weight:700;margin-bottom:3px;">
+                      ✓ Descontado
+                    </div>
+                    <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox" checked
+                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})">
+                  `;
+                } else {
+                  deudaHtml = `
+                    <div style="font-size:11px;color:${r.deudaCliente > 0 ? '#fca5a5' : '#93c5fd'};font-weight:700;margin-bottom:3px;">
+                      ${r.deudaCliente > 0 ? '⚠️ ' + recaudoMoney(r.deudaCliente) : '💙 ' + recaudoMoney(r.deudaMia)}
+                    </div>
+                    <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox"
+                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})"
+                      title="${r.deudaCliente > 0 ? 'Marcar pago' : 'Descontar'}">
+                  `;
+                }
+              } else {
+                deudaHtml = '<span style="color:#4ade80;font-size:11px">✓ Sin deuda</span>';
+              }
  
               return `
                 <tr style="background:${bgColor}; transition:background 0.2s;">
@@ -3686,8 +3658,7 @@ setTimeout(function(){ recaudoInyectarSugeridos(rows); }, 80);
 
 function recaudoGuardarFila(nombre){
   let estado = recaudoLeerEstado();
-  let nombreReal = nombre; // nombre ya viene como safe desde el HTML
-  let base = estado[nombreReal] || {};
+  let base = estado[nombre] || {};
  
   let q = function(id){ return document.getElementById(id); };
  
@@ -10364,10 +10335,9 @@ console.log('✅ Parche historial deuda por día cargado');
       if (key && key.startsWith('recaudo_') && key !== keyActivo) {
         try {
           let obj = JSON.parse(localStorage.getItem(key));
-          let datos = obj && (obj[nombre] || obj[nombreSafe]);
-if (datos) {
-  deudaCliente += Number(datos.deudaCliente) || 0;
-  deudaMia     += Number(datos.deudaMia)     || 0;
+          if (obj && obj[nombre]) {
+            deudaCliente += Number(obj[nombre].deudaCliente) || 0;
+            deudaMia     += Number(obj[nombre].deudaMia)     || 0;
           }
         } catch(e) {}
       }
@@ -10962,9 +10932,13 @@ window.recaudoConstruirData = async function(){
   return rows;
 };
  
+// =====================================================
+ 
 console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
   console.log('☁️ Supabase Realtime Sync V12 iniciado');
 })();
+
+
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
