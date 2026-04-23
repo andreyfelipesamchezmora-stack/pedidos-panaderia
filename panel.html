@@ -11042,223 +11042,93 @@ window.renderRecaudo = async function(){
 };
  
 console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
-
-  // =====================================================
-// PARCHE V13-FIX — DEUDAS VISIBLES CORRECTAMENTE
-// El badge muestra deuda histórica + del día
-// Los inputs solo muestran lo del día
-// Efectivo descuenta deudas del día
-// Botón Reset
-// Pegar JUSTO ANTES de:
-// console.log('☁️ Supabase Realtime Sync V12 iniciado');
-// =====================================================
-
-// =====================================================
-// 1. OVERRIDE recaudoConstruirData
-//    - Guardar deuda histórica en _deudaHistX
-//    - Inputs de deuda = solo valor del día
-//    - Badge/checkbox = deuda histórica + día (total real)
-//    - Efectivo = descontando deudas del día
-// =====================================================
-var _origConstruir_v13 = window.recaudoConstruirData;
-window.recaudoConstruirData = async function(){
-  var rows = await _origConstruir_v13.apply(this, arguments);
-
-  var estado = {};
-  try {
-    var fk = 'recaudo_' + ((typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0]);
-    estado = JSON.parse(localStorage.getItem(fk) || '{}');
-  } catch(e){}
-
-  rows.forEach(function(r){
-    var saved = estado[r.cliente] || {};
-
-    // Deuda HISTÓRICA (viene del original, ya excluye día actual)
-    var histDC = Number(r.deudaCliente) || 0;
-    var histDM = Number(r.deudaMia) || 0;
-
-    // Deuda escrita HOY (solo lo que el usuario puso en los inputs hoy)
-    var hoyDC = Number(saved.deudaCliente) || 0;
-    var hoyDM = Number(saved.deudaMia) || 0;
-
-    // DEUDA TOTAL REAL = histórica + lo de hoy (para badge y checkbox)
-    r._deudaTotalCliente = histDC + hoyDC;
-    r._deudaTotalMia = histDM + hoyDM;
-
-    // INPUTS = solo lo de hoy (para no pre-llenar con valores viejos)
-    r.deudaCliente = hoyDC;
-    r.deudaMia = hoyDM;
-
-    // EFECTIVO NETO = descontando deudas de HOY + transferencias + faltantes + salidas
-    r.totalTransferencia = (Number(r.nequi)||0) + (Number(r.bancolombia)||0);
-    var efec = (Number(r.subtotal)||0) - r.totalTransferencia - (Number(r.faltantes)||0) - (Number(r.salidas)||0) - hoyDC - hoyDM;
-    if(efec < 0) efec = 0;
-    r.efectivoNeto = efec;
-  });
-
-  return rows;
-};
-
-// =====================================================
-// 2. OVERRIDE renderRecaudo
-//    - Arreglar badge de deuda usando _deudaTotalX
-//    - Recalcular efectivo real
-//    - Agregar botón Reset
-// =====================================================
-var _origRender_v13 = window.renderRecaudo;
-window.renderRecaudo = async function(){
-  if(typeof _origRender_v13 === 'function') await _origRender_v13();
-
-  setTimeout(function(){
-    var body = document.getElementById('recaudoBody');
-    if(!body) return;
-    var cache = window._recaudoCache;
-    if(!cache || !cache.rows) return;
-
-    // ============ ARREGLAR BADGES DE DEUDA ============
-    cache.rows.forEach(function(r){
-      var safe = r.cliente.replace(/[^a-zA-Z0-9]/g, '_');
-      var totalDC = r._deudaTotalCliente || 0;
-      var totalDM = r._deudaTotalMia || 0;
-      var tieneDeuda = totalDC > 0 || totalDM > 0;
-
-      // Buscar la celda de deuda para este cliente
-      var cbDeuda = document.getElementById('rec_deuda_saldo_' + safe);
-      // Buscar el contenedor de la deuda (el <td> padre)
-      var tdDeuda = cbDeuda ? cbDeuda.closest('td') : null;
-
-      // Si no hay checkbox, buscar el "✓ Sin deuda" span
-      if(!tdDeuda){
-        var allTds = body.querySelectorAll('td');
-        allTds.forEach(function(td){
-          if(td.textContent.indexOf('Sin deuda') > -1){
-            // Verificar que es la fila de este cliente
-            var row = td.closest('tr');
-            if(row){
-              var nameTd = row.querySelectorAll('td')[1]; // columna CLIENTE
-              if(nameTd && nameTd.textContent.trim() === r.cliente){
-                tdDeuda = td;
-              }
-            }
-          }
-        });
-      }
-
-      if(!tdDeuda) return;
-
-      // Si tiene deuda histórica o de hoy pero muestra "Sin deuda", corregir
-      if(tieneDeuda){
-        var saved = {};
-        try {
-          var fk2 = 'recaudo_' + cajaFechaHoy();
-          var est2 = JSON.parse(localStorage.getItem(fk2)||'{}');
-          saved = est2[r.cliente] || {};
-        } catch(e){}
-
-        var yaReg = saved.deudaMetodo || saved.deudasPagadas > 0;
-
-        if(yaReg){
-          // Ya se marcó como pagada
-          tdDeuda.innerHTML =
-            '<div style="font-size:10px;color:#4ade80;font-weight:700;margin-bottom:3px;">✓ Pagada</div>'+
-            '<input id="rec_deuda_saldo_'+safe+'" class="recaudo-check" type="checkbox" checked '+
-              'onchange="recaudoMarcarDeudaSaldada(\''+safe.replace(/'/g,"\\'")+'\', '+totalDC+', '+totalDM+')" title="Click para revertir">';
-        } else {
-          // Tiene deuda pendiente - mostrar badge con monto y checkbox
-          var color = totalDC > 0 ? '#fca5a5' : '#93c5fd';
-          var icono = totalDC > 0 ? '⚠️' : '💙';
-          var monto = totalDC > 0 ? totalDC : totalDM;
-          var montoFmt = '$' + monto.toLocaleString('es-CO');
-
-          tdDeuda.innerHTML =
-            '<div style="font-size:11px;color:'+color+';font-weight:700;margin-bottom:3px;">'+
-              icono+' '+montoFmt+
-            '</div>'+
-            '<input id="rec_deuda_saldo_'+safe+'" class="recaudo-check" type="checkbox" '+
-              'onchange="recaudoMarcarDeudaSaldada(\''+safe.replace(/'/g,"\\'")+'\', '+totalDC+', '+totalDM+')" '+
-              'title="'+(totalDC > 0 ? 'Marcar pago' : 'Descontar')+'">';
-        }
-      }
-      // Si no tiene deuda, el "✓ Sin deuda" ya está correcto
-    });
-
-    // ============ RECALCULAR EFECTIVO TOTAL ============
-    var efectivoReal = 0;
-    cache.rows.forEach(function(r){
-      efectivoReal += r.efectivoNeto || 0;
-    });
-
-    // Actualizar tarjeta EFECTIVO en header
-    var headerCards = body.querySelectorAll('div[style*="rgba(34,197,94"]');
-    headerCards.forEach(function(card){
-      var label = card.querySelector('span[style*="color:#4ade80"]');
-      if(label && label.textContent.trim() === 'Efectivo'){
-        var valDiv = card.querySelector('div[style*="font-weight:800"]');
-        if(valDiv) valDiv.textContent = '$' + efectivoReal.toLocaleString('es-CO');
-      }
-    });
-
-    // Actualizar barra de totales
-    var minis = body.querySelectorAll('.recaudo-mini');
-    minis.forEach(function(mini){
-      var lab = mini.querySelector('.lab');
-      var val = mini.querySelector('.val');
-      if(lab && val && lab.textContent.indexOf('Efectivo') > -1 && lab.textContent.indexOf('💵') > -1){
-        val.textContent = '$' + efectivoReal.toLocaleString('es-CO');
-      }
-    });
-
-    // Actualizar cache
-    if(cache.resumen){
-      cache.resumen.netoEfectivo = efectivoReal;
-      if(cache.resumen.desglose){
-        cache.resumen.desglose.efectivoVentas = efectivoReal;
-        cache.resumen.desglose.efectivoTotal = efectivoReal;
-      }
-    }
-
-    // ============ RESALTAR $0 EN AMARILLO ============
-    body.querySelectorAll('td').forEach(function(td){
-      if(td.textContent.trim() === '$0' && td.style.fontWeight === '800'){
-        td.style.background = 'rgba(251,191,36,0.15)';
-        td.style.color = '#fbbf24';
-      }
-    });
-
-    // ============ BOTÓN RESET ============
-    if(!document.getElementById('btnResetRecaudo')){
-      var actualizarBtn = body.querySelector('.btn-transferir[onclick*="renderRecaudo"]');
-      if(actualizarBtn && actualizarBtn.parentNode){
-        var resetBtn = document.createElement('button');
-        resetBtn.id = 'btnResetRecaudo';
-        resetBtn.className = 'btn-transferir';
-        resetBtn.style.cssText = 'background:rgba(239,68,68,0.2)!important;border:1px solid rgba(239,68,68,0.4)!important;color:#fca5a5!important;margin-left:6px;';
-        resetBtn.textContent = '🔄 Reset';
-        resetBtn.title = 'Limpiar checkboxes Recaudo Domi y Recibido';
-        resetBtn.onclick = function(){
-          if(!confirm('¿Limpiar TODOS los checkboxes del día?')) return;
-          var fk = 'recaudo_' + cajaFechaHoy();
-          var est = {};
-          try { est = JSON.parse(localStorage.getItem(fk)||'{}'); } catch(e){}
-          Object.keys(est).forEach(function(n){
-            if(n.startsWith('__')) return;
-            if(est[n]){
-              est[n].recaudoDomi = 0;
-              est[n].recibido = false;
-            }
-          });
-          localStorage.setItem(fk, JSON.stringify(est));
-          renderRecaudo();
-        };
-        actualizarBtn.parentNode.insertBefore(resetBtn, actualizarBtn.nextSibling);
-      }
-    }
-
-  }, 350);
-};
-
-console.log('✅ V13-FIX: Deudas históricas visibles + efectivo real + reset');
   console.log('☁️ Supabase Realtime Sync V12 iniciado');
+})();
+
+// ============================================================
+// PARCHE FIX-DEUDA-v2 — Checkbox y aviso de deuda correctos
+// ============================================================
+(function() {
+  'use strict';
+
+  var _origRender = window.renderRecaudo;
+
+  window.renderRecaudo = async function() {
+    // Ejecutar el render original
+    if (typeof _origRender === 'function') {
+      await _origRender.apply(this, arguments);
+    }
+
+    // Post-procesamiento: corregir cada celda de deuda en la tabla
+    setTimeout(function() {
+      var rows = window.recaudoCache && window.recaudoCache.rows;
+      if (!Array.isArray(rows)) return;
+
+      rows.forEach(function(r) {
+        var safe = r.cliente.replace(/[^a-zA-Z0-9]/g, '_');
+        var celda = document.getElementById('recdeudasaldo_' + safe);
+        if (!celda) return;
+
+        var contenedor = celda.closest ? celda.closest('td') : celda.parentNode;
+        if (!contenedor) return;
+
+        var deudaCliente = Number(r.deudaCliente) || 0;
+        var deudaMia     = Number(r.deudaMia)     || 0;
+        var deudasPagadas = Number(r.deudasPagadas) || 0;
+
+        // ── CASO 1: Sin deuda de ningún lado ──
+        if (deudaCliente === 0 && deudaMia === 0) {
+          contenedor.innerHTML = '<span style="color:#4ade80;font-size:11px">✅ Sin deuda</span>';
+          return;
+        }
+
+        // ── CASO 2: Deuda pagada COMPLETAMENTE hoy ──
+        // Solo se considera pagado si deudasPagadas >= la deuda pendiente
+        var estaPagadoCompleto = (deudasPagadas > 0) &&
+                                  (r.deudaMetodo) &&
+                                  (deudasPagadas >= deudaCliente) &&
+                                  (deudasPagadas >= deudaMia);
+
+        if (estaPagadoCompleto) {
+          contenedor.innerHTML =
+            '<div style="font-size:10px;color:#4ade80;font-weight:700;margin-bottom:3px">' +
+              (r.deudaMetodo === 'efectivo' ? '💵' : '🏦') + ' ' +
+              (r.deudaMetodo === 'efectivo' ? 'Efectivo' : (r.deudaBanco || 'Transf.')) +
+            '</div>' +
+            '<input id="recdeudasaldo_' + safe + '" class="recaudo-check" type="checkbox" checked ' +
+            'onchange="recaudoMarcarDeudaSaldada(\'' + safe + '\',' + deudaCliente + ',' + deudaMia + ')" ' +
+            'title="Click para revertir">';
+          return;
+        }
+
+        // ── CASO 3: Deuda PENDIENTE (total o con abono parcial) ──
+        var saldoPendiente = Math.max(deudaCliente - deudasPagadas, 0) ||
+                             Math.max(deudaMia - deudasPagadas, 0);
+        var tieneAbonoParcial = deudasPagadas > 0 && !estaPagadoCompleto;
+        var colorDeuda = deudaCliente > 0 ? '#fca5a5' : '#93c5fd';
+        var labelDeuda = deudaCliente > 0
+          ? '🔴 Me debe: ' + recaudoMoney(deudaCliente)
+          : '🔵 Le debo: ' + recaudoMoney(deudaMia);
+
+        // Si hay abono parcial, mostrar el saldo restante
+        var labelExtra = tieneAbonoParcial
+          ? '<div style="font-size:10px;color:#fbbf24;font-weight:700;margin-top:2px">⚡ Abono: ' +
+            recaudoMoney(deudasPagadas) + ' — Saldo: ' + recaudoMoney(saldoPendiente) + '</div>'
+          : '';
+
+        contenedor.innerHTML =
+          '<div style="font-size:11px;color:' + colorDeuda + ';font-weight:700;margin-bottom:3px">' +
+            labelDeuda +
+          '</div>' +
+          labelExtra +
+          '<input id="recdeudasaldo_' + safe + '" class="recaudo-check" type="checkbox" ' +
+          'onchange="recaudoMarcarDeudaSaldada(\'' + safe + '\',' + deudaCliente + ',' + deudaMia + ')" ' +
+          'title="' + (deudaCliente > 0 ? 'Marcar pago' : 'Descontar') + '">';
+      });
+    }, 200);
+  };
+
+  console.log('✅ PARCHE FIX-DEUDA-v2 aplicado — checkbox y aviso de deuda correctos');
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
