@@ -10983,6 +10983,206 @@ console.log('✅ Parche historial deuda por día cargado');
   console.log('✅ Parche Supabase COMPLETO activo — Recaudo + Nómina + Auto-sync');
 
 })();
+
+(function(){
+
+  // ══════════════════════════════════════════════════════
+  // PARCHE SUPABASE — PERSISTENCIA COMPLETA
+  // Cubre: categorías, cuotas, clientes, historial cartera,
+  //        transferencias, marquee, clientesDatos
+  // ══════════════════════════════════════════════════════
+
+  function lsGet(k,fb){ try{let v=JSON.parse(localStorage.getItem(k));return v!==null?v:fb;}catch(e){return fb;} }
+  function lsSet(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} }
+  function log(m){ console.log('[SyncConfig]',m); }
+
+  // Tabla vn_config — una fila por clave
+  async function sbGetConfig(clave){
+    try{
+      let {data,error} = await db.from('vn_config').select('datos').eq('clave',clave).single();
+      if(error||!data) return null;
+      return data.datos;
+    }catch(e){ return null; }
+  }
+
+  async function sbSetConfig(clave, datos){
+    try{
+      await db.from('vn_config').upsert({
+        clave: clave,
+        datos: datos,
+        updated_at: new Date().toISOString()
+      },{ onConflict:'clave' });
+    }catch(e){ log('Error set '+clave+': '+e.message); }
+  }
+
+  // Lista completa de keys que deben vivir en Supabase
+  var KEYS_CONFIG = [
+    'contabilidad_categorias',
+    'cuotas_obligaciones',
+    'obs_marquee',
+    'clientes',
+    'clientesDatos',
+    'cartera_pagos_historial',
+    'transferenciasMem',
+    'cartera_deudas',
+    'cuentasMemoria',
+    'cartera_hist_v2_MARKET DEL RIO - TIBERIO'
+  ];
+
+  // ── Migración inicial: subir todo el localStorage a Supabase ──────────
+  async function sbMigrarConfig(){
+    let migrado = lsGet('_sb_config_migrado', false);
+    if(migrado){ log('Config ya migrada'); return; }
+
+    log('Migrando config a Supabase...');
+    for(let k of KEYS_CONFIG){
+      let val = lsGet(k, null);
+      if(val !== null && val !== undefined){
+        // Para clientes/historial que pueden ser grandes arrays
+        if(Array.isArray(val) && val.length === 0) continue;
+        if(typeof val === 'object' && Object.keys(val).length === 0) continue;
+        await sbSetConfig(k, val);
+        log('Migrado: ' + k);
+      }
+    }
+    // También migrar keys de recaudo histórico
+    for(let i=0; i<localStorage.length; i++){
+      let key = localStorage.key(i);
+      if(key && key.startsWith('recaudo_') && /^\d{4}-\d{2}-\d{2}$/.test(key.replace('recaudo_',''))){
+        let val = lsGet(key, null);
+        if(val && Object.keys(val).length > 0){
+          await sbSetConfig(key, val);
+        }
+      }
+      if(key && key.startsWith('cartera_hist')){
+        let val = lsGet(key, null);
+        if(Array.isArray(val) && val.length > 0){
+          await sbSetConfig(key, val);
+        }
+      }
+    }
+    lsSet('_sb_config_migrado', true);
+    log('✅ Migración config completa');
+  }
+
+  // ── Cargar todo desde Supabase al localStorage ────────────────────────
+  async function sbCargarTodaConfig(){
+    log('Cargando config desde Supabase...');
+    for(let k of KEYS_CONFIG){
+      let remote = await sbGetConfig(k);
+      if(remote !== null){
+        lsSet(k, remote);
+        log('Cargado: ' + k);
+      }
+    }
+
+    // Cargar clientes en memoria
+    try{
+      let cls = lsGet('clientes', null);
+      if(Array.isArray(cls) && cls.length > 0 && typeof window.clientes !== 'undefined'){
+        window.clientes = cls;
+      }
+    }catch(e){}
+
+    // Cargar transferencias en memoria
+    try{
+      let tr = lsGet('transferenciasMem', null);
+      if(Array.isArray(tr)) window.transferenciasMem = tr;
+    }catch(e){}
+
+    // Cargar categorías en memoria
+    try{
+      let cats = lsGet('contabilidad_categorias', null);
+      if(cats && typeof cats === 'object'){
+        if(typeof window._catCache !== 'undefined') window._catCache = cats;
+      }
+    }catch(e){}
+
+    log('✅ Config cargada desde Supabase');
+  }
+
+  // ── Interceptar localStorage.setItem para auto-sincronizar ───────────
+  var _origSet = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = function(key, value){
+    _origSet(key, value);
+    try{
+      // Sincronizar si es un key que nos importa
+      let esConfig = KEYS_CONFIG.includes(key);
+      let esRecaudo = key && key.startsWith('recaudo_') && /^\d{4}-\d{2}-\d{2}$/.test(key.replace('recaudo_',''));
+      let esCarteraHist = key && key.startsWith('cartera_hist');
+
+      if(esConfig || esRecaudo || esCarteraHist){
+        try{
+          let parsed = JSON.parse(value);
+          // No guardar vacíos
+          let isEmpty = Array.isArray(parsed) ? parsed.length === 0
+            : (typeof parsed === 'object' && parsed !== null) ? Object.keys(parsed).length === 0
+            : false;
+          if(!isEmpty) sbSetConfig(key, parsed);
+        }catch(e){}
+      }
+    }catch(e){}
+  };
+
+  // ── Cargar recaudo por fecha desde Supabase si no está local ──────────
+  var _origRenderRecaudo = window.renderRecaudo;
+  window.renderRecaudo = async function(){
+    try{
+      let fecha = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
+      let key = 'recaudo_' + fecha;
+      let local = lsGet(key, null);
+      if(!local || Object.keys(local).length === 0){
+        let remote = await sbGetConfig(key);
+        if(remote && Object.keys(remote).length > 0){
+          lsSet(key, remote);
+          log('Recaudo ' + fecha + ' restaurado desde Supabase');
+        }
+      }
+    }catch(e){}
+    return await _origRenderRecaudo.apply(this, arguments);
+  };
+
+  // ── Auto-sync cada 2 minutos ──────────────────────────────────────────
+  setInterval(async function(){
+    try{
+      for(let k of KEYS_CONFIG){
+        let val = lsGet(k, null);
+        if(val === null) continue;
+        let isEmpty = Array.isArray(val) ? val.length === 0
+          : (typeof val === 'object') ? Object.keys(val).length === 0 : false;
+        if(!isEmpty) await sbSetConfig(k, val);
+      }
+      // Recaudo del día activo
+      let fecha = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
+      let est = (typeof recaudoLeerEstado==='function') ? recaudoLeerEstado() : lsGet('recaudo_'+fecha, {});
+      if(est && Object.keys(est).length > 0) await sbSetConfig('recaudo_'+fecha, est);
+      log('Auto-sync 2min OK');
+    }catch(e){}
+  }, 120000);
+
+  // ── Guardar antes de cerrar ───────────────────────────────────────────
+  window.addEventListener('beforeunload', function(){
+    for(let k of KEYS_CONFIG){
+      let val = lsGet(k, null);
+      if(val) sbSetConfig(k, val);
+    }
+  });
+
+  // ── INICIO ────────────────────────────────────────────────────────────
+  async function init(){
+    await sbCargarTodaConfig();
+    await sbMigrarConfig();
+  }
+
+  if(document.readyState==='complete'||document.readyState==='interactive'){
+    setTimeout(init, 1200);
+  } else {
+    window.addEventListener('DOMContentLoaded', function(){ setTimeout(init, 1200); });
+  }
+
+  console.log('✅ Parche Config Supabase activo — TODAS las pestañas cubiertas');
+
+})();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
