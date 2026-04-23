@@ -1544,7 +1544,7 @@ async function imprimirTicket(){
   ventana.document.close();
 }
 
-document.addEventListener("DOMContentLoaded",()=>cargar());
+// document.addEventListener("DOMContentLoaded",()=>cargar()); // reemplazado por parche sync
 document.addEventListener("keydown",function(e){
   let modal=document.getElementById("modalPedido");
   if(modal.style.display==="flex"){
@@ -11220,6 +11220,30 @@ setTimeout(function(){
 
 console.log('☁️ [V10] Supabase Sync activo — todos los módulos cubiertos');
 })();  
+
+// FIX SYNC — esperar Supabase antes de pintar UI
+(function(){
+
+  // Reemplazar el DOMContentLoaded original
+  document.addEventListener('DOMContentLoaded', async function(){
+
+    // 1. Esperar que vnSyncCargar esté listo
+    if(typeof window.vnSyncCargar === 'function'){
+      await window.vnSyncCargar();
+    }
+
+    // 2. Recargar clientes en memoria desde localStorage ya actualizado
+    try{
+      var g = JSON.parse(localStorage.getItem('clientes'));
+      if(Array.isArray(g) && g.length > 0) window.clientes = g;
+    }catch(e){}
+
+    // 3. Pintar UI con datos reales
+    if(typeof cargar === 'function') cargar();
+
+  }, {once: true});
+
+})();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
