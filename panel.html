@@ -9999,6 +9999,318 @@ window.v9NomEliminarEmpleado = function(idx){
 };
  
 console.log('✅ Parche V9: Recaudo orden + $0 amarillo + Categorías + Nómina edit');
+
+(function(){
+
+function carteraHistKey(nombre){
+  return 'cartera_historial_v3_' + nombre;
+}
+function carteraHistLeer(nombre){
+  try{
+    let arr = JSON.parse(localStorage.getItem(carteraHistKey(nombre)) || '[]');
+    return Array.isArray(arr) ? arr : [];
+  }catch(e){ return []; }
+}
+function carteraHistGuardar(nombre, arr){
+  localStorage.setItem(carteraHistKey(nombre), JSON.stringify(Array.isArray(arr) ? arr : []));
+}
+function carteraHistHoy(){
+  try{ return new Date().toISOString().slice(0,10); }catch(e){ return ''; }
+}
+function carteraHistFechaBonita(fecha){
+  try{
+    if(!fecha) return '—';
+    let d = new Date(fecha + 'T00:00:00');
+    if(isNaN(d.getTime())) return fecha;
+    return d.toLocaleDateString('es-CO',{day:'2-digit',month:'long',year:'numeric'});
+  }catch(e){ return fecha || '—'; }
+}
+function carteraHistMoney(n){
+  return '$' + Number(n || 0).toLocaleString('es-CO');
+}
+function carteraHistNombreSeguro(nombre){
+  return String(nombre || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+}
+
+window.carteraHistRecalcular = function(nombre){
+  try{
+    let hist = carteraHistLeer(nombre).slice().sort((a,b)=>String(a.fecha).localeCompare(String(b.fecha)));
+    let saldo = 0;
+    hist.forEach(function(x){
+      if(x.tipo === 'deuda-dia'){
+        saldo = Math.max(Number(x.deuda || 0) - Number(x.pagado || 0), 0);
+      }else{
+        saldo = Math.max(saldo - Number(x.pagado || 0), 0);
+      }
+      x.saldo = saldo;
+    });
+    hist.sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+    carteraHistGuardar(nombre, hist);
+  }catch(e){}
+};
+
+window.carteraHistRegistrarDeuda = function(nombre, deudaTotal, pagadoTotal){
+  try{
+    let hoy = carteraHistHoy();
+    if(!nombre || !hoy) return;
+    let hist = carteraHistLeer(nombre);
+    let idx = hist.findIndex(x => x && x.fecha === hoy && x.tipo === 'deuda-dia');
+    let saldo = Math.max(Number(deudaTotal || 0) - Number(pagadoTotal || 0), 0);
+
+    if(idx >= 0){
+      hist[idx].deuda = Number(deudaTotal || 0);
+      hist[idx].pagado = Number(pagadoTotal || 0);
+      hist[idx].saldo = saldo;
+    }else{
+      hist.push({
+        id: 'd_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+        fecha: hoy,
+        tipo: 'deuda-dia',
+        deuda: Number(deudaTotal || 0),
+        pagado: Number(pagadoTotal || 0),
+        saldo: saldo
+      });
+    }
+
+    carteraHistGuardar(nombre, hist);
+    carteraHistRecalcular(nombre);
+  }catch(e){}
+};
+
+window.carteraHistRegistrarPago = function(nombre, monto, metodo, banco, nota){
+  try{
+    let hist = carteraHistLeer(nombre);
+    hist.push({
+      id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+      fecha: carteraHistHoy(),
+      tipo: 'pago',
+      deuda: 0,
+      pagado: Number(monto || 0),
+      saldo: 0,
+      metodo: metodo || '',
+      banco: banco || '',
+      nota: nota || ''
+    });
+    carteraHistGuardar(nombre, hist);
+    carteraHistRecalcular(nombre);
+  }catch(e){}
+};
+
+window.carteraHistEliminar = function(nombre, id){
+  try{
+    if(!confirm('¿Eliminar esta línea del historial?')) return;
+    let hist = carteraHistLeer(nombre).filter(x => x && x.id !== id);
+    carteraHistGuardar(nombre, hist);
+    carteraHistRecalcular(nombre);
+    if(typeof renderCartera === 'function') renderCartera();
+  }catch(e){
+    alert('No se pudo eliminar la línea');
+  }
+};
+
+window.carteraHistHtml = function(nombre, deudaTotal, pagadoTotal){
+  try{
+    carteraHistRegistrarDeuda(nombre, deudaTotal, pagadoTotal);
+    let hist = carteraHistLeer(nombre);
+
+    if(!hist.length){
+      return `
+        <div style="padding:16px;text-align:center;color:#64748b;font-size:13px;">
+          Sin historial de deuda
+        </div>
+      `;
+    }
+
+    return `
+      <div style="font-size:12px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.06);">
+        Historial de deuda por día
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;max-height:260px;overflow-y:auto;padding-right:4px;">
+        ${hist.map(function(h){
+          let esPago = h.tipo === 'pago';
+          let meta = esPago
+            ? ((h.metodo === 'efectivo' ? '💵 Efectivo' : '🏦 Transferencia') + (h.banco ? ' · ' + h.banco : '') + (h.nota ? ' · ' + h.nota : ''))
+            : '📅 Deuda generada del día';
+
+          return `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;background:${esPago ? 'rgba(34,197,94,0.08)' : 'rgba(255,255,255,0.03)'};border:1px solid ${esPago ? 'rgba(34,197,94,0.18)' : 'rgba(255,255,255,0.06)'};border-radius:10px;">
+              <div style="min-width:0;flex:1;">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                  <span style="font-size:11px;font-weight:800;color:${esPago ? '#86efac' : '#93c5fd'};">
+                    ${esPago ? 'PAGO' : 'DEUDA'}
+                  </span>
+                  <span style="font-size:11px;color:#94a3b8;">${carteraHistFechaBonita(h.fecha)}</span>
+                </div>
+                <div style="font-size:12px;color:#cbd5e1;margin-top:3px;">${meta}</div>
+                <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:12px;">
+                  <span style="color:#fca5a5;">Deuda: <strong style="color:#fff;">${carteraHistMoney(h.deuda)}</strong></span>
+                  <span style="color:#86efac;">Pagado: <strong style="color:#fff;">${carteraHistMoney(h.pagado)}</strong></span>
+                  <span style="color:#fcd34d;">Saldo: <strong style="color:#fff;">${carteraHistMoney(h.saldo)}</strong></span>
+                </div>
+              </div>
+              <button onclick="carteraHistEliminar('${carteraHistNombreSeguro(nombre)}','${h.id}')"
+                style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:16px;font-weight:800;line-height:1;"
+                title="Eliminar línea">✕</button>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }catch(e){
+    return `<div style="padding:16px;text-align:center;color:#fca5a5;font-size:13px;">Error cargando historial</div>`;
+  }
+};
+
+// Hook: registrar pago en historial nuevo
+if(typeof window.carteraRegistrarPagoTiberio === 'function'){
+  const _oldCarteraRegistrarPagoTiberio = window.carteraRegistrarPagoTiberio;
+  window.carteraRegistrarPagoTiberio = function(){
+    let tiberioNombre = 'MARKET DEL RIO - TIBERIO';
+    let montoInput = document.getElementById('carteraPagoMonto');
+    let notaInput = document.getElementById('carteraPagoNota');
+    let cuentaSelect = document.getElementById('carteraCuentaDestino');
+
+    let monto = Number(montoInput ? montoInput.value : 0) || 0;
+    let nota = notaInput ? notaInput.value.trim() : '';
+    let metodo = window.carteraMetodoSeleccionado || '';
+    let banco = '';
+
+    try{
+      if(metodo === 'transferencia' && cuentaSelect){
+        let idx = Number(cuentaSelect.value);
+        if(Array.isArray(window.cuentasMemoria) && window.cuentasMemoria[idx]){
+          banco = window.cuentasMemoria[idx].nombre || '';
+        }
+      }else if(metodo === 'efectivo'){
+        banco = 'Efectivo';
+      }
+    }catch(e){}
+
+    let r = _oldCarteraRegistrarPagoTiberio.apply(this, arguments);
+
+    if(monto > 0){
+      setTimeout(function(){
+        try{
+          carteraHistRegistrarPago(tiberioNombre, monto, metodo, banco, nota);
+          let info = typeof recaudoGetDeudaHistorica === 'function' ? recaudoGetDeudaHistorica(tiberioNombre) : { deudaCliente: 0 };
+          let carteraTmp = {};
+          try{ carteraTmp = JSON.parse(localStorage.getItem('cartera_deudas') || '{}'); }catch(e){}
+          let pagadoTmp = Number(carteraTmp[tiberioNombre]?.deudasPagadas || 0);
+          carteraHistRegistrarDeuda(tiberioNombre, Number(info.deudaCliente || 0), pagadoTmp);
+        }catch(e){}
+      }, 180);
+    }
+
+    return r;
+  };
+}
+
+// Hook: si existe guardar deuda manual, actualiza historial
+if(typeof window.carteraGuardarDeuda === 'function'){
+  const _oldCarteraGuardarDeuda = window.carteraGuardarDeuda;
+  window.carteraGuardarDeuda = function(nombre){
+    let r = _oldCarteraGuardarDeuda.apply(this, arguments);
+    setTimeout(function(){
+      try{
+        let info = typeof recaudoGetDeudaHistorica === 'function' ? recaudoGetDeudaHistorica(nombre) : { deudaCliente: 0 };
+        let carteraTmp = {};
+        try{ carteraTmp = JSON.parse(localStorage.getItem('cartera_deudas') || '{}'); }catch(e){}
+        let pagadoTmp = Number(carteraTmp[nombre]?.deudasPagadas || 0);
+        carteraHistRegistrarDeuda(nombre, Number(info.deudaCliente || 0), pagadoTmp);
+      }catch(e){}
+    }, 120);
+    return r;
+  };
+}
+
+// Hook: re-render del bloque visual de cartera
+if(typeof window.renderCartera === 'function'){
+  const _oldRenderCartera = window.renderCartera;
+  window.renderCartera = async function(){
+    let r = await _oldRenderCartera.apply(this, arguments);
+
+    setTimeout(function(){
+      try{
+        let body = document.getElementById('carteraBody');
+        if(!body) return;
+
+        let tiberioNombre = 'MARKET DEL RIO - TIBERIO';
+        let info = typeof recaudoGetDeudaHistorica === 'function'
+          ? recaudoGetDeudaHistorica(tiberioNombre)
+          : { deudaCliente: 0, deudaMia: 0, deudasPagadas: 0 };
+
+        let deudaTotalTiberio = Number(info.deudaCliente || 0);
+        let leDeboTiberio = Number(info.deudaMia || 0);
+        let pagadoTiberio = Number(info.deudasPagadas || 0);
+        let saldoReal = Math.max(deudaTotalTiberio - pagadoTiberio, 0);
+
+        let historialHtml = carteraHistHtml(tiberioNombre, deudaTotalTiberio, pagadoTiberio);
+
+        let cards = body.querySelectorAll('.chart-card');
+        let objetivo = null;
+
+        cards.forEach(function(card){
+          let title = card.querySelector('.chart-title');
+          if(title && title.textContent && title.textContent.toUpperCase().includes('DEUDAS') && title.textContent.toUpperCase().includes('TIBERIO')){
+            objetivo = card;
+          }
+        });
+
+        if(!objetivo) return;
+
+        if (deudaTotalTiberio <= 0 && leDeboTiberio <= 0 && pagadoTiberio <= 0) {
+          objetivo.innerHTML = `
+            <div class="chart-title">📋 Deudas — ${tiberioNombre}</div>
+            <div style="padding:30px;text-align:center;">
+              <div style="font-size:40px;margin-bottom:12px;">✅</div>
+              <div style="color:#4ade80;font-size:16px;font-weight:700;margin-bottom:6px;">Sin deudas pendientes</div>
+              <div style="color:#94a3b8;font-size:13px;">Este cliente está al día con todos sus pagos.</div>
+            </div>
+          `;
+          return;
+        }
+
+        objetivo.innerHTML = `
+          <div class="chart-title">📋 Deudas — ${tiberioNombre}</div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px;">
+            <div style="background:rgba(220,38,38,0.12);border:1px solid rgba(220,38,38,0.25);border-radius:10px;padding:12px;text-align:center;">
+              <div style="font-size:11px;color:#fca5a5;text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-bottom:4px;">Me debe</div>
+              <div style="font-size:20px;font-weight:800;color:#f87171;">${recaudoMoney(deudaTotalTiberio)}</div>
+            </div>
+
+            <div style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);border-radius:10px;padding:12px;text-align:center;">
+              <div style="font-size:11px;color:#86efac;text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-bottom:4px;">Ya pagó</div>
+              <div style="font-size:20px;font-weight:800;color:#4ade80;">${recaudoMoney(pagadoTiberio)}</div>
+            </div>
+
+            <div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:12px;text-align:center;">
+              <div style="font-size:11px;color:#fcd34d;text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-bottom:4px;">Saldo pendiente</div>
+              <div style="font-size:20px;font-weight:800;color:#fbbf24;">${recaudoMoney(saldoReal)}</div>
+            </div>
+          </div>
+
+          ${leDeboTiberio > 0 ? `
+            <div style="background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+              <span style="font-size:18px;">💙</span>
+              <span style="color:#93c5fd;font-size:13px;font-weight:600;">Tú le debes a este cliente: ${recaudoMoney(leDeboTiberio)}</span>
+            </div>
+          ` : ''}
+
+          ${historialHtml}
+        `;
+      }catch(e){
+        console.error('Parche cartera historial:', e);
+      }
+    }, 120);
+
+    return r;
+  };
+}
+
+console.log('✅ Parche historial deuda por día cargado');
+
+})();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
