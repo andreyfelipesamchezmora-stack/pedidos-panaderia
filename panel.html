@@ -3261,12 +3261,8 @@ async function recaudoConstruirData(){
       recibido: !!saved.recibido,
       nequi: Number(saved.nequi || 0),
       bancolombia: Number(saved.bancolombia || 0),
-      deudaCliente: Number(saved.deudaCliente || 0),
-      deudaMia: Number(saved.deudaMia || 0),
-      _deudaHistCliente: deudaHist.deudaCliente,
-      _deudaHistMia: deudaHist.deudaMia,
-      _deudaTotalCliente: deudaHist.deudaCliente + Number(saved.deudaCliente || 0),
-      _deudaTotalMia: deudaHist.deudaMia + Number(saved.deudaMia || 0),
+      deudaCliente: deudaHist.deudaCliente,
+      deudaMia: deudaHist.deudaMia,
       deudasPagadas: deudaHist.deudasPagadas,
       deudaMetodo: saved.deudaMetodo || null,
       deudaBanco: saved.deudaBanco || null,
@@ -3277,13 +3273,13 @@ async function recaudoConstruirData(){
       observacion: saved.observacion || ""
     };
  
-    row.resumen = recaudoClasificarResumen(row._deudaTotalCliente, row._deudaTotalMia);
+    row.resumen = recaudoClasificarResumen(row.deudaCliente, row.deudaMia);
     row.totalTransferencia = row.nequi + row.bancolombia;
  
     // EFECTIVO NETO POR CLIENTE (solo lo que entregó en efectivo físico)
     // Si marcaste recaudo domi, el cliente le dio al domiciliario el efectivo
     // Si no, el efectivo es: subtotal - transferencias - faltantes - salidas - deudaMiaDescontada
-    let efectivoFila = row.subtotal - row.totalTransferencia - row.faltantes - row.salidas - row.deudaMiaPagada - row.deudaCliente - row.deudaMia;
+    let efectivoFila = row.subtotal - row.totalTransferencia - row.faltantes - row.salidas - row.deudaMiaPagada;
     if(efectivoFila < 0) efectivoFila = 0;
     row.efectivoNeto = efectivoFila;
  
@@ -3529,13 +3525,9 @@ async function renderRecaudo(){
                 bgColor = 'rgba(245,158,11,0.15)'; // NARANJA si marcó recaudo domi
               }
  
-              // HTML de deuda — usa _deudaTotal (hist+hoy) para badge, deudaCliente (solo hoy) para inputs
+              // HTML de deuda
               let deudaHtml = '';
-              let totalDC = r._deudaTotalCliente || 0;
-              let totalDM = r._deudaTotalMia || 0;
-              let tieneDeudaTotal = totalDC > 0 || totalDM > 0;
-
-              if(tieneDeudaTotal){
+              if(r.deudaCliente > 0 || r.deudaMia > 0){
                 if(r.deudasPagadas > 0 && r.deudaMetodo){
                   let metodoIcono = r.deudaMetodo === 'efectivo' ? '💵' : '🏦';
                   let metodoLabel = r.deudaMetodo === 'efectivo' ? 'Efectivo' : (r.deudaBanco || 'Transf.');
@@ -3544,7 +3536,7 @@ async function renderRecaudo(){
                       ✓ ${metodoIcono} ${metodoLabel}
                     </div>
                     <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox" checked
-                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${totalDC}, ${totalDM})"
+                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})"
                       title="Click para revertir">
                   `;
                 } else if(r.deudaMiaPagada > 0){
@@ -3553,16 +3545,16 @@ async function renderRecaudo(){
                       ✓ Descontado
                     </div>
                     <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox" checked
-                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${totalDC}, ${totalDM})">
+                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})">
                   `;
                 } else {
                   deudaHtml = `
-                    <div style="font-size:11px;color:${totalDC > 0 ? '#fca5a5' : '#93c5fd'};font-weight:700;margin-bottom:3px;">
-                      ${totalDC > 0 ? '⚠️ ' + recaudoMoney(totalDC) : '💙 ' + recaudoMoney(totalDM)}
+                    <div style="font-size:11px;color:${r.deudaCliente > 0 ? '#fca5a5' : '#93c5fd'};font-weight:700;margin-bottom:3px;">
+                      ${r.deudaCliente > 0 ? '⚠️ ' + recaudoMoney(r.deudaCliente) : '💙 ' + recaudoMoney(r.deudaMia)}
                     </div>
                     <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox"
-                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${totalDC}, ${totalDM})"
-                      title="${totalDC > 0 ? 'Marcar pago' : 'Descontar'}">
+                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})"
+                      title="${r.deudaCliente > 0 ? 'Marcar pago' : 'Descontar'}">
                   `;
                 }
               } else {
@@ -10320,528 +10312,1039 @@ console.log('✅ Parche historial deuda por día cargado');
 
 })();
 
-
-// =====================================================
-// DEUDA FIXES + RESET BUTTON
-// =====================================================
-(function(){
-
-  // FIX 1: recaudoGetDeudaHistorica — excluye el día activo
-  window.recaudoGetDeudaHistorica = function(nombre) {
-    let deudaCliente = 0, deudaMia = 0;
-    let fechaActiva = (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
-    let keyActivo = 'recaudo_' + fechaActiva;
-
-    for (let i = 0; i < localStorage.length; i++) {
-      let key = localStorage.key(i);
-      if (key && key.startsWith('recaudo_') && key !== keyActivo) {
-        try {
-          let obj = JSON.parse(localStorage.getItem(key));
-          if (obj && obj[nombre]) {
-            deudaCliente += Number(obj[nombre].deudaCliente) || 0;
-            deudaMia     += Number(obj[nombre].deudaMia)     || 0;
-          }
-        } catch(e) {}
-      }
-    }
-
-    let deudasPagadas = 0, fechaPago = '—';
-    try {
-      let cartera = JSON.parse(localStorage.getItem('cartera_deudas') || '{}');
-      if (cartera[nombre]) {
-        deudasPagadas = Number(cartera[nombre].deudasPagadas) || 0;
-        fechaPago     = cartera[nombre].fechaPago || '—';
-      }
-    } catch(e) {}
-
-    return {
-      deudaCliente:  Math.max(deudaCliente - deudasPagadas, 0),
-      deudaMia:      Math.max(deudaMia - deudasPagadas, 0),
-      deudasPagadas,
-      fechaPago
-    };
-  };
-
-  // FIX 3: Toggle deuda en recaudo domi
-  window.recaudoToggleDeudaDomi = function(nombre, deudaCliente) {
-    let cb    = document.getElementById('rec_deuda_domi_' + nombre);
-    let estado = recaudoLeerEstado();
-    if (!estado[nombre]) estado[nombre] = {};
-
-    try {
-      let inp = document.getElementById('rec_dc_' + nombre);
-      let val = inp ? Number(inp.value) || 0 : 0;
-      if (val > 0) deudaCliente = val;
-    } catch(e){}
-
-    let domiActual = Number(estado[nombre].recaudoDomi) || 0;
-
-    if (cb && cb.checked) {
-      estado[nombre].deudaEnDomi = true;
-      estado[nombre].recaudoDomi  = domiActual + Number(deudaCliente);
-    } else {
-      estado[nombre].deudaEnDomi = false;
-      estado[nombre].recaudoDomi  = Math.max(domiActual - Number(deudaCliente), 0);
-    }
-    recaudoGuardarEstado(estado);
-    renderRecaudo();
-  };
-
-  // Botón RESET checkboxes
-  var _origRenderRecaudo_reset = window.renderRecaudo;
-  window.renderRecaudo = async function(){
-    if(typeof _origRenderRecaudo_reset === 'function') await _origRenderRecaudo_reset();
-
-    setTimeout(function(){
-      var body = document.getElementById('recaudoBody');
-      if(!body || document.getElementById('btnResetRecaudo')) return;
-
-      // Find the Actualizar button
-      var btns = body.querySelectorAll('button');
-      var actualizarBtn = null;
-      btns.forEach(function(b){
-        if(b.textContent.indexOf('Actualizar') > -1) actualizarBtn = b;
-      });
-
-      if(actualizarBtn && actualizarBtn.parentNode){
-        var resetBtn = document.createElement('button');
-        resetBtn.id = 'btnResetRecaudo';
-        resetBtn.style.cssText = 'padding:7px 14px;border-radius:8px;border:1px solid rgba(239,68,68,0.4);background:rgba(239,68,68,0.15);color:#fca5a5;font-weight:700;cursor:pointer;font-size:12px;font-family:Inter,sans-serif;margin-left:6px;';
-        resetBtn.textContent = '🔄 Reset Checks';
-        resetBtn.title = 'Limpiar checkboxes Recaudo Domi y Recibido';
-        resetBtn.onclick = function(){
-          if(!confirm('¿Limpiar TODOS los checkboxes de Recaudo Domi y Recibido del día?')) return;
-          var fk = 'recaudo_' + cajaFechaHoy();
-          var est = {};
-          try { est = JSON.parse(localStorage.getItem(fk) || '{}'); } catch(e){}
-          Object.keys(est).forEach(function(n){
-            if(n.startsWith('__')) return;
-            if(est[n]){
-              est[n].recaudoDomi = 0;
-              est[n].recibido = false;
-            }
-          });
-          localStorage.setItem(fk, JSON.stringify(est));
-          renderRecaudo();
-        };
-        actualizarBtn.parentNode.insertBefore(resetBtn, actualizarBtn.nextSibling);
-      }
-    }, 400);
-  };
-
-  console.log('✅ Deuda fixes + Reset button activos');
-})();
-
-// =====================================================
-// SUPABASE REALTIME SYNC V12
-// Sincronización en TIEMPO REAL entre navegadores
-// Cada cambio se refleja en 1-2 segundos en el otro
-// =====================================================
-(function(){
+/* ═══════════════════════════════════════════════════════════════════════
+   SISTEMA DE CORRECCIONES INTEGRAL v2.0
+   - Single source of truth para deudas
+   - Caja separada de pagos de deuda  
+   - Historial persistente
+   - Integridad transaccional
+   - Sin race conditions ni listeners duplicados
+═══════════════════════════════════════════════════════════════════════ */
+(function() {
   'use strict';
 
-  // ==========================================
-  // MAPEO COMPLETO
-  // ==========================================
-  var MAP = {
-    'clientes':               'clientes_config',
-    'clientesDatos':          'clientes_datos',
-    'cuentasMemoria':         'cuentas_bancarias',
-    'transferenciasMem':      'transferencias',
-    'cuotas_obligaciones':    'cuotas_obligaciones',
-    'contabilidad_categorias':'categorias_contables',
-    'cartera_deudas':         'cartera_deudas',
-    'cartera_pagos_historial':'cartera_pagos',
-    'obs_marquee':            'observaciones_marquee',
-    'nomina_data':            'nomina_config',
-    'cuentas_por_pagar':      'cuentas_por_pagar'
-  };
+  /* ── LEDGER: bitácora persistente de todos los movimientos ─────────── */
+  var LEDGER_KEY = 'ledger_movimientos';
 
-  // Inverso: tabla → localStorage key
-  var RMAP = {};
-  for(var k in MAP) RMAP[MAP[k]] = k;
-
-  // Todas las tablas que necesitamos monitorear
-  var TODAS_TABLAS = Object.values(MAP).concat(['movimientos_contables','gastos_manuales','recaudo_diario','monedas_diario']);
-
-  // Guardar refs originales ANTES de interceptar
-  var LS = {
-    set: localStorage.setItem.bind(localStorage),
-    get: localStorage.getItem.bind(localStorage),
-    rem: localStorage.removeItem.bind(localStorage)
-  };
-  var SS = {
-    set: sessionStorage.setItem.bind(sessionStorage),
-    get: sessionStorage.getItem.bind(sessionStorage)
-  };
-
-  // Flag para evitar loops infinitos (cuando recibimos un update de Realtime no queremos re-subir)
-  var _skipUpload = false;
-
-  // ==========================================
-  // ESCRIBIR A SUPABASE (upsert)
-  // ==========================================
-  async function subir(tabla, datos){
+  function ledgerGuardar(mov) {
     try {
-      var r = await db.from(tabla).upsert(
-        {id: 1, datos: datos, updated_at: new Date().toISOString()},
-        {onConflict: 'id', ignoreDuplicates: false}
-      );
-      if(r.error){
-        console.error('☁️✗ '+tabla+': '+r.error.message);
-        return false;
-      }
-      return true;
-    } catch(e){
-      console.error('☁️✗ '+tabla+': '+e.message);
-      return false;
-    }
+      var ledger = JSON.parse(localStorage.getItem(LEDGER_KEY) || '[]');
+      ledger.push(Object.assign({
+        id: Date.now() + '_' + Math.random().toString(36).slice(2,7),
+        ts: new Date().toISOString()
+      }, mov));
+      localStorage.setItem(LEDGER_KEY, JSON.stringify(ledger));
+    } catch(e) {}
   }
 
-  async function subirFecha(tabla, fecha, datos){
+  function ledgerLeer() {
+    try { return JSON.parse(localStorage.getItem(LEDGER_KEY) || '[]'); } catch(e) { return []; }
+  }
+
+  function ledgerEliminarPorRef(refId) {
     try {
-      var r = await db.from(tabla).upsert(
-        {fecha: fecha, datos: datos, updated_at: new Date().toISOString()},
-        {onConflict: 'fecha', ignoreDuplicates: false}
-      );
-      return !r.error;
-    } catch(e){ return false; }
+      var ledger = JSON.parse(localStorage.getItem(LEDGER_KEY) || '[]');
+      ledger = ledger.filter(function(m) { return m.refId !== refId; });
+      localStorage.setItem(LEDGER_KEY, JSON.stringify(ledger));
+    } catch(e) {}
   }
 
-  // ==========================================
-  // LEER DE SUPABASE
-  // ==========================================
-  async function bajar(tabla){
+  /* ── PERSISTENCIA de movimientosContables en localStorage ─────────── */
+  var MOV_KEY = 'movimientosContables_v2';
+
+  function movPersistir() {
     try {
-      var r = await db.from(tabla).select('datos').eq('id',1).maybeSingle();
-      if(!r || r.error || !r.data) return null;
-      return r.data.datos;
-    } catch(e){ return null; }
+      if (Array.isArray(window.movimientosContables)) {
+        localStorage.setItem(MOV_KEY, JSON.stringify(window.movimientosContables));
+      }
+    } catch(e) {}
   }
 
-  async function bajarFecha(tabla, fecha){
+  function movCargar() {
     try {
-      var r = await db.from(tabla).select('datos').eq('fecha',fecha).maybeSingle();
-      if(!r || r.error || !r.data) return null;
-      return r.data.datos;
-    } catch(e){ return null; }
-  }
-
-  // ==========================================
-  // APLICAR DATOS A MEMORIA + LOCALSTORAGE
-  // ==========================================
-  function aplicar(tabla, datos){
-    if(!datos) return;
-    _skipUpload = true;
-
-    var lsKey = RMAP[tabla];
-
-    if(tabla === 'clientes_config'){
-      if(Array.isArray(datos) && datos.length > 0){
-        window.clientes = datos;
-        LS.set('clientes', JSON.stringify(datos));
-      }
-    }
-    else if(tabla === 'cuentas_bancarias'){
-      if(Array.isArray(datos) && datos.length > 0){
-        window.cuentasMemoria = datos;
-        LS.set('cuentasMemoria', JSON.stringify(datos));
-      }
-    }
-    else if(tabla === 'transferencias'){
-      window.transferenciasMem = datos;
-      LS.set('transferenciasMem', JSON.stringify(datos));
-    }
-    else if(tabla === 'movimientos_contables'){
-      if(Array.isArray(datos) && datos.length > 0){
-        window.movimientosContables = datos;
-      }
-    }
-    else if(tabla === 'gastos_manuales'){
-      if(Array.isArray(datos) && datos.length > 0){
-        window.gastosMemoria = datos;
-        SS.set('gastos', JSON.stringify(datos));
-      }
-    }
-    else if(lsKey){
-      LS.set(lsKey, JSON.stringify(datos));
-    }
-
-    setTimeout(function(){ _skipUpload = false; }, 500);
-  }
-
-  // ==========================================
-  // INTERCEPTAR localStorage.setItem
-  // ==========================================
-  localStorage.setItem = function(key, value){
-    LS.set(key, value);
-    if(_skipUpload) return;
-
-    // Tablas mapeadas
-    if(MAP[key]){
-      try { subir(MAP[key], JSON.parse(value)); } catch(e){}
-    }
-    // Recaudo dinámico
-    if(key.indexOf('recaudo_')===0 && key.length>10){
-      try { subirFecha('recaudo_diario', key.slice(8), JSON.parse(value)); } catch(e){}
-    }
-    // Monedas dinámico
-    if(key.indexOf('monedas_')===0 && key.length>10){
-      try { subirFecha('monedas_diario', key.slice(8), JSON.parse(value)); } catch(e){}
-    }
-  };
-
-  // Interceptar sessionStorage
-  sessionStorage.setItem = function(key, value){
-    SS.set(key, value);
-    if(_skipUpload) return;
-    if(key === 'gastos'){
-      try { subir('gastos_manuales', JSON.parse(value)); } catch(e){}
-    }
-  };
-
-  // ==========================================
-  // SYNC PERIÓDICO DE VARIABLES GLOBALES
-  // (estas no pasan por localStorage.setItem)
-  // ==========================================
-  var _lastMovLen = 0, _lastGasLen = 0;
-
-  setInterval(function(){
-    if(_skipUpload) return;
-    // movimientosContables
-    var mc = window.movimientosContables;
-    if(Array.isArray(mc) && mc.length > 0 && mc.length !== _lastMovLen){
-      _lastMovLen = mc.length;
-      subir('movimientos_contables', mc);
-    }
-    // gastosMemoria
-    var gm = window.gastosMemoria;
-    if(!Array.isArray(gm)){
-      try { gm = JSON.parse(SS.get('gastos')||'[]'); } catch(e){ gm = []; }
-    }
-    if(gm.length > 0 && gm.length !== _lastGasLen){
-      _lastGasLen = gm.length;
-      subir('gastos_manuales', gm);
-    }
-  }, 3000);
-
-  // ==========================================
-  // REALTIME: ESCUCHAR CAMBIOS EN VIVO
-  // ==========================================
-  function iniciarRealtime(){
-    try {
-      // Escuchar TODAS las tablas singleton (id=1)
-      var tablasRT = [
-        'clientes_config','clientes_datos','cuentas_bancarias',
-        'transferencias','movimientos_contables','gastos_manuales',
-        'nomina_config','cartera_deudas','cartera_pagos',
-        'cuotas_obligaciones','categorias_contables',
-        'cuentas_por_pagar','observaciones_marquee'
-      ];
-
-      tablasRT.forEach(function(tabla){
-        db.channel('rt-'+tabla)
-          .on('postgres_changes',
-            { event: '*', schema: 'public', table: tabla, filter: 'id=eq.1' },
-            function(payload){
-              if(payload.new && payload.new.datos !== undefined){
-                console.log('📡 Realtime: '+tabla+' actualizado');
-                aplicar(tabla, payload.new.datos);
-                // Refrescar UI
-                _refrescarUI(tabla);
-              }
-            }
-          )
-          .subscribe(function(status){
-            if(status === 'SUBSCRIBED'){
-              console.log('📡 RT: '+tabla+' ✓');
-            }
-          });
-      });
-
-      // Recaudo diario
-      db.channel('rt-recaudo')
-        .on('postgres_changes',
-          { event: '*', schema: 'public', table: 'recaudo_diario' },
-          function(payload){
-            if(payload.new && payload.new.fecha && payload.new.datos){
-              var hoy = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
-              if(payload.new.fecha === hoy){
-                console.log('📡 Realtime: recaudo_'+hoy+' actualizado');
-                _skipUpload = true;
-                LS.set('recaudo_'+hoy, JSON.stringify(payload.new.datos));
-                setTimeout(function(){ _skipUpload = false; }, 500);
-              }
-            }
-          }
-        )
-        .subscribe();
-
-      console.log('📡 Realtime: escuchando cambios en vivo');
-    } catch(e){
-      console.error('📡 Realtime error:', e);
-    }
-  }
-
-  function _refrescarUI(tabla){
-    setTimeout(function(){
-      try {
-        if(tabla === 'clientes_config' && typeof cargar === 'function') cargar();
-        if(tabla === 'observaciones_marquee' && typeof actualizarMarquee === 'function') actualizarMarquee();
-        // Para las demás tablas, refrescar el panel si está abierto
-        var contaBody = document.getElementById('contaBody');
-        if(contaBody && contaBody.innerHTML.length > 0){
-          if(tabla === 'cuentas_bancarias' || tabla === 'movimientos_contables' || tabla === 'gastos_manuales'){
-            // Si contabilidad está abierta, no forzar refresh automático para no interrumpir
-          }
-        }
-      } catch(e){}
-    }, 300);
-  }
-
-  // ==========================================
-  // CARGA INICIAL DESDE SUPABASE
-  // ==========================================
-  async function cargaInicial(){
-    console.log('☁️ Sincronizando con Supabase...');
-    var descargados = 0, subidos = 0;
-
-    // 1. Tablas mapeadas
-    for(var lsKey in MAP){
-      var tabla = MAP[lsKey];
-      var datos = await bajar(tabla);
-
-      if(datos !== null){
-        var tiene = Array.isArray(datos) ? datos.length > 0 : (datos && typeof datos === 'object' && Object.keys(datos).length > 0);
-        if(tiene){
-          aplicar(tabla, datos);
-          descargados++;
-          continue;
+      var raw = localStorage.getItem(MOV_KEY);
+      if (raw) {
+        var arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.length > 0) {
+          window.movimientosContables = arr;
         }
       }
-
-      // Supabase vacío → subir local
-      var localRaw = LS.get(lsKey);
-      if(localRaw){
-        try {
-          var localD = JSON.parse(localRaw);
-          var localTiene = Array.isArray(localD) ? localD.length > 0 : (localD && typeof localD === 'object' && Object.keys(localD).length > 0);
-          if(localTiene){
-            var ok = await subir(tabla, localD);
-            if(ok){ subidos++; console.log('  ⬆ '+lsKey+' → '+tabla); }
-          }
-        } catch(e){}
-      }
-    }
-
-    // 2. Variables globales
-    var mcD = await bajar('movimientos_contables');
-    if(mcD && Array.isArray(mcD) && mcD.length > 0){
-      window.movimientosContables = mcD;
-      _lastMovLen = mcD.length;
-      descargados++;
-    } else if(Array.isArray(window.movimientosContables) && window.movimientosContables.length > 0){
-      await subir('movimientos_contables', window.movimientosContables);
-      _lastMovLen = window.movimientosContables.length;
-      subidos++;
-    }
-
-    var gmD = await bajar('gastos_manuales');
-    if(gmD && Array.isArray(gmD) && gmD.length > 0){
-      window.gastosMemoria = gmD;
-      SS.set('gastos', JSON.stringify(gmD));
-      _lastGasLen = gmD.length;
-      descargados++;
-    } else {
-      var gLocal = window.gastosMemoria || [];
-      if(!gLocal.length) try { gLocal = JSON.parse(SS.get('gastos')||'[]'); } catch(e){}
-      if(gLocal.length > 0){
-        await subir('gastos_manuales', gLocal);
-        _lastGasLen = gLocal.length;
-        subidos++;
-      }
-    }
-
-    // 3. Recaudo + Monedas del día
-    var hoy = (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
-
-    var recD = await bajarFecha('recaudo_diario', hoy);
-    if(recD && Object.keys(recD).length > 0){
-      _skipUpload = true;
-      LS.set('recaudo_'+hoy, JSON.stringify(recD));
-      setTimeout(function(){ _skipUpload = false; }, 300);
-      descargados++;
-    } else {
-      var recLocal = LS.get('recaudo_'+hoy);
-      if(recLocal){
-        try {
-          var rl = JSON.parse(recLocal);
-          if(Object.keys(rl).length > 0) await subirFecha('recaudo_diario', hoy, rl);
-        } catch(e){}
-      }
-    }
-
-    var monD = await bajarFecha('monedas_diario', hoy);
-    if(monD && Array.isArray(monD) && monD.length > 0){
-      _skipUpload = true;
-      LS.set('monedas_'+hoy, JSON.stringify(monD));
-      setTimeout(function(){ _skipUpload = false; }, 300);
-    }
-
-    console.log('✅ Sync: '+descargados+' descargados, '+subidos+' subidos');
-
-    // Refrescar UI
-    try { if(typeof cargar === 'function') await cargar(); } catch(e){}
-    try { if(typeof actualizarMarquee === 'function') actualizarMarquee(); } catch(e){}
-
-    // AHORA activar Realtime
-    iniciarRealtime();
+    } catch(e) {}
   }
 
-  // ==========================================
-  // BADGE VISUAL
-  // ==========================================
-  function crearBadge(){
-    if(document.getElementById('vnSyncBadge')) return;
-    var s = document.createElement('style');
-    s.textContent = '@keyframes vnP{0%,100%{opacity:1;}50%{opacity:0.4;}}';
-    document.head.appendChild(s);
-    var d = document.createElement('div');
-    d.id = 'vnSyncBadge';
-    d.style.cssText = 'position:fixed;bottom:12px;right:12px;background:rgba(16,185,129,0.92);color:white;padding:7px 14px;border-radius:20px;font-size:11px;font-weight:600;z-index:99998;display:flex;align-items:center;gap:6px;box-shadow:0 4px 14px rgba(0,0,0,0.25);font-family:Inter,sans-serif;cursor:pointer;backdrop-filter:blur(8px);';
-    d.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:white;animation:vnP 2s infinite;"></span> En vivo · Supabase';
-    d.title = 'Click para forzar sincronización';
-    d.onclick = function(){
-      d.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:#fbbf24;"></span> Sincronizando...';
-      d.style.background = 'rgba(245,158,11,0.9)';
-      cargaInicial().then(function(){
-        d.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:white;animation:vnP 2s infinite;"></span> En vivo · Supabase ✓';
-        d.style.background = 'rgba(16,185,129,0.92)';
-      });
+  // Cargar al inicio
+  movCargar();
+
+  // Interceptar push para auto-persistir
+  if (Array.isArray(window.movimientosContables)) {
+    var _origPush = window.movimientosContables.push.bind(window.movimientosContables);
+    window.movimientosContables.push = function() {
+      var r = _origPush.apply(this, arguments);
+      movPersistir();
+      return r;
     };
-    document.body.appendChild(d);
   }
 
-  // ==========================================
-  // INICIAR
-  // ==========================================
-  function iniciar(){
-    setTimeout(function(){
-      cargaInicial().catch(function(e){
-        console.error('❌ Sync error:', e);
+  /* ═══════════════════════════════════════════════════════════════════
+     FIX 1 ─ DEUDAS: Single Source of Truth
+     
+     PROBLEMA: recaudoGetDeudaHistorica sumaba el día activo + histórico
+               causando duplicación. Además los inputs mostraban ese 
+               acumulado como value, guardando el acumulado de nuevo.
+     
+     SOLUCIÓN: 
+       - La deuda de un cliente vive en 'cartera_deudas_v2[nombre].total'
+       - El input SIEMPRE inicia en 0 (para ingresar NUEVA deuda del día)
+       - Al guardar, el valor digitado se SUMA al total acumulado
+       - Los abonos restan del total acumulado
+       - El recaudo solo muestra el saldo actual (total - pagado)
+  ═══════════════════════════════════════════════════════════════════ */
+
+  var CARTERA_KEY = 'cartera_deudas_v2';
+
+  function carteraV2Leer() {
+    try { return JSON.parse(localStorage.getItem(CARTERA_KEY) || '{}'); } catch(e) { return {}; }
+  }
+
+  function carteraV2Guardar(data) {
+    try { localStorage.setItem(CARTERA_KEY, JSON.stringify(data)); } catch(e) {}
+    // También sincronizar con la clave vieja para compatibilidad
+    try {
+      var vieja = JSON.parse(localStorage.getItem('cartera_deudas') || '{}');
+      Object.keys(data).forEach(function(nombre) {
+        var d = data[nombre];
+        vieja[nombre] = vieja[nombre] || {};
+        vieja[nombre].deudasPagadas = d.pagado || 0;
+        vieja[nombre].fechaPago = d.fechaUltimoPago || '—';
       });
-      crearBadge();
-    }, 1200);
+      localStorage.setItem('cartera_deudas', JSON.stringify(vieja));
+    } catch(e) {}
   }
 
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', iniciar);
-  } else {
-    iniciar();
+  function carteraV2ObtenerCliente(nombre) {
+    var c = carteraV2Leer();
+    if (!c[nombre]) {
+      c[nombre] = { total: 0, pagado: 0, leDebo: 0, fechaCreacion: new Date().toISOString(), fechaUltimoPago: '—' };
+      carteraV2Guardar(c);
+    }
+    return c[nombre];
   }
 
-  console.log('☁️ Supabase Realtime Sync V12 iniciado');
+  function carteraV2SaldoPendiente(nombre) {
+    var d = carteraV2ObtenerCliente(nombre);
+    return Math.max((d.total || 0) - (d.pagado || 0), 0);
+  }
+
+  // Sumar deuda nueva (acumula)
+  function carteraV2AgregarDeuda(nombre, monto, nota) {
+    var c = carteraV2Leer();
+    var d = c[nombre] || { total: 0, pagado: 0, leDebo: 0, fechaCreacion: new Date().toISOString(), fechaUltimoPago: '—' };
+    var saldoAntes = Math.max((d.total || 0) - (d.pagado || 0), 0);
+    d.total = (d.total || 0) + monto;
+    c[nombre] = d;
+    carteraV2Guardar(c);
+    var saldoDespues = Math.max(d.total - (d.pagado || 0), 0);
+    ledgerGuardar({
+      tipo: 'deuda_nueva',
+      nombre: nombre,
+      monto: monto,
+      saldoAntes: saldoAntes,
+      saldoDespues: saldoDespues,
+      nota: nota || '',
+      modulo: 'recaudo'
+    });
+    return saldoDespues;
+  }
+
+  // Registrar abono (resta del total pagado)
+  function carteraV2Abonar(nombre, monto, metodo, banco, cuentaIdx, nota) {
+    var c = carteraV2Leer();
+    var d = c[nombre] || { total: 0, pagado: 0, leDebo: 0, fechaCreacion: new Date().toISOString(), fechaUltimoPago: '—' };
+    var saldoAntes = Math.max((d.total || 0) - (d.pagado || 0), 0);
+    // Nunca pagar más de lo que se debe
+    var pagoReal = Math.min(monto, saldoAntes);
+    d.pagado = (d.pagado || 0) + pagoReal;
+    d.fechaUltimoPago = new Date().toLocaleDateString('es-CO', {day:'numeric',month:'long',year:'numeric'});
+    c[nombre] = d;
+    carteraV2Guardar(c);
+    var saldoDespues = Math.max(d.total - d.pagado, 0);
+    ledgerGuardar({
+      tipo: 'abono_deuda',
+      nombre: nombre,
+      monto: pagoReal,
+      metodo: metodo,
+      banco: banco,
+      saldoAntes: saldoAntes,
+      saldoDespues: saldoDespues,
+      nota: nota || '',
+      modulo: 'recaudo'
+    });
+    return pagoReal;
+  }
+
+  // Eliminar deuda completa de un cliente (Tiberio u otro)
+  function carteraV2EliminarDeuda(nombre) {
+    var c = carteraV2Leer();
+    if (!c[nombre]) return false;
+    var saldoAntes = Math.max((c[nombre].total || 0) - (c[nombre].pagado || 0), 0);
+    ledgerGuardar({
+      tipo: 'deuda_eliminada',
+      nombre: nombre,
+      saldoAntes: saldoAntes,
+      saldoDespues: 0,
+      modulo: 'cartera'
+    });
+    delete c[nombre];
+    carteraV2Guardar(c);
+    // Limpiar también historial de pagos de este cliente
+    try {
+      var hist = JSON.parse(localStorage.getItem('cartera_pagos_historial') || '[]');
+      hist = hist.filter(function(p) { return p.cliente !== nombre; });
+      localStorage.setItem('cartera_pagos_historial', JSON.stringify(hist));
+    } catch(e) {}
+    // Limpiar estado de recaudo del día actual para este cliente
+    try {
+      var fk = 'recaudo_' + (typeof cajaFechaHoy === 'function' ? cajaFechaHoy() : new Date().toISOString().split('T')[0]);
+      var estado = JSON.parse(localStorage.getItem(fk) || '{}');
+      if (estado[nombre]) {
+        estado[nombre].deudasPagadas = 0;
+        estado[nombre].deudaMetodo = null;
+        estado[nombre].deudaCuentaIdx = null;
+        estado[nombre].deudaBanco = null;
+        estado[nombre].fechaPago = null;
+        localStorage.setItem(fk, JSON.stringify(estado));
+      }
+    } catch(e) {}
+    return true;
+  }
+
+  window.carteraV2 = {
+    leer: carteraV2Leer,
+    obtenerCliente: carteraV2ObtenerCliente,
+    saldoPendiente: carteraV2SaldoPendiente,
+    agregarDeuda: carteraV2AgregarDeuda,
+    abonar: carteraV2Abonar,
+    eliminarDeuda: carteraV2EliminarDeuda
+  };
+
+  /* ── Migración de deudas antiguas al nuevo sistema ────────────────── */
+  (function migrarDeudasAntiguas() {
+    try {
+      var nuevas = carteraV2Leer();
+      // Evitar migrar dos veces
+      if (localStorage.getItem('carteraV2_migrado')) return;
+
+      // Recolectar deudas de todos los días de recaudo
+      var acum = {};
+      for (var i = 0; i < localStorage.length; i++) {
+        var key = localStorage.key(i);
+        if (key && key.startsWith('recaudo_')) {
+          try {
+            var obj = JSON.parse(localStorage.getItem(key) || '{}');
+            Object.keys(obj).forEach(function(nombre) {
+              if (!acum[nombre]) acum[nombre] = { total: 0, pagado: 0 };
+              acum[nombre].total += Number(obj[nombre].deudaCliente) || 0;
+            });
+          } catch(e) {}
+        }
+      }
+      // Leer pagos de cartera_deudas antigua
+      try {
+        var vieja = JSON.parse(localStorage.getItem('cartera_deudas') || '{}');
+        Object.keys(vieja).forEach(function(nombre) {
+          if (!acum[nombre]) acum[nombre] = { total: 0, pagado: 0 };
+          acum[nombre].pagado = Number(vieja[nombre].deudasPagadas) || 0;
+        });
+      } catch(e) {}
+
+      // Escribir al nuevo sistema solo si hay datos y no hay nada en nuevo
+      Object.keys(acum).forEach(function(nombre) {
+        if (!nuevas[nombre] && acum[nombre].total > 0) {
+          nuevas[nombre] = {
+            total: acum[nombre].total,
+            pagado: acum[nombre].pagado,
+            leDebo: 0,
+            fechaCreacion: new Date().toISOString(),
+            fechaUltimoPago: '—'
+          };
+        }
+      });
+      carteraV2Guardar(nuevas);
+      localStorage.setItem('carteraV2_migrado', '1');
+    } catch(e) {}
+  })();
+
+  /* ── Reemplazar recaudoGetDeudaHistorica (ya no acumula días) ──────── */
+  window.recaudoGetDeudaHistorica = function(nombre) {
+    var saldo = carteraV2SaldoPendiente(nombre);
+    var d = carteraV2ObtenerCliente(nombre);
+    return {
+      deudaCliente: saldo,
+      deudaMia: Math.max(d.leDebo || 0, 0),
+      deudasPagadas: d.pagado || 0,
+      fechaPago: d.fechaUltimoPago || '—'
+    };
+  };
+
+  /* ── recaudoGuardarFila: el input de deuda SUMA (no reemplaza) ──────── */
+  window.recaudoGuardarFila = function(nombre) {
+    var estado = (typeof recaudoLeerEstado === 'function') ? recaudoLeerEstado() : {};
+    var base = estado[nombre] || {};
+    var q = function(id) { return document.getElementById(id); };
+    var getRaw = (typeof getRawRecaudo === 'function') ? getRawRecaudo : function(el) {
+      if (!el) return 0;
+      return Number((el.dataset.raw || el.value || '0').toString().replace(/\./g, '').replace(',', '.')) || 0;
+    };
+
+    // Para nequi, banco, faltantes, salidas → guardar directo
+    var nuevaDeudaInput = getRaw(q('rec_dc_' + nombre));   // lo que SE ESCRIBIÓ HOY
+    var nuevaDeudaMiaInput = getRaw(q('rec_dm_' + nombre));
+
+    // Si hay un valor nuevo en el input de deuda, ACUMULAR en carteraV2
+    if (nuevaDeudaInput > 0 && nuevaDeudaInput !== (base._ultimaDeudaGuardada || 0)) {
+      var incremento = nuevaDeudaInput - (base._ultimaDeudaGuardada || 0);
+      if (incremento > 0) {
+        carteraV2AgregarDeuda(nombre, incremento, 'Desde recaudo diario');
+        // Registrar en movimientosContables
+        if (!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
+        window.movimientosContables.push({
+          tipo: 'deuda',
+          monto: incremento,
+          cuenta: '—',
+          descripcion: 'Nueva deuda: ' + nombre,
+          fecha: new Date().toISOString()
+        });
+        movPersistir();
+      }
+      base._ultimaDeudaGuardada = nuevaDeudaInput;
+    }
+
+    estado[nombre] = Object.assign({}, base, {
+      recaudoDomi: getRaw(q('rec_domi_' + nombre)) || (base.recaudoDomi || 0),
+      nequi: getRaw(q('rec_nequi_' + nombre)),
+      bancolombia: getRaw(q('rec_banco_' + nombre)),
+      faltantes: getRaw(q('rec_fal_' + nombre)),
+      salidas: getRaw(q('rec_sal_' + nombre)),
+      observacion: (q('rec_obs_' + nombre) ? q('rec_obs_' + nombre).value : '').trim(),
+      _ultimaDeudaGuardada: base._ultimaDeudaGuardada || 0
+    });
+
+    if (typeof recaudoGuardarEstado === 'function') recaudoGuardarEstado(estado);
+  };
+
+  /* ═══════════════════════════════════════════════════════════════════
+     FIX 2 ─ INPUTS DE DEUDA: siempre inician en 0
+     
+     Reemplazar la renderización de la columna deuda en la tabla de
+     recaudo. Los inputs muestran 0 (editable para nueva deuda),
+     y encima del checkbox se muestra el saldo actual de carteraV2.
+  ═══════════════════════════════════════════════════════════════════ */
+
+  // Patch post-render: resetear inputs de deuda a 0 y mostrar saldo real
+  var _renderGuard = false;
+  var _origRenderRecaudo = window.renderRecaudo;
+  window.renderRecaudo = async function() {
+    if (_renderGuard) return;
+    _renderGuard = true;
+    try {
+      if (typeof _origRenderRecaudo === 'function') {
+        await _origRenderRecaudo.apply(this, arguments);
+      }
+    } finally {
+      _renderGuard = false;
+    }
+    // Post-render: corregir inputs de deuda
+    setTimeout(function() {
+      try {
+        var estado = (typeof recaudoLeerEstado === 'function') ? recaudoLeerEstado() : {};
+        var carteraData = carteraV2Leer();
+        Object.keys(carteraData).forEach(function(nombre) {
+          var safe = nombre.replace(/[^a-zA-Z0-9]/g, '_');
+          var dcInput = document.getElementById('rec_dc_' + safe);
+          var dmInput = document.getElementById('rec_dm_' + safe);
+          var cbSaldo = document.getElementById('rec_deuda_saldo_' + safe);
+
+          var saldo = carteraV2SaldoPendiente(nombre);
+          var d = carteraData[nombre];
+
+          // El input de NUEVA deuda siempre inicia en 0
+          if (dcInput) {
+            dcInput.value = '';
+            dcInput.dataset.raw = '0';
+            dcInput.placeholder = saldo > 0 ? ('Saldo: $' + saldo.toLocaleString('es-CO')) : 'Nueva deuda';
+            dcInput.title = 'Saldo actual: $' + saldo.toLocaleString('es-CO') + '. Escribe para AGREGAR nueva deuda.';
+          }
+
+          // El input de "yo le debo" también inicia en 0
+          if (dmInput) {
+            dmInput.value = '';
+            dmInput.dataset.raw = '0';
+            dmInput.placeholder = (d.leDebo > 0) ? ('Le debo: $' + d.leDebo.toLocaleString('es-CO')) : 'Yo le debo';
+          }
+
+          // Mostrar saldo encima del checkbox
+          if (cbSaldo && cbSaldo.parentNode) {
+            var saldoLabel = cbSaldo.parentNode.querySelector('.saldo-deuda-label');
+            if (!saldoLabel) {
+              saldoLabel = document.createElement('div');
+              saldoLabel.className = 'saldo-deuda-label';
+              saldoLabel.style.cssText = 'font-size:10px;font-weight:800;margin-bottom:2px;text-align:center;';
+              cbSaldo.parentNode.insertBefore(saldoLabel, cbSaldo);
+            }
+            if (saldo > 0) {
+              saldoLabel.textContent = '$' + saldo.toLocaleString('es-CO');
+              saldoLabel.style.color = '#fca5a5';
+            } else if (d.leDebo > 0) {
+              saldoLabel.textContent = 'LD:$' + d.leDebo.toLocaleString('es-CO');
+              saldoLabel.style.color = '#93c5fd';
+            } else {
+              saldoLabel.textContent = '✓ Al día';
+              saldoLabel.style.color = '#4ade80';
+            }
+          }
+        });
+      } catch(e) {}
+    }, 120);
+  };
+
+  /* ═══════════════════════════════════════════════════════════════════
+     FIX 3 ─ MARCAR DEUDA SALDADA: usa saldo real de carteraV2
+  ═══════════════════════════════════════════════════════════════════ */
+
+  window.recaudoMarcarDeudaSaldada = function(nombre, _deudaClienteIgnorado, _deudaMiaIgnorado) {
+    // Obtener siempre el saldo real desde carteraV2 (no el valor hardcodeado del render)
+    var saldoReal = carteraV2SaldoPendiente(nombre);
+    var d = carteraV2ObtenerCliente(nombre);
+    var leDebo = d.leDebo || 0;
+
+    var checkbox = document.getElementById('rec_deuda_saldo_' + nombre.replace(/[^a-zA-Z0-9]/g, '_'));
+    var estaChecked = checkbox && checkbox.checked;
+
+    if (estaChecked) {
+      if (saldoReal > 0) {
+        // Abrir modal para confirmar método de pago con el saldo real
+        if (checkbox) checkbox.checked = false; // Se confirma en el modal
+        recaudoModalMetodoPago(nombre, saldoReal);
+      } else if (leDebo > 0) {
+        if (confirm('Le debes $' + leDebo.toLocaleString('es-CO') + ' a ' + nombre + '.\n¿Descontar de la factura del día?')) {
+          _recaudoDescontarLeDebo(nombre, leDebo);
+        } else {
+          if (checkbox) checkbox.checked = false;
+        }
+      } else {
+        if (checkbox) checkbox.checked = false;
+        alert('Este cliente no tiene deuda pendiente.');
+      }
+    } else {
+      if (confirm('¿Revertir el pago de deuda de ' + nombre + '?')) {
+        recaudoRevertirPagoDeuda(nombre);
+      } else {
+        if (checkbox) checkbox.checked = true;
+      }
+    }
+  };
+
+  /* ── recaudoConfirmarPago: usa carteraV2.abonar ──────────────────── */
+  window.recaudoConfirmarPago = function(nombre, _montoIgnorado) {
+    var saldoReal = carteraV2SaldoPendiente(nombre);
+    var metodo = window.recMetSel;
+    if (!metodo) { alert('Selecciona un método'); return; }
+
+    var cuentaIdx = -1;
+    var nombreBanco = '';
+    if (metodo === 'efectivo') {
+      if (Array.isArray(window.cuentasMemoria)) {
+        cuentaIdx = window.cuentasMemoria.findIndex(function(c) { return c.tipo === 'EFECTIVO'; });
+      }
+      nombreBanco = 'Efectivo';
+    } else {
+      var sel = document.getElementById('rec_cuenta_sel');
+      cuentaIdx = sel ? Number(sel.value) : -1;
+      if (cuentaIdx < 0 || !window.cuentasMemoria || !window.cuentasMemoria[cuentaIdx]) {
+        alert('Selecciona la cuenta'); return;
+      }
+      nombreBanco = window.cuentasMemoria[cuentaIdx].nombre;
+    }
+
+    var hoy = new Date().toLocaleDateString('es-CO', {day:'numeric',month:'long',year:'numeric'});
+    var pagoReal = carteraV2Abonar(nombre, saldoReal, metodo, nombreBanco, cuentaIdx, 'Desde recaudo diario');
+
+    // 1. Actualizar estado recaudo del día
+    if (typeof recaudoLeerEstado === 'function' && typeof recaudoGuardarEstado === 'function') {
+      var estado = recaudoLeerEstado();
+      if (!estado[nombre]) estado[nombre] = {};
+      estado[nombre].deudasPagadas = (estado[nombre].deudasPagadas || 0) + pagoReal;
+      estado[nombre].deudaMetodo = metodo;
+      estado[nombre].deudaCuentaIdx = cuentaIdx;
+      estado[nombre].deudaBanco = nombreBanco;
+      estado[nombre].fechaPago = hoy;
+      recaudoGuardarEstado(estado);
+    }
+
+    // 2. Historial cartera
+    try {
+      var hist = JSON.parse(localStorage.getItem('cartera_pagos_historial') || '[]');
+      hist.push({ cliente: nombre, monto: pagoReal, metodo: metodo, banco: nombreBanco, cuentaIdx: cuentaIdx, nota: 'Desde recaudo diario', fecha: hoy });
+      localStorage.setItem('cartera_pagos_historial', JSON.stringify(hist));
+    } catch(e) {}
+
+    // 3. Acreditar cuenta
+    if (cuentaIdx >= 0 && Array.isArray(window.cuentasMemoria) && window.cuentasMemoria[cuentaIdx]) {
+      window.cuentasMemoria[cuentaIdx].saldo += pagoReal;
+      if (typeof cuentasGuardar === 'function') cuentasGuardar();
+    }
+
+    // 4. Movimiento contable (SEPARADO de ventas del día)
+    if (!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
+    window.movimientosContables.push({
+      tipo: 'ingreso',
+      monto: pagoReal,
+      cuenta: nombreBanco,
+      categoria: 'Cobro deuda',
+      descripcion: 'Pago deuda: ' + nombre,
+      fecha: new Date().toISOString()
+    });
+    movPersistir();
+
+    ledgerGuardar({
+      tipo: 'abono_deuda',
+      nombre: nombre,
+      monto: pagoReal,
+      metodo: metodo,
+      banco: nombreBanco,
+      cuentaIdx: cuentaIdx,
+      modulo: 'recaudo'
+    });
+
+    if (typeof cerrarMC === 'function') cerrarMC();
+    if (typeof renderRecaudo === 'function') renderRecaudo();
+  };
+
+  /* ── recaudoRevertirPagoDeuda: deshace abono en carteraV2 ──────────── */
+  window.recaudoRevertirPagoDeuda = function(nombre) {
+    if (typeof recaudoLeerEstado !== 'function') return;
+    var estado = recaudoLeerEstado();
+    var e = estado[nombre] || {};
+    var pagoAnterior = Number(e.deudasPagadas) || 0;
+    var cuentaIdx = Number(e.deudaCuentaIdx);
+
+    // Deshacer en carteraV2
+    var c = carteraV2Leer();
+    if (c[nombre]) {
+      c[nombre].pagado = Math.max((c[nombre].pagado || 0) - pagoAnterior, 0);
+      carteraV2Guardar(c);
+    }
+
+    // Deshacer en cuenta bancaria
+    if (pagoAnterior > 0 && cuentaIdx >= 0 && Array.isArray(window.cuentasMemoria) && window.cuentasMemoria[cuentaIdx]) {
+      window.cuentasMemoria[cuentaIdx].saldo -= pagoAnterior;
+      if (typeof cuentasGuardar === 'function') cuentasGuardar();
+    }
+
+    // Limpiar estado
+    if (estado[nombre]) {
+      estado[nombre].deudasPagadas = 0;
+      estado[nombre].deudaMetodo = null;
+      estado[nombre].deudaCuentaIdx = null;
+      estado[nombre].deudaBanco = null;
+      estado[nombre].fechaPago = null;
+      if (typeof recaudoGuardarEstado === 'function') recaudoGuardarEstado(estado);
+    }
+
+    // Quitar del historial
+    try {
+      var hist = JSON.parse(localStorage.getItem('cartera_pagos_historial') || '[]');
+      for (var i = hist.length - 1; i >= 0; i--) {
+        if (hist[i].cliente === nombre && hist[i].nota === 'Desde recaudo diario') {
+          hist.splice(i, 1); break;
+        }
+      }
+      localStorage.setItem('cartera_pagos_historial', JSON.stringify(hist));
+    } catch(e) {}
+
+    ledgerGuardar({ tipo: 'reversion_abono', nombre: nombre, monto: pagoAnterior, modulo: 'recaudo' });
+    if (typeof renderRecaudo === 'function') renderRecaudo();
+  };
+
+  function _recaudoDescontarLeDebo(nombre, monto) {
+    var hoy = new Date().toLocaleDateString('es-CO', {day:'numeric',month:'long',year:'numeric'});
+    if (typeof recaudoLeerEstado === 'function' && typeof recaudoGuardarEstado === 'function') {
+      var estado = recaudoLeerEstado();
+      if (!estado[nombre]) estado[nombre] = {};
+      estado[nombre].deudaMiaPagada = monto;
+      estado[nombre].fechaDescuento = hoy;
+      recaudoGuardarEstado(estado);
+    }
+    var c = carteraV2Leer();
+    if (c[nombre]) { c[nombre].leDebo = Math.max((c[nombre].leDebo || 0) - monto, 0); carteraV2Guardar(c); }
+    if (typeof renderRecaudo === 'function') renderRecaudo();
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     FIX 4 ─ ELIMINAR DEUDA TIBERIO desde Cartera
+     (y cualquier otro cliente)
+  ═══════════════════════════════════════════════════════════════════ */
+
+  var _origRenderCartera = window.renderCartera;
+  var _carteraGuard = false;
+  window.renderCartera = async function() {
+    if (_carteraGuard) return;
+    _carteraGuard = true;
+    try {
+      if (typeof _origRenderCartera === 'function') {
+        await _origRenderCartera.apply(this, arguments);
+      }
+    } finally {
+      _carteraGuard = false;
+    }
+    // Inyectar botón eliminar deuda en el panel de Tiberio
+    setTimeout(function() {
+      try {
+        var body = document.getElementById('carteraBody');
+        if (!body) return;
+        var tiberioNombre = 'MARKET DEL RIO - TIBERIO';
+        // Agregar botón eliminar deuda completa
+        var cards = body.querySelectorAll('.chart-card');
+        cards.forEach(function(card) {
+          var title = card.querySelector('.chart-title');
+          if (!title) return;
+          if (title.textContent.toUpperCase().indexOf('DEUDAS') < 0) return;
+          if (card.querySelector('.btn-eliminar-deuda-total')) return;
+          var saldo = carteraV2SaldoPendiente(tiberioNombre);
+          if (saldo <= 0) return;
+          var btn = document.createElement('button');
+          btn.className = 'btn-eliminar-deuda-total mc-btn-cancel';
+          btn.style.cssText = 'margin-top:12px;width:100%;background:rgba(220,38,38,0.15);border:1px solid rgba(220,38,38,0.35);color:#fca5a5;border-radius:10px;padding:10px;font-weight:700;cursor:pointer;font-size:13px;';
+          btn.textContent = '🗑️ Eliminar deuda total de Tiberio';
+          btn.onclick = function() {
+            var saldoActual = carteraV2SaldoPendiente(tiberioNombre);
+            if (!confirm('¿Eliminar la deuda total de $' + saldoActual.toLocaleString('es-CO') + ' de Tiberio?\nEsto eliminará todo el historial de esta deuda.')) return;
+            var ok = carteraV2EliminarDeuda(tiberioNombre);
+            if (ok) {
+              alert('✅ Deuda de Tiberio eliminada correctamente.');
+              if (typeof renderCartera === 'function') renderCartera();
+            }
+          };
+          card.appendChild(btn);
+        });
+        // También inyectar en la tabla general un botón por cliente
+        var filas = body.querySelectorAll('.cartera-table tbody tr');
+        filas.forEach(function(fila) {
+          if (fila.querySelector('.btn-elim-deuda-cliente')) return;
+          var celdas = fila.querySelectorAll('td');
+          if (celdas.length < 2) return;
+          var nombreCliente = celdas[0] ? celdas[0].textContent.trim() : '';
+          if (!nombreCliente) return;
+          var accionBtn = fila.querySelector('.btn-transferir');
+          if (!accionBtn) return;
+          var btnElim = document.createElement('button');
+          btnElim.className = 'btn-elim-deuda-cliente btn-transferir';
+          btnElim.style.cssText = 'background:rgba(220,38,38,0.15);border-color:rgba(220,38,38,0.35);color:#fca5a5;margin-left:4px;padding:5px 8px;font-size:11px;';
+          btnElim.textContent = '🗑️';
+          btnElim.title = 'Eliminar deuda de ' + nombreCliente;
+          btnElim.onclick = function(e) {
+            e.stopPropagation();
+            var saldoActual = carteraV2SaldoPendiente(nombreCliente);
+            if (!confirm('¿Eliminar la deuda de $' + saldoActual.toLocaleString('es-CO') + ' de ' + nombreCliente + '?')) return;
+            carteraV2EliminarDeuda(nombreCliente);
+            if (typeof renderCartera === 'function') renderCartera();
+          };
+          accionBtn.parentNode.insertBefore(btnElim, accionBtn.nextSibling);
+        });
+      } catch(e) { console.warn('Patch cartera:', e); }
+    }, 150);
+  };
+
+  /* ── Parche carteraEliminarPago: también actualiza carteraV2 ──────── */
+  var _origCarteraEliminarPago = window.carteraEliminarPago;
+  window.carteraEliminarPago = function(idx) {
+    var tiberioNombre = 'MARKET DEL RIO - TIBERIO';
+    // Obtener monto antes de eliminar para deshacer en carteraV2
+    try {
+      var hist = JSON.parse(localStorage.getItem('cartera_pagos_historial') || '[]');
+      var pagosTiberio = hist.filter(function(p) { return p.cliente === tiberioNombre; });
+      var pago = pagosTiberio[idx];
+      if (pago) {
+        var c = carteraV2Leer();
+        if (c[tiberioNombre]) {
+          c[tiberioNombre].pagado = Math.max((c[tiberioNombre].pagado || 0) - (pago.monto || 0), 0);
+          carteraV2Guardar(c);
+        }
+        ledgerGuardar({ tipo: 'reversion_pago_cartera', nombre: tiberioNombre, monto: pago.monto, modulo: 'cartera' });
+      }
+    } catch(e) {}
+    if (typeof _origCarteraEliminarPago === 'function') {
+      _origCarteraEliminarPago.apply(this, arguments);
+    }
+  };
+
+  /* ── Parche carteraRegistrarPagoTiberio: usa carteraV2.abonar ──────── */
+  var _origCarteraRegistrarPagoTiberio = window.carteraRegistrarPagoTiberio;
+  window.carteraRegistrarPagoTiberio = function() {
+    var tiberioNombre = 'MARKET DEL RIO - TIBERIO';
+    var montoInput = document.getElementById('carteraPagoMonto');
+    var monto = montoInput ? (Number(montoInput.value) || 0) : 0;
+    if (monto <= 0) { alert('Ingresa un monto válido'); return; }
+
+    var metodo = window.carteraMetodoSeleccionado;
+    if (!metodo) { alert('Selecciona un método de pago'); return; }
+
+    var cuentaSelect = document.getElementById('carteraCuentaDestino');
+    var cuentaIdx = -1, nombreBanco = '';
+    if (metodo === 'efectivo') {
+      cuentaIdx = Array.isArray(window.cuentasMemoria) ? window.cuentasMemoria.findIndex(function(c) { return c.tipo === 'EFECTIVO'; }) : -1;
+      nombreBanco = 'Efectivo';
+    } else {
+      cuentaIdx = cuentaSelect ? Number(cuentaSelect.value) : -1;
+      if (cuentaIdx < 0 || !window.cuentasMemoria || !window.cuentasMemoria[cuentaIdx]) { alert('Selecciona la cuenta'); return; }
+      nombreBanco = window.cuentasMemoria[cuentaIdx].nombre;
+    }
+
+    // Usar carteraV2 como fuente de verdad
+    var pagoReal = carteraV2Abonar(tiberioNombre, monto, metodo, nombreBanco, cuentaIdx, 'Desde módulo Cartera');
+
+    // Ejecutar la función original para el historial y la UI
+    if (typeof _origCarteraRegistrarPagoTiberio === 'function') {
+      _origCarteraRegistrarPagoTiberio.apply(this, arguments);
+    }
+  };
+
+  /* ═══════════════════════════════════════════════════════════════════
+     FIX 5 ─ BOTÓN INVISIBLE: afectar todos los totales del día
+  ═══════════════════════════════════════════════════════════════════ */
+
+  window.rcamoClick = async function() {
+    var DESCUENTO = 40000;
+
+    // 1. Restar de la cuenta EFECTIVO
+    if (Array.isArray(window.cuentasMemoria)) {
+      var idx = window.cuentasMemoria.findIndex(function(c) { return c.tipo === 'EFECTIVO'; });
+      if (idx >= 0) {
+        window.cuentasMemoria[idx].saldo -= DESCUENTO;
+        if (typeof cuentasGuardar === 'function') cuentasGuardar();
+      }
+    }
+
+    // 2. Registrar como egreso en caja para que afecte el total del día
+    if (typeof cajaFechaHoy === 'function') {
+      try {
+        var sesion = window._cajaCache && window._cajaCache.sesion;
+        if (sesion && sesion.id) {
+          await window.db.from('cajas_movimientos').insert({
+            caja_id: sesion.id,
+            fecha: cajaFechaHoy(),
+            tipo: 'egreso',
+            subtipo: 'ajuste',
+            categoria: 'Ajuste',
+            descripcion: 'Ajuste factura',
+            metodo_pago: 'efectivo',
+            valor: DESCUENTO,
+            usuario: (typeof cajaUsuarioActual === 'function') ? cajaUsuarioActual() : 'sistema',
+            origen: 'ajuste_invisible'
+          });
+        }
+      } catch(e) {}
+    }
+
+    // 3. Registrar en ledger y movimientosContables
+    if (!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
+    window.movimientosContables.push({
+      tipo: 'gasto',
+      monto: DESCUENTO,
+      cuenta: 'Efectivo',
+      categoria: 'Ajuste',
+      descripcion: 'Ajuste factura',
+      fecha: new Date().toISOString()
+    });
+    movPersistir();
+    ledgerGuardar({ tipo: 'ajuste_descuento', monto: DESCUENTO, modulo: 'caja' });
+
+    // 4. Restar de factura aleatoria (lógica original)
+    await _restarFacturasRandom();
+
+    // 5. Refrescar totales
+    if (typeof cajaCargarResumenDia === 'function') await cajaCargarResumenDia();
+    if (typeof renderRecaudo === 'function') renderRecaudo();
+  };
+
+  /* ═══════════════════════════════════════════════════════════════════
+     FIX 6 ─ CAJA: separar ventas de pagos de deuda en el esperado
+     
+     La fórmula correcta para caja efectiva:
+     Apertura + Ventas efectivo del día (SIN pagos de deuda)
+     + Ingresos extra (caja) - Egresos (caja)
+     
+     Los pagos de deuda en efectivo se registran APARTE como ingreso
+     en historial pero NO afectan el "esperado de caja" del día.
+  ═══════════════════════════════════════════════════════════════════ */
+
+  var _origCajaCalcularResumen = window.cajaCalcularResumen;
+  window.cajaCalcularResumen = function(ventas, movimientos, sesion) {
+    ventas = ventas || [];
+    movimientos = movimientos || [];
+
+    var ventasTotal = 0, ventasCount = ventas.length;
+    var efectivoVentas = 0, transferenciasVentas = 0, otrosVentas = 0;
+
+    ventas.forEach(function(v) {
+      var total = Number(v.total) || 0;
+      var mp = (v.metodo_pago || 'efectivo').toLowerCase();
+      ventasTotal += total;
+      if (mp.indexOf('trans') > -1) transferenciasVentas += total;
+      else if (mp.indexOf('efec') > -1) efectivoVentas += total;
+      else otrosVentas += total;
+    });
+
+    var ingresosExtra = 0, egresos = 0;
+    movimientos.forEach(function(m) {
+      var valor = Number(m.valor) || 0;
+      var tipo = (m.tipo || '').toLowerCase();
+      var subtipo = (m.subtipo || '').toLowerCase();
+      var origen = (m.origen || '').toLowerCase();
+      // Excluir pagos de deuda y ajustes del "esperado en caja de ventas"
+      if (tipo === 'ingreso' && origen !== 'deuda' && subtipo !== 'pago_deuda') ingresosExtra += valor;
+      if (tipo === 'egreso') egresos += valor;
+    });
+
+    // Usar recaudo real si está disponible (efectivo de ventas, NO incluir pagos de deuda)
+    var cache = window.recaudoCache || window._recaudoCache;
+    var efectivoRecaudo = 0;
+    if (cache && cache.resumen) {
+      // Solo el efectivo de VENTAS (no de cobros de deuda)
+      var desglose = cache.resumen.desglose || {};
+      efectivoRecaudo = Number(desglose.efectivoVentas || cache.resumen.netoEfectivo || 0);
+    }
+    var baseEfectivo = efectivoRecaudo > 0 ? efectivoRecaudo : efectivoVentas;
+
+    var apertura = Number(sesion && sesion.apertura_monto || 0);
+    var esperado = apertura + baseEfectivo + ingresosExtra - egresos;
+    var contado = Number(sesion && sesion.cierre_monto_contado || 0);
+    var diferencia = contado ? (contado - esperado) : 0;
+    var ticketPromedio = ventasCount > 0 ? (ventasTotal / ventasCount) : 0;
+
+    return {
+      ventas: ventasTotal,
+      ventasCount: ventasCount,
+      ticketPromedio: ticketPromedio,
+      ingresosExtra: ingresosExtra,
+      egresos: egresos,
+      esperado: esperado,
+      contado: contado,
+      diferencia: diferencia,
+      efectivo: baseEfectivo,
+      transferencias: transferenciasVentas,
+      otros: otrosVentas,
+      saldoFinal: esperado
+    };
+  };
+
+  /* ── Parche cajaRegistrarIngreso: persistir en ledger ──────────────── */
+  var _origCajaIngreso = window.cajaRegistrarIngreso;
+  window.cajaRegistrarIngreso = async function() {
+    var tipo = document.getElementById('cajaIngresoTipo');
+    var desc = document.getElementById('cajaIngresoDesc');
+    var val  = document.getElementById('cajaIngresoValor');
+    ledgerGuardar({
+      tipo: 'ingreso_caja',
+      descripcion: (desc ? desc.value : '') + ' ' + (tipo ? tipo.value : ''),
+      monto: Number(val ? val.value : 0) || 0,
+      modulo: 'caja'
+    });
+    if (typeof _origCajaIngreso === 'function') await _origCajaIngreso.apply(this, arguments);
+  };
+
+  var _origCajaEgreso = window.cajaRegistrarEgreso;
+  window.cajaRegistrarEgreso = async function() {
+    var desc = document.getElementById('cajaEgresoDesc');
+    var val  = document.getElementById('cajaEgresoValor');
+    ledgerGuardar({
+      tipo: 'egreso_caja',
+      descripcion: (desc ? desc.value : ''),
+      monto: Number(val ? val.value : 0) || 0,
+      modulo: 'caja'
+    });
+    if (typeof _origCajaEgreso === 'function') await _origCajaEgreso.apply(this, arguments);
+  };
+
+  /* ── Parche cajaAbrir / cajaCerrar: registrar en ledger ──────────── */
+  var _origCajaAbrir = window.cajaAbrir;
+  window.cajaAbrir = async function() {
+    ledgerGuardar({ tipo: 'apertura_caja', modulo: 'caja', fecha: new Date().toISOString() });
+    if (typeof _origCajaAbrir === 'function') await _origCajaAbrir.apply(this, arguments);
+  };
+
+  var _origCajaCerrar = window.cajaCerrar;
+  window.cajaCerrar = async function() {
+    var cache = window._cajaCache || {};
+    var resumen = cache.resumen || {};
+    ledgerGuardar({
+      tipo: 'cierre_caja',
+      esperado: resumen.esperado || 0,
+      modulo: 'caja',
+      fecha: new Date().toISOString()
+    });
+    if (typeof _origCajaCerrar === 'function') await _origCajaCerrar.apply(this, arguments);
+  };
+
+  /* ═══════════════════════════════════════════════════════════════════
+     FIX 7 ─ HISTORIAL: incluir ledger + movimientos persistidos
+  ═══════════════════════════════════════════════════════════════════ */
+
+  var _origHistorialRecolectar = window.historialRecolectar;
+  window.historialRecolectar = async function() {
+    var movs = [];
+    if (typeof _origHistorialRecolectar === 'function') {
+      movs = await _origHistorialRecolectar.apply(this, arguments);
+    }
+
+    // Agregar entradas del ledger que no estén ya (pagos de deuda, aperturas, ajustes)
+    var ledger = ledgerLeer();
+    var tiposLedger = ['abono_deuda', 'deuda_nueva', 'apertura_caja', 'cierre_caja', 'ajuste_descuento', 'deuda_eliminada'];
+    ledger.forEach(function(m) {
+      if (tiposLedger.indexOf(m.tipo) < 0) return;
+      var fechaISO = m.ts ? m.ts.slice(0, 10) : new Date().toISOString().slice(0, 10);
+      var tipo, categoria, descripcion, monto;
+      if (m.tipo === 'abono_deuda') {
+        tipo = 'ingreso'; categoria = 'Cobro deuda';
+        descripcion = 'Abono deuda: ' + (m.nombre || '');
+        monto = m.monto || 0;
+      } else if (m.tipo === 'deuda_nueva') {
+        tipo = 'gasto'; categoria = 'Deuda generada';
+        descripcion = 'Nueva deuda: ' + (m.nombre || '');
+        monto = m.monto || 0;
+      } else if (m.tipo === 'apertura_caja') {
+        tipo = 'ingreso'; categoria = 'Caja';
+        descripcion = 'Apertura de caja'; monto = 0;
+      } else if (m.tipo === 'cierre_caja') {
+        tipo = 'ingreso'; categoria = 'Caja';
+        descripcion = 'Cierre de caja'; monto = m.esperado || 0;
+      } else if (m.tipo === 'ajuste_descuento') {
+        tipo = 'gasto'; categoria = 'Ajuste';
+        descripcion = 'Ajuste de factura'; monto = m.monto || 0;
+      } else if (m.tipo === 'deuda_eliminada') {
+        tipo = 'gasto'; categoria = 'Ajuste deuda';
+        descripcion = 'Deuda eliminada: ' + (m.nombre || ''); monto = m.saldoAntes || 0;
+      }
+      // Evitar duplicados exactos
+      var yaExiste = movs.some(function(x) {
+        return x.fecha === fechaISO && x.descripcion === descripcion && x.monto === monto;
+      });
+      if (!yaExiste) {
+        movs.push({
+          fecha: fechaISO,
+          tipo: tipo,
+          categoria: categoria,
+          descripcion: descripcion,
+          cuenta: m.banco || m.metodo || '—',
+          monto: monto,
+          origen: 'ledger',
+          origenIdx: m.id || null,
+          _ledgerId: m.id
+        });
+      }
+    });
+
+    return movs;
+  };
+
+  /* ═══════════════════════════════════════════════════════════════════
+     FIX 8 ─ ELIMINAR MOVIMIENTOS DE CAJA desde Historial
+  ═══════════════════════════════════════════════════════════════════ */
+
+  window.historialEliminarMovCaja = async function(cajaMovId) {
+    if (!confirm('¿Eliminar este movimiento y revertir su efecto contable?')) return;
+    try {
+      var res = await window.db.from('cajas_movimientos').select('*').eq('id', cajaMovId).single();
+      if (res.error || !res.data) { alert('No se encontró el movimiento'); return; }
+      var mov = res.data;
+      // Eliminar en Supabase
+      await window.db.from('cajas_movimientos').delete().eq('id', cajaMovId);
+      // Revertir en cuenta si aplica
+      var valor = Number(mov.valor) || 0;
+      var tipo = (mov.tipo || '').toLowerCase();
+      if (Array.isArray(window.cuentasMemoria)) {
+        var idxEf = window.cuentasMemoria.findIndex(function(c) { return c.tipo === 'EFECTIVO'; });
+        if (idxEf >= 0) {
+          if (tipo === 'ingreso') window.cuentasMemoria[idxEf].saldo -= valor;
+          if (tipo === 'egreso')  window.cuentasMemoria[idxEf].saldo += valor;
+          if (typeof cuentasGuardar === 'function') cuentasGuardar();
+        }
+      }
+      ledgerGuardar({ tipo: 'eliminacion_mov_caja', movId: cajaMovId, monto: valor, tipoMov: tipo, modulo: 'caja' });
+      await cajaCargarResumenDia();
+      if (typeof renderConta === 'function') renderConta('historial');
+      alert('✅ Movimiento eliminado y revertido correctamente.');
+    } catch(e) {
+      console.error('Error eliminando mov caja:', e);
+      alert('Error: ' + e.message);
+    }
+  };
+
+  /* ── Inyectar botón eliminar en movimientos de caja del historial ── */
+  var _origHistorialCargarYRenderizar = window.historialCargarYRenderizar;
+  window.historialCargarYRenderizar = async function(filtroMes, filtroTipo) {
+    if (typeof _origHistorialCargarYRenderizar === 'function') {
+      await _origHistorialCargarYRenderizar.apply(this, arguments);
+    }
+    setTimeout(function() {
+      try {
+        var body = document.getElementById('contaBody');
+        if (!body) return;
+        var filas = body.querySelectorAll('tr[data-origen="caja"]');
+        filas.forEach(function(fila) {
+          if (fila.querySelector('.btn-del-mov-caja')) return;
+          var cajaId = fila.dataset.origenIdx;
+          if (!cajaId) return;
+          var td = fila.querySelector('td:last-child');
+          if (!td) return;
+          var btn = document.createElement('button');
+          btn.className = 'btn-del-mov-caja gasto-del';
+          btn.title = 'Eliminar movimiento';
+          btn.textContent = '🗑️';
+          btn.onclick = function(e) { e.stopPropagation(); historialEliminarMovCaja(cajaId); };
+          td.appendChild(btn);
+        });
+      } catch(e) {}
+    }, 200);
+  };
+
+  /* ═══════════════════════════════════════════════════════════════════
+     FIX 9 ─ recaudoConstruirData: NO inyectar value histórico en inputs
+     Los inputs deben mostrar 0 (nueva deuda), el saldo lo muestra
+     el label encima del checkbox (ver FIX 2 post-render)
+  ═══════════════════════════════════════════════════════════════════ */
+
+  var _origConstruirData = window.recaudoConstruirData;
+  window.recaudoConstruirData = async function() {
+    var rows;
+    if (typeof _origConstruirData === 'function') {
+      rows = await _origConstruirData.apply(this, arguments);
+    } else { rows = []; }
+
+    rows.forEach(function(row) {
+      // Sobreescribir deudaCliente y deudaMia con el saldo real de carteraV2
+      // (no el histórico acumulado de recaudo_*)
+      row.deudaCliente = carteraV2SaldoPendiente(row.cliente);
+      var d = carteraV2ObtenerCliente(row.cliente);
+      row.deudaMia = d.leDebo || 0;
+    });
+
+    return rows;
+  };
+
+  /* ── Asegurar que recaudoInyectarSugeridos no sobreescriba inputs ── */
+  window.recaudoInyectarSugeridos = function(rows) {
+    // NO inyectar values en los inputs (FIX: inputs siempre en 0)
+    // Solo actualizar los labels de saldo (ya lo hace el post-render de FIX 2)
+  };
+
+  console.log('✅ Sistema contable v2.0 — Correcciones integrales cargadas.');
+  console.log('   📦 carteraV2:', Object.keys(carteraV2Leer()).length, 'clientes en cartera');
+  console.log('   📋 Ledger:', ledgerLeer().length, 'movimientos registrados');
+  console.log('   💾 movimientosContables:', (window.movimientosContables || []).length, 'movimientos');
+
 })();
+
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
