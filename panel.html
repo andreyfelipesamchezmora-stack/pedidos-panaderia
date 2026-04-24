@@ -10945,9 +10945,24 @@ window.recaudoConstruirData = async function(){
  
 console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
   console.log('☁️ Supabase Realtime Sync V12 iniciado');
+
 })();
 
-
+// FIX FINAL — deudaHoy para inputs
+(function(){
+  var _orig = recaudoConstruirData;
+  window.recaudoConstruirData = async function(){
+    var rows = await _orig.apply(this, arguments);
+    var estado = recaudoLeerEstado();
+    rows.forEach(function(r){
+      var safe = r.cliente.replace(/[^a-zA-Z0-9]/g,'_');
+      var saved = estado[r.cliente] || estado[safe] || {};
+      r.deudaHoy    = Number(saved.deudaCliente) || 0;
+      r.deudaMiaHoy = Number(saved.deudaMia)     || 0;
+    });
+    return rows;
+  };
+})();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
