@@ -1,4 +1,4 @@
-}<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -11575,10 +11575,12 @@ console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
         'MODO REEMPLAZO (emergencia). El valor que escribas sera el SALDO NUEVO, no se suma al anterior.'+
       '</div>'+
       '<div class="mc-field"><label>Nuevo saldo "Me debe"</label>'+
-        '<input id="cartSetDeudaC" type="number" min="0" value="'+saldoCli+'" style="font-size:18px;font-weight:800;color:#f87171;">'+
+        '<input id="cartSetDeudaC" type="number" min="0" value="'+saldoCli+'" '+
+        'style="font-size:18px;font-weight:800;color:#ffffff;background:rgba(255,255,255,0.08);border:1px solid rgba(248,113,113,0.4);border-radius:8px;padding:10px 12px;width:100%;">'+
       '</div>'+
       '<div class="mc-field"><label>Nuevo saldo "Le debo"</label>'+
-        '<input id="cartSetDeudaM" type="number" min="0" value="'+saldoMia+'" style="font-size:18px;font-weight:800;color:#60a5fa;">'+
+        '<input id="cartSetDeudaM" type="number" min="0" value="'+saldoMia+'" '+
+        'style="font-size:18px;font-weight:800;color:#ffffff;background:rgba(255,255,255,0.08);border:1px solid rgba(96,165,250,0.4);border-radius:8px;padding:10px 12px;width:100%;">'+
       '</div>'+
       '<div class="mc-btns">'+
         '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
@@ -11796,7 +11798,167 @@ console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
     hook();
   })();
 
-  console.log('Parche V14+V15+V16 aplicado: editar=reemplazar, sync pagos, X re-render, nomina editable.');
+  // ---------- 16. V16.1: Reemplazar la X del historial v3 por boton EDITAR ----------
+  // Permite cambiar fecha y monto de la entrada (pago o deuda-dia).
+  window.carteraHistEditarEntrada = function(nombre, id){
+    try {
+      var hist = (typeof carteraHistLeer === 'function') ? carteraHistLeer(nombre) : [];
+      var entry = hist.find(function(x){ return x && x.id === id; });
+      if(!entry){ alert('Entrada no encontrada'); return; }
+      var esPago = entry.tipo === 'pago';
+      var fechaAct = entry.fecha || new Date().toISOString().slice(0,10);
+      var montoAct = Number(esPago ? entry.pagado : entry.deuda) || 0;
+      var nombreEsc = String(nombre).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      var idEsc     = String(id).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+
+      mostrarMC(
+        '<h3>Editar '+(esPago?'PAGO':'DEUDA')+' - '+nombre+'</h3>'+
+        '<div style="padding:10px 14px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.25);border-radius:8px;margin-bottom:10px;font-size:13px;color:#93c5fd;">'+
+          'Cambia la FECHA y el MONTO de esta entrada. Se recalcula el saldo automaticamente.'+
+        '</div>'+
+        '<div class="mc-field"><label>Fecha</label>'+
+          '<input id="histEditFecha" type="date" value="'+fechaAct+'" '+
+          'style="font-size:15px;font-weight:700;color:#ffffff;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:10px 12px;width:100%;">'+
+        '</div>'+
+        '<div class="mc-field"><label>Monto (en pesos)</label>'+
+          '<input id="histEditMonto" type="number" min="0" value="'+montoAct+'" '+
+          'style="font-size:18px;font-weight:800;color:#ffffff;background:rgba(255,255,255,0.08);border:1px solid rgba(251,191,36,0.4);border-radius:8px;padding:10px 12px;width:100%;">'+
+        '</div>'+
+        '<div class="mc-btns">'+
+          '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
+          '<button class="mc-btn-ok" style="background:#2563eb;" onclick="carteraHistGuardarEdicion(\''+nombreEsc+'\',\''+idEsc+'\')">Guardar</button>'+
+        '</div>'
+      );
+    } catch(e){ alert('Error: '+e.message); }
+  };
+
+  window.carteraHistGuardarEdicion = function(nombre, id){
+    try {
+      var nuevaFecha = document.getElementById('histEditFecha').value;
+      var nuevoMonto = Math.max(Number(document.getElementById('histEditMonto').value) || 0, 0);
+      if(!nuevaFecha){ alert('Fecha invalida'); return; }
+
+      var hist = carteraHistLeer(nombre);
+      var idx = hist.findIndex(function(x){ return x && x.id === id; });
+      if(idx < 0){ alert('Entrada perdida'); cerrarMC(); return; }
+      var entry = hist[idx];
+      var esPago = entry.tipo === 'pago';
+      var montoAnterior = Number(esPago ? entry.pagado : entry.deuda) || 0;
+      var fechaAnterior = entry.fecha;
+
+      // 1. Actualizar la entrada visual del historial v3
+      entry.fecha = nuevaFecha;
+      if(esPago){
+        entry.pagado = nuevoMonto;
+      } else {
+        entry.deuda = nuevoMonto;
+      }
+      hist[idx] = entry;
+      carteraHistGuardar(nombre, hist);
+      if(typeof carteraHistRecalcular === 'function') carteraHistRecalcular(nombre);
+
+      // 2. Si es PAGO, reflejar el cambio en cartera_pagos_historial
+      if(esPago){
+        try {
+          var pagos = JSON.parse(localStorage.getItem('cartera_pagos_historial')||'[]');
+          // Encontrar el pago por cliente + monto anterior (el mas reciente coincidente)
+          var pi = -1;
+          for(var i = pagos.length - 1; i >= 0; i--){
+            if(pagos[i].cliente === nombre && Number(pagos[i].monto) === montoAnterior){
+              pi = i; break;
+            }
+          }
+          if(pi >= 0){
+            var pagoViejo = pagos[pi];
+            var delta = nuevoMonto - montoAnterior; // positivo: subio, negativo: bajo
+            pagos[pi].monto = nuevoMonto;
+            pagos[pi].fecha = nuevaFecha;
+            localStorage.setItem('cartera_pagos_historial', JSON.stringify(pagos));
+
+            // Ajustar saldo de la cuenta asociada (si existe)
+            if(pagoViejo.cuentaIdx >= 0 && Array.isArray(cuentasMemoria) && cuentasMemoria[pagoViejo.cuentaIdx]){
+              cuentasMemoria[pagoViejo.cuentaIdx].saldo += delta;
+              if(typeof cuentasGuardar === 'function') cuentasGuardar();
+            }
+
+            // Ledger
+            if(typeof window.ledgerLog === 'function'){
+              window.ledgerLog({
+                tipo:'pago_editado', origen:'historial-cartera', cliente: nombre,
+                monto: Math.abs(delta),
+                saldoAntes: montoAnterior, saldoDespues: nuevoMonto,
+                descripcion:'Pago editado de $'+montoAnterior+' a $'+nuevoMonto+' ('+fechaAnterior+' -> '+nuevaFecha+')'
+              });
+            }
+          }
+        } catch(e){ console.warn('ajuste pagos:', e); }
+      } else {
+        // Si es deuda-dia: el replanteo va via recaudo del dia; actualizamos
+        // el recaudo de la fecha destino con el nuevo monto.
+        try {
+          var fkNueva = 'recaudo_' + nuevaFecha;
+          var estNueva = JSON.parse(localStorage.getItem(fkNueva) || '{}');
+          if(!estNueva[nombre]) estNueva[nombre] = {};
+          estNueva[nombre].deudaCliente = nuevoMonto;
+          localStorage.setItem(fkNueva, JSON.stringify(estNueva));
+
+          // Si cambio la fecha, limpiar el valor anterior
+          if(fechaAnterior && fechaAnterior !== nuevaFecha){
+            var fkVieja = 'recaudo_' + fechaAnterior;
+            var estVieja = JSON.parse(localStorage.getItem(fkVieja) || '{}');
+            if(estVieja[nombre]){
+              delete estVieja[nombre].deudaCliente;
+              localStorage.setItem(fkVieja, JSON.stringify(estVieja));
+            }
+          }
+
+          if(typeof window.ledgerLog === 'function'){
+            window.ledgerLog({
+              tipo:'deuda_editada', origen:'historial-cartera', cliente: nombre,
+              monto: Math.abs(nuevoMonto - montoAnterior),
+              saldoAntes: montoAnterior, saldoDespues: nuevoMonto,
+              descripcion:'Deuda editada ('+fechaAnterior+' -> '+nuevaFecha+')'
+            });
+          }
+        } catch(e){ console.warn('ajuste deuda:', e); }
+      }
+
+      // 3. Sincronizar y re-render
+      if(typeof window._sincronizarDeudasPagadas === 'function') window._sincronizarDeudasPagadas();
+      cerrarMC();
+      setTimeout(function(){
+        if(typeof renderCartera === 'function') renderCartera();
+        if(typeof renderRecaudo === 'function') renderRecaudo();
+      }, 100);
+    } catch(e){
+      alert('Error guardando: '+e.message);
+      console.error(e);
+    }
+  };
+
+  // Envolver carteraHistHtml para reemplazar la X por boton "Editar"
+  (function swapXporEditar(){
+    if(typeof window.carteraHistHtml !== 'function') return;
+    if(window.carteraHistHtml.__v161) return;
+    var _prev = window.carteraHistHtml;
+    window.carteraHistHtml = function(){
+      var html = _prev.apply(this, arguments);
+      if(typeof html !== 'string') return html;
+      // Reemplazar cada boton con X por uno que llame a carteraHistEditarEntrada
+      html = html.replace(
+        /<button\s+onclick="carteraHistEliminar\('([^']+)','([^']+)'\)"[\s\S]*?>\s*[\u2715\u2716\u00d7x]\s*<\/button>/g,
+        function(_m, nEsc, idEsc){
+          return '<button onclick="carteraHistEditarEntrada(\''+nEsc+'\',\''+idEsc+'\')" '+
+                 'style="background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.35);color:#fbbf24;cursor:pointer;font-size:11px;font-weight:800;padding:4px 10px;border-radius:6px;" '+
+                 'title="Editar fecha y monto">Editar</button>';
+        }
+      );
+      return html;
+    };
+    window.carteraHistHtml.__v161 = true;
+  })();
+
+  console.log('Parche V14+V15+V16+V16.1 aplicado: inputs legibles, X -> Editar con fecha+monto.');
 })();
 
 </script>
