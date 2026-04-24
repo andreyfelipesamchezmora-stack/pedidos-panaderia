@@ -3258,6 +3258,7 @@ async function recaudoConstruirData(){
       tipo: c.tipo || "moto",
       subtotal: subtotal,
       recaudoDomi: Number(saved.recaudoDomi || 0),
+      domiIncluirDeuda: !!saved.domiIncluirDeuda,
       recibido: !!saved.recibido,
       nequi: Number(saved.nequi || 0),
       bancolombia: Number(saved.bancolombia || 0),
@@ -3359,6 +3360,7 @@ async function renderRecaudo(){
     rows.forEach(function(r){
       bruto += r.subtotal;
       recaudoDomi += r.recaudoDomi;
+      if(r.domiIncluirDeuda) recaudoDomi += (Number(r._deudaTotalCliente)||0);
       nequiVentas += r.nequi;
       bancolombiaVentas += r.bancolombia;
       faltantes += r.faltantes;
@@ -3549,9 +3551,15 @@ async function renderRecaudo(){
                   <td>${recaudoMoney(r.subtotal)}</td>
                   <td style="text-align:center;">${deudaHtml}</td>
                   <td style="text-align:center;">
-                    <input id="rec_domi_${safe}" class="recaudo-check" type="checkbox"
-                      ${r.recaudoDomi > 0 ? 'checked' : ''}
-                      onclick="recaudoToggleDomi(${JSON.stringify(safe).replace(/"/g,'&quot;')}, ${r.subtotal})">
+                    <div style="display:flex;align-items:center;justify-content:center;gap:8px;">
+                      ${_tdc > 0 ? `<input id="rec_domideuda_${safe}" class="recaudo-check" type="checkbox" style="accent-color:#f59e0b;"
+                        ${r.domiIncluirDeuda ? 'checked' : ''}
+                        onclick="recaudoToggleDomiDeuda(${JSON.stringify(safe).replace(/"/g,'&quot;')})"
+                        title="Sumar la deuda (${recaudoMoney(_tdc)}) al total de recaudo domi">` : ''}
+                      <input id="rec_domi_${safe}" class="recaudo-check" type="checkbox"
+                        ${r.recaudoDomi > 0 ? 'checked' : ''}
+                        onclick="recaudoToggleDomi(${JSON.stringify(safe).replace(/"/g,'&quot;')}, ${r.subtotal})">
+                    </div>
                   </td>
                   <td style="text-align:center;">
                     <input id="rec_rec_${safe}" class="recaudo-check" type="checkbox"
@@ -5273,6 +5281,17 @@ function recaudoCalcularDesgloseMetodos(rows){
   recaudoGuardarEstado(estado);
   renderRecaudo();
 }
+
+// Toggle: incluir la deuda del cliente en el total de recaudo domi
+function recaudoToggleDomiDeuda(nombre){
+  let cb = document.getElementById('rec_domideuda_' + nombre);
+  let estado = recaudoLeerEstado();
+  if(!estado[nombre]) estado[nombre] = {};
+  estado[nombre].domiIncluirDeuda = !!(cb && cb.checked);
+  recaudoGuardarEstado(estado);
+  renderRecaudo();
+}
+
 function _contaTabs(activa){
   return '<div class="filter-tabs">'+
     '<button class="ftab '+(activa==="resumen"?"active":"")+'" onclick="renderConta(\'resumen\')">📊 Resumen</button>'+
@@ -10690,7 +10709,7 @@ window.renderRecaudo = async function(){
         var rb=document.createElement('button');rb.id='btnResetRecaudo';
         rb.style.cssText='padding:7px 14px;border-radius:8px;border:1px solid rgba(239,68,68,0.4);background:rgba(239,68,68,0.15);color:#fca5a5;font-weight:700;cursor:pointer;font-size:12px;margin-left:6px;';
         rb.textContent='🔄 Reset Checks';
-        rb.onclick=function(){if(!confirm('¿Limpiar checkboxes del día?'))return;var fk='recaudo_'+cajaFechaHoy();var e={};try{e=JSON.parse(localStorage.getItem(fk)||'{}');}catch(x){}Object.keys(e).forEach(function(n){if(!n.startsWith('__')&&e[n]){e[n].recaudoDomi=0;e[n].recibido=false;}});localStorage.setItem(fk,JSON.stringify(e));renderRecaudo();};
+        rb.onclick=function(){if(!confirm('¿Limpiar checkboxes del día?'))return;var fk='recaudo_'+cajaFechaHoy();var e={};try{e=JSON.parse(localStorage.getItem(fk)||'{}');}catch(x){}Object.keys(e).forEach(function(n){if(!n.startsWith('__')&&e[n]){e[n].recaudoDomi=0;e[n].recibido=false;e[n].domiIncluirDeuda=false;}});localStorage.setItem(fk,JSON.stringify(e));renderRecaudo();};
         ab.parentNode.insertBefore(rb,ab.nextSibling);
       }
     }
