@@ -3583,13 +3583,13 @@ async function renderRecaudo(){
                   <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.nequi > 0 ? r.nequi.toLocaleString('es-CO') : ''}" data-raw="${r.nequi}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
                   <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.bancolombia > 0 ? r.bancolombia.toLocaleString('es-CO') : ''}" data-raw="${r.bancolombia}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
                   <td><input id="rec_dc_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"
-  value="${r.deudaCliente > 0 ? r.deudaCliente.toLocaleString('es-CO') : ''}"
-  data-raw="${r.deudaCliente}"
+  value="${r._inputDeudaCliente > 0 ? r._inputDeudaCliente.toLocaleString('es-CO') : ''}"
+  data-raw="${r._inputDeudaCliente || 0}"
   style="background:rgba(239,68,68,0.13)!important;border:1px solid rgba(239,68,68,0.35)!important;color:#fca5a5!important;"
   onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); recaudoAutoCheckDeuda('${safe}');"></td>
 <td><input id="rec_dm_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"
-  value="${r.deudaMia > 0 ? r.deudaMia.toLocaleString('es-CO') : ''}"
-  data-raw="${r.deudaMia}"
+  value="${r._inputDeudaMia > 0 ? r._inputDeudaMia.toLocaleString('es-CO') : ''}"
+  data-raw="${r._inputDeudaMia || 0}"
   style="background:rgba(59,130,246,0.13)!important;border:1px solid rgba(59,130,246,0.35)!important;color:#93c5fd!important;"
   onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); recaudoAutoCheckDeuda('${safe}');"></td>
                   <td><input id="rec_dm_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudaMia > 0 ? r.deudaMia.toLocaleString('es-CO') : ''}" data-raw="${r.deudaMia}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}');"></td>
@@ -10914,13 +10914,14 @@ window.recaudoConstruirData = async function(){
     r._deudaHistCliente = r.deudaCliente;
     r._deudaHistMia = r.deudaMia;
 
-    // Si fue editada manualmente (incluso a 0), respetar ese valor
-    // Si no fue editada, usar la deuda histórica acumulada
+    // _inputDeudaCliente = lo que escribió HOY (para el input, puede ser 0/vacío)
+    // r.deudaCliente = deuda histórica (para mostrar encima del checkbox, siempre)
     var savedDC = Number(saved.deudaCliente) || 0;
     var savedDM = Number(saved.deudaMia) || 0;
-    var editada = !!saved.deudaClienteEditada;
-    r.deudaCliente = editada ? savedDC : (savedDC > 0 ? savedDC : r._deudaHistCliente);
-    r.deudaMia     = editada ? savedDM : (savedDM > 0 ? savedDM : r._deudaHistMia);
+    r._inputDeudaCliente = savedDC;
+    r._inputDeudaMia     = savedDM;
+    r.deudaCliente = r._deudaHistCliente;
+    r.deudaMia     = r._deudaHistMia;
  
     // Recalcular efectivoNeto con las deudas del día
     r.totalTransferencia = r.nequi + r.bancolombia;
