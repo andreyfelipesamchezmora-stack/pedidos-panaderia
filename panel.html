@@ -3583,13 +3583,13 @@ async function renderRecaudo(){
                   <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.nequi > 0 ? r.nequi.toLocaleString('es-CO') : ''}" data-raw="${r.nequi}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
                   <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.bancolombia > 0 ? r.bancolombia.toLocaleString('es-CO') : ''}" data-raw="${r.bancolombia}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
                   <td><input id="rec_dc_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"
-  value="${r._inputDeudaCliente > 0 ? r._inputDeudaCliente.toLocaleString('es-CO') : ''}"
-  data-raw="${r._inputDeudaCliente || 0}"
+  value="${r.deudaHoy > 0 ? r.deudaHoy.toLocaleString('es-CO') : ''}"
+data-raw="${r.deudaHoy || 0}"
   style="background:rgba(239,68,68,0.13)!important;border:1px solid rgba(239,68,68,0.35)!important;color:#fca5a5!important;"
   onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); recaudoAutoCheckDeuda('${safe}');"></td>
 <td><input id="rec_dm_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"
-  value="${r._inputDeudaMia > 0 ? r._inputDeudaMia.toLocaleString('es-CO') : ''}"
-  data-raw="${r._inputDeudaMia || 0}"
+  value="${r.deudaMiaHoy > 0 ? r.deudaMiaHoy.toLocaleString('es-CO') : ''}"
+data-raw="${r.deudaMiaHoy || 0}"
   style="background:rgba(59,130,246,0.13)!important;border:1px solid rgba(59,130,246,0.35)!important;color:#93c5fd!important;"
   onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); recaudoAutoCheckDeuda('${safe}');"></td>
                   <td><input id="rec_dm_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudaMia > 0 ? r.deudaMia.toLocaleString('es-CO') : ''}" data-raw="${r.deudaMia}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}');"></td>
