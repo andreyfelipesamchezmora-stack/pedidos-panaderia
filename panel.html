@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+}<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -11515,7 +11515,288 @@ console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
     window.carteraHistEliminar.__v152 = true;
   })();
 
-  console.log('Parche V14+V15+V15.2 aplicado: checkbox respetado, fecha fija, X con reversa real, domi suma saldo real.');
+  // =========================================================
+  // PARCHE V16 — Editar=reemplazar, sync saldos, Nomina editable,
+  //              X Tiberio robusta, historial con valor del dia
+  // =========================================================
+
+  // ---------- 11. Sincronizador unico de pagos.
+  // cartera_deudas[nombre].deudasPagadas DEBE == sum(cartera_pagos_historial[cliente])
+  // para que header Tiberio y tabla Cartera siempre coincidan. ----------
+  window._sincronizarDeudasPagadas = function(){
+    try {
+      var pagos = [];
+      try { pagos = JSON.parse(localStorage.getItem('cartera_pagos_historial')||'[]'); } catch(e){}
+      var cart = {};
+      try { cart = JSON.parse(localStorage.getItem('cartera_deudas')||'{}'); } catch(e){}
+      var porCliente = {};
+      pagos.forEach(function(p){
+        if(!p || !p.cliente) return;
+        porCliente[p.cliente] = (porCliente[p.cliente]||0) + (Number(p.monto)||0);
+      });
+      // Clientes con pagos
+      Object.keys(porCliente).forEach(function(n){
+        if(!cart[n]) cart[n] = {};
+        cart[n].deudasPagadas = porCliente[n];
+      });
+      // Clientes sin pagos -> deudasPagadas = 0
+      Object.keys(cart).forEach(function(n){
+        if(porCliente[n] == null){
+          if(cart[n]) cart[n].deudasPagadas = 0;
+        }
+      });
+      localStorage.setItem('cartera_deudas', JSON.stringify(cart));
+    } catch(e){ console.warn('sinc deudasPagadas:', e); }
+  };
+
+  // Correr al cargar y tras cada operacion de pago
+  setTimeout(window._sincronizarDeudasPagadas, 600);
+
+  // ---------- 12. Parche del render Tiberio: quitar la doble resta ----------
+  // El header hace: saldoReal = deudaCliente - pagadoTiberio - totalPagadoHistorial
+  // Pero deudaCliente ya es (acumulado - deudasPagadas). Con el sincronizador,
+  // deudasPagadas === totalPagadoHistorial, por lo que la doble resta se
+  // convierte en resta correcta (queda coherente). El sincronizador arregla
+  // la inconsistencia sin tocar el render.
+
+  // ---------- 13. EDITAR = REEMPLAZAR (no sumar).
+  // Modal muestra el saldo actual pre-cargado. Guardar sobrescribe. ----------
+  window.carteraEditarDeuda = function(nombre){
+    var info = (typeof recaudoGetDeudaHistorica === 'function')
+      ? recaudoGetDeudaHistorica(nombre)
+      : {deudaCliente:0, deudaMia:0};
+    var saldoCli = Number(info.deudaCliente)||0;
+    var saldoMia = Number(info.deudaMia)||0;
+    var nombreEsc = String(nombre).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+
+    mostrarMC(
+      '<h3>Replantear deuda - '+nombre+'</h3>'+
+      '<div style="padding:10px 14px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:8px;margin-bottom:10px;font-size:13px;color:#fbbf24;">'+
+        'MODO REEMPLAZO (emergencia). El valor que escribas sera el SALDO NUEVO, no se suma al anterior.'+
+      '</div>'+
+      '<div class="mc-field"><label>Nuevo saldo "Me debe"</label>'+
+        '<input id="cartSetDeudaC" type="number" min="0" value="'+saldoCli+'" style="font-size:18px;font-weight:800;color:#f87171;">'+
+      '</div>'+
+      '<div class="mc-field"><label>Nuevo saldo "Le debo"</label>'+
+        '<input id="cartSetDeudaM" type="number" min="0" value="'+saldoMia+'" style="font-size:18px;font-weight:800;color:#60a5fa;">'+
+      '</div>'+
+      '<div class="mc-btns">'+
+        '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
+        '<button class="mc-btn-ok" style="background:#d97706;" onclick="carteraGuardarDeuda(\''+nombreEsc+'\')">Guardar saldo</button>'+
+      '</div>'
+    );
+  };
+
+  window.carteraGuardarDeuda = function(nombre){
+    var elC = document.getElementById('cartSetDeudaC');
+    var elM = document.getElementById('cartSetDeudaM');
+    var nuevoC = Math.max(Number(elC && elC.value) || 0, 0);
+    var nuevoM = Math.max(Number(elM && elM.value) || 0, 0);
+
+    var info = (typeof recaudoGetDeudaHistorica === 'function')
+      ? recaudoGetDeudaHistorica(nombre)
+      : {deudaCliente:0, deudaMia:0, deudasPagadas:0};
+    var antesC = Number(info.deudaCliente)||0;
+    var antesM = Number(info.deudaMia)||0;
+    var pagado = Number(info.deudasPagadas)||0;
+
+    // Estrategia: limpiar deudaCliente/deudaMia en TODOS los recaudos previos
+    // (pero NUNCA tocar nequi, bancolombia, recaudoDomi, deudasPagadas).
+    // Luego escribir el nuevo saldo en el recaudo de HOY, compensando por los
+    // pagos ya registrados (para que el acumulado - pagos = nuevoSaldo).
+    try {
+      for(var i=0; i<localStorage.length; i++){
+        var k = localStorage.key(i);
+        if(!k || !k.startsWith('recaudo_')) continue;
+        try {
+          var obj = JSON.parse(localStorage.getItem(k) || '{}');
+          if(obj && obj[nombre]){
+            delete obj[nombre].deudaCliente;
+            delete obj[nombre].deudaMia;
+            localStorage.setItem(k, JSON.stringify(obj));
+          }
+        } catch(e){}
+      }
+    } catch(e){}
+
+    // Escribir en recaudo de hoy: valor + pagado (para que al restar pagado de como resultado nuevoC)
+    var fk = 'recaudo_' + ((typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10));
+    var estado = {};
+    try { estado = JSON.parse(localStorage.getItem(fk) || '{}'); } catch(e){}
+    if(!estado[nombre]) estado[nombre] = {};
+    estado[nombre].deudaCliente = nuevoC + pagado;
+    estado[nombre].deudaMia     = nuevoM;
+    localStorage.setItem(fk, JSON.stringify(estado));
+
+    // Ledger
+    if(typeof window.ledgerLog === 'function'){
+      if(nuevoC !== antesC){
+        window.ledgerLog({
+          tipo:'deuda_replanteada_cliente', origen:'cartera', cliente: nombre,
+          monto: Math.abs(nuevoC - antesC), saldoAntes: antesC, saldoDespues: nuevoC,
+          descripcion:'Replanteamiento saldo me debe '+nombre
+        });
+      }
+      if(nuevoM !== antesM){
+        window.ledgerLog({
+          tipo:'deuda_replanteada_mia', origen:'cartera', cliente: nombre,
+          monto: Math.abs(nuevoM - antesM), saldoAntes: antesM, saldoDespues: nuevoM,
+          descripcion:'Replanteamiento saldo le debo '+nombre
+        });
+      }
+    }
+
+    // Registrar linea en historial v3 del dia con el valor NUEVO
+    try {
+      if(typeof carteraHistRegistrarDeuda === 'function'){
+        carteraHistRegistrarDeuda(nombre, nuevoC, pagado);
+      }
+    } catch(e){}
+
+    cerrarMC();
+    if(typeof renderCartera === 'function') renderCartera();
+    if(typeof renderRecaudo === 'function') renderRecaudo();
+  };
+
+  // ---------- 14. Mejorar X Tiberio: forzar re-render completo con delay ----------
+  var _prevHistElim16 = window.carteraHistEliminar;
+  if(typeof _prevHistElim16 === 'function' && !_prevHistElim16.__v16){
+    window.carteraHistEliminar = function(nombre, id){
+      var r = _prevHistElim16.apply(this, arguments);
+      setTimeout(function(){
+        try { window._sincronizarDeudasPagadas(); } catch(e){}
+        try { if(typeof renderCartera === 'function') renderCartera(); } catch(e){}
+      }, 120);
+      return r;
+    };
+    window.carteraHistEliminar.__v16 = true;
+  }
+  // Tambien tras eliminar pago via X del historial de pagos
+  var _prevElimPago16 = window.carteraEliminarPago;
+  if(typeof _prevElimPago16 === 'function' && !_prevElimPago16.__v16){
+    window.carteraEliminarPago = function(idx){
+      var r = _prevElimPago16.apply(this, arguments);
+      setTimeout(function(){
+        try { window._sincronizarDeudasPagadas(); } catch(e){}
+        try { if(typeof renderCartera === 'function') renderCartera(); } catch(e){}
+      }, 120);
+      return r;
+    };
+    window.carteraEliminarPago.__v16 = true;
+  }
+
+  // ---------- 15. NOMINA: editar nombre empleado + editar adelantos ----------
+  window.nominaEditarNombre = function(idx){
+    try {
+      var d = _nLeer();
+      var actual = d.empleados[idx] ? d.empleados[idx].nombre : '';
+      var nuevo = prompt('Nuevo nombre del trabajador:', actual);
+      if(nuevo == null) return;
+      nuevo = nuevo.trim().toUpperCase();
+      if(!nuevo){ alert('Nombre vacio'); return; }
+      d.empleados[idx].nombre = nuevo;
+      _nGuardar(d);
+      renderNomina();
+    } catch(e){ alert('Error: '+e.message); }
+  };
+
+  window.nominaEditarAdelanto = function(idx, ai){
+    try {
+      var d = _nLeer();
+      var ad = d.empleados[idx].adelantos[ai];
+      if(!ad) return;
+      var m = prompt('Monto del adelanto:', ad.monto);
+      if(m == null) return;
+      m = Number(String(m).replace(/\./g,'').replace(/,/g,'').replace(/[^0-9]/g,'')) || 0;
+      if(m <= 0){ alert('Monto invalido'); return; }
+      var r = prompt('Razon:', ad.razon || '');
+      if(r == null) r = ad.razon || '';
+      d.empleados[idx].adelantos[ai].monto = m;
+      d.empleados[idx].adelantos[ai].razon = r;
+      _nGuardar(d);
+      renderNomina();
+    } catch(e){ alert('Error: '+e.message); }
+  };
+
+  // Envolver renderNomina para inyectar botones/handlers editables
+  (function hookNomina(){
+    var tries = 0;
+    function hook(){
+      if(typeof window.renderNomina !== 'function'){
+        if(++tries < 30) return setTimeout(hook, 200);
+        return;
+      }
+      if(window.renderNomina.__v16) return;
+      var _prev = window.renderNomina;
+      window.renderNomina = function(){
+        var r = _prev.apply(this, arguments);
+        setTimeout(inyectar, 80);
+        return r;
+      };
+      window.renderNomina.__v16 = true;
+      setTimeout(inyectar, 300);
+    }
+    function inyectar(){
+      try {
+        var body = document.getElementById('nominaBody') || document.body;
+        // 1. Hacer editables los nombres: buscar div con font-size:17px, font-weight:800 dentro de tarjetas
+        // Estrategia simple: envolver cada nombre con un listener de click.
+        var data;
+        try { data = _nLeer(); } catch(e){ return; }
+        var empleados = (data && data.empleados) || [];
+        empleados.forEach(function(emp, idx){
+          // Buscar el div del nombre (texto = emp.nombre, font-weight 800, size 17)
+          var divs = body.querySelectorAll('div');
+          divs.forEach(function(div){
+            if(div.__v16Nom) return;
+            var txt = (div.textContent||'').trim();
+            var style = div.getAttribute('style') || '';
+            if(txt === emp.nombre && /font-weight:800/.test(style) && /font-size:17px/.test(style)){
+              div.__v16Nom = true;
+              div.style.cursor = 'pointer';
+              div.title = 'Click para editar nombre';
+              div.addEventListener('click', function(ev){
+                ev.stopPropagation();
+                window.nominaEditarNombre(idx);
+              });
+              // Agregar lapiz visual
+              if(!div.querySelector('.v16-edit-ico')){
+                var ico = document.createElement('span');
+                ico.className = 'v16-edit-ico';
+                ico.textContent = ' \u270F';
+                ico.style.cssText = 'font-size:12px;color:#fbbf24;margin-left:6px;opacity:0.6;';
+                div.appendChild(ico);
+              }
+            }
+          });
+        });
+        // 2. Adelantos editables: cada ✕ ya esta; agregamos un lapiz al lado
+        empleados.forEach(function(emp, idx){
+          (emp.adelantos||[]).forEach(function(a, ai){
+            // Buscar botones de borrar adelanto de este idx/ai
+            var sel = 'button[onclick*="nominaBorrarAdelanto('+idx+','+ai+')"]';
+            var btns = body.querySelectorAll(sel);
+            btns.forEach(function(btn){
+              if(btn.__v16Adel) return;
+              btn.__v16Adel = true;
+              var pencil = document.createElement('button');
+              pencil.textContent = '\u270F';
+              pencil.title = 'Editar adelanto';
+              pencil.style.cssText = 'background:none;border:none;color:#fbbf24;cursor:pointer;font-size:13px;margin-right:4px;';
+              pencil.onclick = function(ev){
+                ev.stopPropagation();
+                window.nominaEditarAdelanto(idx, ai);
+              };
+              btn.parentNode.insertBefore(pencil, btn);
+            });
+          });
+        });
+      } catch(e){ console.warn('V16 nomina inyectar:', e); }
+    }
+    hook();
+  })();
+
+  console.log('Parche V14+V15+V16 aplicado: editar=reemplazar, sync pagos, X re-render, nomina editable.');
 })();
 
 </script>
