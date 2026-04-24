@@ -3535,7 +3535,7 @@ async function renderRecaudo(){
                       ${_tdc > 0 ? '⚠️ ' + recaudoMoney(_tdc) : '💙 ' + recaudoMoney(_tdm)}
                     </div>
                     <input class="recaudo-check" type="checkbox"
-                      onchange="vnDeudaPagoModal('${safe}', ${_tdc}, ${_tdm})"
+                      onclick="event.stopPropagation(); vnDeudaPagoModal(${JSON.stringify(safe).replace(/"/g,'&quot;')}, ${_tdc}, ${_tdm}); this.checked=false;"
                       title="${_tdc > 0 ? 'Registrar pago' : 'Descontar'}">
                   `;
               } else {
@@ -3551,26 +3551,26 @@ async function renderRecaudo(){
                   <td style="text-align:center;">
                     <input id="rec_domi_${safe}" class="recaudo-check" type="checkbox"
                       ${r.recaudoDomi > 0 ? 'checked' : ''}
-                      onchange="recaudoToggleDomi('${safe}', ${r.subtotal})">
+                      onclick="recaudoToggleDomi(${JSON.stringify(safe).replace(/"/g,'&quot;')}, ${r.subtotal})">
                   </td>
                   <td style="text-align:center;">
                     <input id="rec_rec_${safe}" class="recaudo-check" type="checkbox"
                       ${r.recibido ? 'checked' : ''}
-                      onchange="recaudoToggleRecibido('${safe}')">
+                      onclick="recaudoToggleRecibido(${JSON.stringify(safe).replace(/"/g,'&quot;')})">
                   </td>
                   <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.nequi > 0 ? r.nequi.toLocaleString('es-CO') : ''}" data-raw="${r.nequi}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
                   <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.bancolombia > 0 ? r.bancolombia.toLocaleString('es-CO') : ''}" data-raw="${r.bancolombia}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
                   <td style="text-align:center;">
                     <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
                       <input type="checkbox" class="recaudo-check" style="accent-color:#ef4444;"
-                        onchange="vnDeudaModal('${safe}', 'cliente')" title="Agregar deuda del cliente">
+                        onclick="event.stopPropagation(); vnDeudaModal(${JSON.stringify(safe).replace(/"/g,'&quot;')}, 'cliente'); this.checked=false;" title="Agregar deuda del cliente">
                       ${r._deudaTotalCliente > 0 ? '<span style="font-size:10px;color:#fca5a5;font-weight:700;">$'+r._deudaTotalCliente.toLocaleString('es-CO')+'</span>' : ''}
                     </div>
                   </td>
                   <td style="text-align:center;">
                     <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
                       <input type="checkbox" class="recaudo-check" style="accent-color:#3b82f6;"
-                        onchange="vnDeudaModal('${safe}', 'mia')" title="Agregar deuda mía">
+                        onclick="event.stopPropagation(); vnDeudaModal(${JSON.stringify(safe).replace(/"/g,'&quot;')}, 'mia'); this.checked=false;" title="Agregar deuda mía">
                       ${r._deudaTotalMia > 0 ? '<span style="font-size:10px;color:#93c5fd;font-weight:700;">$'+r._deudaTotalMia.toLocaleString('es-CO')+'</span>' : ''}
                     </div>
                   </td>
@@ -3826,21 +3826,37 @@ async function renderCartera(filtroMora, filtroNombre) {
   let totalPedidosTodos = lista.reduce((s,c)=>s+c.totalPedidos,0);
   let pctRecuperacion = totalPedidosTodos > 0 ? Math.round(((totalPedidosTodos - totalCartera)/totalPedidosTodos)*100) : 0;
  
-  // ========== DATOS DE TIBERIO ==========
-  let tiberioNombre = "MARKET DEL RIO - TIBERIO";
- 
-  let pagosTiberio = [];
-  try {
-    pagosTiberio = JSON.parse(localStorage.getItem('cartera_pagos_historial') || '[]');
-    pagosTiberio = pagosTiberio.filter(p => p.cliente === tiberioNombre);
-  } catch(e) { pagosTiberio = []; }
- 
-  let deudaInfo = recaudoGetDeudaHistorica(tiberioNombre);
-  let deudaTotalTiberio = deudaInfo.deudaCliente;
-  let leDeboTiberio = deudaInfo.deudaMia;
-  let pagadoTiberio = deudaInfo.deudasPagadas;
-  let totalPagadoHistorial = pagosTiberio.reduce((s,p) => s + (Number(p.monto)||0), 0);
-  let saldoReal = Math.max(deudaTotalTiberio - pagadoTiberio - totalPagadoHistorial, 0);
+  // ========== DATOS DEUDAS V20 (multi-cliente) ==========
+  let vnDeudasStore = {};
+  try { vnDeudasStore = JSON.parse(localStorage.getItem('vn_deudas_v20') || '{}'); } catch(e) { vnDeudasStore = {}; }
+
+  let vnDeudasLista = [];
+  Object.keys(vnDeudasStore).forEach(function(n){
+    let d = vnDeudasStore[n] || {};
+    let sc = Number(d.sc)||0, sm = Number(d.sm)||0;
+    if(sc>0 || sm>0) vnDeudasLista.push({nombre:n, sc:sc, sm:sm, h:d.h||[]});
+  });
+  vnDeudasLista.sort(function(a,b){return (b.sc+b.sm)-(a.sc+a.sm);});
+
+  let totalPorCobrar = vnDeudasLista.reduce(function(s,x){return s+x.sc;},0);
+  let totalPorPagar  = vnDeudasLista.reduce(function(s,x){return s+x.sm;},0);
+  let totalCarteraV20 = totalPorCobrar + totalPorPagar;
+
+  // Cliente seleccionado (persistido en window)
+  let selNombre = window._vnCarteraClienteSel || '';
+  let selData = (selNombre && vnDeudasStore[selNombre]) ? vnDeudasStore[selNombre] : {sc:0,sm:0,h:[]};
+
+  // Lista desplegable de clientes (del panel principal)
+  let vnClientesOpts = '<option value="">— Seleccionar cliente —</option>';
+  if(Array.isArray(window.clientes)){
+    let nombresClientes = window.clientes.map(function(c){ return typeof c==='string'?c:(c.nombre||''); })
+      .filter(function(n){return !!n;});
+    nombresClientes.sort(function(a,b){return a.localeCompare(b,'es');});
+    nombresClientes.forEach(function(n){
+      let sel = (n===selNombre)?' selected':'';
+      vnClientesOpts += '<option value="'+n.replace(/"/g,'&quot;')+'"'+sel+'>'+n+'</option>';
+    });
+  }
  
   // ========== OPTIONS DE CUENTAS ==========
   let cuentasOpts = '';
@@ -3850,120 +3866,92 @@ async function renderCartera(filtroMora, filtroNombre) {
     });
   }
  
-  // ========== CUADRO 1: DEUDAS DE TIBERIO ==========
-  let cuadro1Html = '';
- 
-  if (deudaTotalTiberio <= 0 && leDeboTiberio <= 0 && pagosTiberio.length === 0) {
-    cuadro1Html = `
-      <div class="chart-card">
-        <div class="chart-title">\u{1F4CB} Deudas — ${tiberioNombre}</div>
-        <div style="padding:30px;text-align:center;">
-          <div style="font-size:40px;margin-bottom:12px;">\u2705</div>
-          <div style="color:#4ade80;font-size:16px;font-weight:700;margin-bottom:6px;">Sin deudas pendientes</div>
-          <div style="color:#94a3b8;font-size:13px;">Este cliente est\u00e1 al d\u00eda con todos sus pagos.</div>
-        </div>
-      </div>
-    `;
+  // ========== CUADRO 1: HISTORIAL DE CLIENTE SELECCIONADO ==========
+  let histHtml = '';
+  let scSel = Number(selData.sc)||0, smSel = Number(selData.sm)||0;
+  let histArr = Array.isArray(selData.h) ? selData.h.slice() : [];
+  if(selNombre && histArr.length > 0){
+    histArr.reverse();
+    histHtml = '<div style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">';
+    histArr.forEach(function(x){
+      let esPago = x.tipo==='pago', esIni = x.tipo==='saldo_ini';
+      let bg = esPago?'rgba(34,197,94,0.08)':(esIni?'rgba(59,130,246,0.08)':'rgba(255,255,255,0.03)');
+      let lbl = esPago?'PAGO':(esIni?'SALDO INICIAL':'DEUDA');
+      let clr = esPago?'#86efac':(esIni?'#93c5fd':'#fca5a5');
+      let metaStr = '';
+      if(esPago){ metaStr = (x.metodo==='efectivo'?'💵 Efectivo':'🏦 '+(x.banco||'Transferencia')); }
+      histHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:'+bg+';border:1px solid rgba(255,255,255,0.06);border-radius:8px;gap:10px;">'+
+        '<div style="min-width:0;flex:1;">'+
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><span style="font-size:10px;font-weight:800;color:'+clr+';">'+lbl+'</span><span style="font-size:10px;color:#94a3b8;">'+(x.fecha||'')+(x.hora?' '+x.hora:'')+'</span></div>'+
+          (metaStr?'<div style="font-size:11px;color:#cbd5e1;margin-top:2px;">'+metaStr+'</div>':'')+
+          (x.nota?'<div style="font-size:11px;color:#94a3b8;margin-top:2px;">'+x.nota+'</div>':'')+
+          '<div style="display:flex;gap:12px;margin-top:3px;font-size:11px;flex-wrap:wrap;"><span style="color:'+clr+';">Monto: <strong>$'+(Number(x.monto)||0).toLocaleString('es-CO')+'</strong></span><span style="color:#fcd34d;">Saldo: <strong>$'+(Number(x.saldo)||0).toLocaleString('es-CO')+'</strong></span></div>'+
+        '</div>'+
+        '<button onclick="vnDeudaEliminar('+JSON.stringify(selNombre).replace(/"/g,'&quot;')+',\''+(x.id||'').replace(/\'/g,"\\'")+'\')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;" title="Eliminar">✕</button>'+
+      '</div>';
+    });
+    histHtml += '</div>';
+  } else if(selNombre){
+    histHtml = '<div style="padding:24px;text-align:center;color:#64748b;font-size:13px;">Sin movimientos para <strong>'+selNombre+'</strong></div>';
   } else {
-    cuadro1Html = `
-      <div class="chart-card">
-        <div class="chart-title">\u{1F4CB} Deudas — ${tiberioNombre}</div>
- 
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px;">
-          <div style="background:rgba(220,38,38,0.12);border:1px solid rgba(220,38,38,0.25);border-radius:10px;padding:12px;text-align:center;">
-            <div style="font-size:11px;color:#fca5a5;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:4px;">Me debe</div>
-            <div style="font-size:20px;font-weight:800;color:#f87171;">${recaudoMoney(deudaTotalTiberio)}</div>
-          </div>
-          <div style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);border-radius:10px;padding:12px;text-align:center;">
-            <div style="font-size:11px;color:#86efac;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:4px;">Ya pag\u00f3</div>
-            <div style="font-size:20px;font-weight:800;color:#4ade80;">${recaudoMoney(pagadoTiberio + totalPagadoHistorial)}</div>
-          </div>
-          <div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:12px;text-align:center;">
-            <div style="font-size:11px;color:#fcd34d;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:4px;">Saldo pendiente</div>
-            <div style="font-size:20px;font-weight:800;color:#fbbf24;">${recaudoMoney(saldoReal)}</div>
-          </div>
-        </div>
- 
-        ${leDeboTiberio > 0 ? `
-        <div style="background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
-          <span style="font-size:18px;">\u{1F499}</span>
-          <span style="color:#93c5fd;font-size:13px;font-weight:600;">T\u00fa le debes a este cliente: ${recaudoMoney(leDeboTiberio)}</span>
-        </div>
-        ` : ''}
- 
-        <div style="font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.06);">Historial de pagos</div>
- 
-        ${pagosTiberio.length === 0 ? `
-          <div style="padding:16px;text-align:center;color:#64748b;font-size:13px;">No hay pagos registrados a\u00fan</div>
-        ` : `
-          <div style="max-height:220px;overflow-y:auto;">
-            ${pagosTiberio.map((p, idx) => `
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:13px;">
-                <div>
-                  <div style="color:#e2e8f0;font-weight:600;">
-                    ${p.metodo === 'efectivo' ? '\u{1F4B5} Efectivo' : '\u{1F3E6} ' + (p.banco || 'Transferencia')}
-                  </div>
-                  <div style="color:#94a3b8;font-size:11px;">${p.fecha || '\u2014'}${p.nota ? ' \u00b7 ' + p.nota : ''}</div>
-                </div>
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <div style="font-weight:800;color:#4ade80;">+${recaudoMoney(p.monto)}</div>
-                  <button onclick="carteraEliminarPago(${idx})" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;" title="Eliminar pago">\u2715</button>
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        `}
-      </div>
-    `;
+    histHtml = '<div style="padding:24px;text-align:center;color:#64748b;font-size:13px;">Selecciona un cliente de la lista para ver su historial</div>';
   }
- 
-  // ========== CUADRO 2: FORMULARIO DE PAGO ==========
+
+  let cuadro1Html = `
+    <div class="chart-card">
+      <div class="chart-title">📋 Historial de deuda${selNombre?' — '+selNombre:''}</div>
+      ${selNombre ? `
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+          <div style="background:rgba(220,38,38,0.12);border:1px solid rgba(220,38,38,0.25);border-radius:10px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:#fca5a5;text-transform:uppercase;font-weight:600;">Me debe</div>
+            <div style="font-size:18px;font-weight:800;color:#f87171;">${recaudoMoney(scSel)}</div>
+          </div>
+          <div style="background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:#93c5fd;text-transform:uppercase;font-weight:600;">Le debo</div>
+            <div style="font-size:18px;font-weight:800;color:#60a5fa;">${recaudoMoney(smSel)}</div>
+          </div>
+          <div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:#fcd34d;text-transform:uppercase;font-weight:600;">Saldo total</div>
+            <div style="font-size:18px;font-weight:800;color:#fbbf24;">${recaudoMoney(scSel+smSel)}</div>
+          </div>
+        </div>
+      ` : ''}
+      ${histHtml}
+    </div>
+  `;
+
+  // ========== CUADRO 2: SALDO INICIAL PARA CUALQUIER CLIENTE ==========
   let cuadro2Html = `
     <div class="chart-card">
-      <div class="chart-title">\u{1F4B3} Registrar Pago — ${tiberioNombre}</div>
- 
+      <div class="chart-title">⚙️ Establecer saldo inicial de deuda</div>
+
       <div style="margin-bottom:14px;">
-        <label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">Monto del pago</label>
-        <input id="carteraPagoMonto" type="number" placeholder="Ej: 50000" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:12px 14px;font-size:15px;font-family:var(--font-body);font-weight:700;">
-      </div>
- 
-      <div style="margin-bottom:14px;">
-        <label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">M\u00e9todo de pago</label>
-        <div style="display:flex;gap:10px;">
-          <button id="carteraMetodoEfectivo" onclick="carteraSeleccionarMetodo('efectivo')" style="flex:1;padding:14px;border-radius:12px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-size:14px;font-weight:700;cursor:pointer;transition:all 180ms;font-family:var(--font-body);display:flex;flex-direction:column;align-items:center;gap:6px;">
-            <span style="font-size:28px;">\u{1F4B5}</span>
-            Efectivo
-          </button>
-          <button id="carteraMetodoTransferencia" onclick="carteraSeleccionarMetodo('transferencia')" style="flex:1;padding:14px;border-radius:12px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-size:14px;font-weight:700;cursor:pointer;transition:all 180ms;font-family:var(--font-body);display:flex;flex-direction:column;align-items:center;gap:6px;">
-            <span style="font-size:28px;">\u{1F3E6}</span>
-            Transferencia
-          </button>
-        </div>
-      </div>
- 
-      <div id="carteraSelectorCuenta" style="margin-bottom:14px;display:none;">
-        <label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">\u00bfA qu\u00e9 cuenta te pag\u00f3?</label>
-        <select id="carteraCuentaDestino" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:12px 14px;font-size:14px;font-family:var(--font-body);font-weight:600;">
-          ${cuentasOpts}
+        <label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">Seleccionar cliente</label>
+        <select id="vnCartClienteSel" onchange="window._vnCarteraClienteSel=this.value; renderCartera();" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:12px 14px;font-size:14px;font-weight:600;">
+          ${vnClientesOpts}
         </select>
       </div>
- 
-      <div style="margin-bottom:14px;">
-        <label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">Nota (opcional)</label>
-        <input id="carteraPagoNota" type="text" placeholder="Ej: Abono parcial, Pago completo..." style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:10px 14px;font-size:13px;font-family:var(--font-body);">
+
+      <div style="margin-bottom:14px;padding:14px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.15);border-radius:10px;">
+        <label style="display:block;font-size:11px;color:#60a5fa;font-weight:600;text-transform:uppercase;margin-bottom:5px;">Tipo de deuda</label>
+        <select id="vnCartTipoDeuda" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px;margin-bottom:10px;font-weight:600;">
+          <option value="cliente">🔴 Me debe (deuda del cliente)</option>
+          <option value="mia">🔵 Le debo (mi deuda)</option>
+        </select>
+        <label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;margin-bottom:5px;">Saldo inicial de deuda</label>
+        <input id="vnCartSaldoInput" type="number" placeholder="Ej: 500000" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:12px 14px;font-size:16px;font-weight:700;margin-bottom:10px;">
+        <button onclick="vnCartSetSaldo()" style="width:100%;padding:12px;background:linear-gradient(135deg,#2563eb,#3b82f6);border:none;border-radius:10px;color:white;font-weight:800;cursor:pointer;font-size:14px;">✅ Establecer saldo inicial</button>
+        <div style="font-size:11px;color:#64748b;margin-top:8px;line-height:1.5;">Establece el saldo inicial de deuda. Las deudas nuevas (desde los checkboxes del recaudo) se suman encima. Todo queda registrado en el historial.</div>
       </div>
- 
-      <button onclick="carteraRegistrarPagoTiberio()" style="width:100%;padding:14px;background:linear-gradient(135deg,#16a34a,#22c55e);border:none;border-radius:12px;color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-body);transition:all 180ms;letter-spacing:0.02em;">
-        \u2705 Registrar Pago
-      </button>
- 
-      <div style="margin-top:14px;padding:12px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.15);border-radius:10px;">
-        <div style="font-size:11px;color:#60a5fa;font-weight:600;margin-bottom:4px;">\u2139\uFE0F \u00bfQu\u00e9 pasa al registrar?</div>
-        <div style="font-size:12px;color:#94a3b8;line-height:1.5;">
-          \u2022 Se descuenta la deuda en <strong style="color:#e2e8f0;">Recaudo</strong><br>
-          \u2022 El dinero se acredita en la <strong style="color:#e2e8f0;">cuenta que elijas</strong><br>
-          \u2022 Se registra como ingreso en <strong style="color:#e2e8f0;">Contabilidad</strong><br>
-          \u2022 Queda en el historial de <strong style="color:#e2e8f0;">Cartera</strong>
+
+      <div style="padding:12px;background:rgba(22,163,74,0.08);border:1px solid rgba(22,163,74,0.15);border-radius:10px;">
+        <div style="font-size:11px;color:#4ade80;font-weight:600;margin-bottom:4px;">ℹ️ ¿Cómo funciona?</div>
+        <div style="font-size:12px;color:#94a3b8;line-height:1.55;">
+          • Selecciona cualquier cliente de la lista desplegable<br>
+          • Elige si te debe o le debes<br>
+          • Escribe el saldo y dale <strong style="color:#e2e8f0;">Establecer</strong><br>
+          • Los checkboxes del recaudo diario suman encima<br>
+          • El historial y la contabilidad se actualizan solos
         </div>
       </div>
     </div>
@@ -10473,9 +10461,10 @@ window.vnPConfirmar = function(nombre, tipo){
 
 // ==========================================
 // CARTERA — Saldo inicial para CUALQUIER cliente
+// (El renderCartera ya fue migrado al base; aquí solo mantenemos helpers)
 // ==========================================
 var _bCart = window.renderCartera;
-window.renderCartera = async function(){
+window._vnRenderCarteraLegacy = async function(){
   var body = document.getElementById('carteraBody');
   if(!body) return;
 
