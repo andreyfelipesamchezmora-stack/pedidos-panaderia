@@ -3667,6 +3667,7 @@ function recaudoGuardarFila(nombre){
     nequi: getRawRecaudo(q("rec_nequi_" + nombre)),
     bancolombia: getRawRecaudo(q("rec_banco_" + nombre)),
     deudaCliente: getRawRecaudo(q("rec_dc_" + nombre)),
+    deudaClienteEditada: q("rec_dc_" + nombre) ? true : false,
     deudaMia: getRawRecaudo(q("rec_dm_" + nombre)),
     faltantes: getRawRecaudo(q("rec_fal_" + nombre)),
     salidas: getRawRecaudo(q("rec_sal_" + nombre)),
@@ -10906,17 +10907,20 @@ window.recaudoConstruirData = async function(){
  
   // Para cada fila: los inputs de deuda solo muestran lo que se guardó HOY
   rows.forEach(function(r){
-    var saved = estado[r.cliente] || {};
+    var _rSafe = r.cliente.replace(/[^a-zA-Z0-9]/g, '_');
+    var saved = estado[r.cliente] || estado[_rSafe] || {};
  
     // Guardar la deuda histórica para el badge/ícono
     r._deudaHistCliente = r.deudaCliente;
     r._deudaHistMia = r.deudaMia;
 
-    // Si hoy no tienen deuda guardada, usar la deuda histórica acumulada
+    // Si fue editada manualmente (incluso a 0), respetar ese valor
+    // Si no fue editada, usar la deuda histórica acumulada
     var savedDC = Number(saved.deudaCliente) || 0;
     var savedDM = Number(saved.deudaMia) || 0;
-    r.deudaCliente = savedDC > 0 ? savedDC : r._deudaHistCliente;
-    r.deudaMia     = savedDM > 0 ? savedDM : r._deudaHistMia;
+    var editada = !!saved.deudaClienteEditada;
+    r.deudaCliente = editada ? savedDC : (savedDC > 0 ? savedDC : r._deudaHistCliente);
+    r.deudaMia     = editada ? savedDM : (savedDM > 0 ? savedDM : r._deudaHistMia);
  
     // Recalcular efectivoNeto con las deudas del día
     r.totalTransferencia = r.nequi + r.bancolombia;
