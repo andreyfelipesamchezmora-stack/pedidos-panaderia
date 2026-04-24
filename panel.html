@@ -12100,7 +12100,95 @@ console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
     wrap();
   })();
 
-  console.log('Parche V14+V15+V16+V17 aplicado: fechas futuras ven deuda acumulada correctamente.');
+  // ---------- V18: FIX DIRECTO AL DOM ----------
+  // Si V17 no logra cambiar la columna DEUDA porque el HTML ya se pinto,
+  // corregimos visualmente cada fila tras el render. Indestructible.
+  (function domFixDeudaColumna(){
+    function formatearMoney(n){
+      try { return '$' + Number(n).toLocaleString('es-CO'); }
+      catch(e){ return '$' + n; }
+    }
+    function arreglarFilas(){
+      try {
+        var inputs = document.querySelectorAll('input[id^="rec_dc_"]');
+        if(!inputs.length) return;
+        var estado = (typeof recaudoLeerEstado === 'function') ? recaudoLeerEstado() : {};
+        inputs.forEach(function(inp){
+          var nombre = inp.id.replace('rec_dc_','');
+          if(!nombre) return;
+          var saved = estado[nombre] || {};
+          var savedDC = Number(saved.deudaCliente) || 0;
+          var hist = {deudaCliente:0};
+          try {
+            if(typeof recaudoGetDeudaHistorica === 'function'){
+              hist = recaudoGetDeudaHistorica(nombre);
+            }
+          } catch(e){}
+          var total = Math.max(Number(hist.deudaCliente||0) + savedDC, 0);
+
+          var tr = inp.closest('tr');
+          if(!tr) return;
+
+          // Buscar la celda DEUDA (la que contiene "Sin deuda" o "⚠ $X")
+          // Recorremos los td del tr en orden
+          var tds = tr.querySelectorAll('td');
+          var deudaTd = null;
+          for(var i = 0; i < tds.length; i++){
+            var txt = (tds[i].textContent||'').trim();
+            if(txt.indexOf('Sin deuda') >= 0 || txt.indexOf('\u26A0') >= 0 || /^\s*\u2713\s/.test(txt)){
+              deudaTd = tds[i]; break;
+            }
+          }
+          if(!deudaTd) return;
+
+          // Si ya muestra un monto >=total y tiene checkbox, no tocar.
+          var marca = 'v18Patched=' + total;
+          if(deudaTd.getAttribute('data-v18') === marca) return;
+
+          if(total > 0){
+            var nombreEsc = nombre.replace(/'/g,"\\'");
+            deudaTd.innerHTML =
+              '<div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;">'+
+                '<div style="color:#fbbf24;font-weight:800;font-size:13px;">\u26A0 '+formatearMoney(total)+'</div>'+
+                '<input type="checkbox" id="rec_ddomi_'+nombre+'" '+
+                  'onchange="recaudoToggleDeudaDomi(\''+nombreEsc+'\')" '+
+                  'style="width:18px;height:18px;cursor:pointer;accent-color:#fbbf24;" '+
+                  'title="Sumar al Recaudo Domi" />'+
+              '</div>';
+            // Restaurar estado del checkbox si estaba marcado
+            try {
+              if(saved.deudaEnDomi){
+                var cb = deudaTd.querySelector('input[type="checkbox"]');
+                if(cb) cb.checked = true;
+              }
+            } catch(e){}
+            deudaTd.setAttribute('data-v18', marca);
+          }
+        });
+      } catch(e){ console.warn('V18 domFix:', e); }
+    }
+
+    // Hook a renderRecaudo
+    function hook(){
+      if(typeof window.renderRecaudo !== 'function') return setTimeout(hook, 300);
+      if(window.renderRecaudo.__v18) return;
+      var _prev = window.renderRecaudo;
+      window.renderRecaudo = function(){
+        var r = _prev.apply(this, arguments);
+        setTimeout(arreglarFilas, 150);
+        setTimeout(arreglarFilas, 600);
+        return r;
+      };
+      window.renderRecaudo.__v18 = true;
+    }
+    hook();
+    // Barrido periodico por si algo lo re-renderiza sin pasar por renderRecaudo
+    setInterval(arreglarFilas, 2500);
+    setTimeout(arreglarFilas, 1000);
+    console.log('V18: DOM fix deuda columna activo.');
+  })();
+
+  console.log('Parche V14+V15+V16+V17+V18 aplicado: fechas futuras OK (DOM fix).');
 })();
 
 </script>
