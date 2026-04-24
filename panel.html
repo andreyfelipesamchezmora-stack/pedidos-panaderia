@@ -12060,48 +12060,9 @@ console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
     } catch(e){ alert('Error: '+e.message); }
   };
 
-  // ---------- V17: Mostrar deuda acumulada en fechas futuras ----------
-  // BUG: FIX2 original (linea ~10364) setea row.deudaCliente = savedDC del
-  // dia activo SOLAMENTE. Si un cliente tiene deuda en recaudo_<ayer> pero
-  // NO en recaudo_<hoy>, la columna muestra "Sin deuda" en el dia futuro.
-  //
-  // FIX: acumular historico (excluye dia activo via FIX1) + savedDC (dia activo).
-  // El input rec_dc_ ya se limpia via V15.1 para no duplicar al guardar.
-  (function fixDeudaAcumulada(){
-    function wrap(){
-      if(typeof window.recaudoConstruirData !== 'function') return setTimeout(wrap, 300);
-      if(window.recaudoConstruirData.__v17) return;
-      var _prev = window.recaudoConstruirData;
-      window.recaudoConstruirData = async function(){
-        var rows = await _prev.apply(this, arguments);
-        try {
-          var estado = (typeof recaudoLeerEstado === 'function') ? recaudoLeerEstado() : {};
-          rows.forEach(function(row){
-            if(!row || !row.cliente) return;
-            var saved = estado[row.cliente] || {};
-            var savedDC = Number(saved.deudaCliente) || 0;
-            var savedDM = Number(saved.deudaMia)     || 0;
-            var hist = {deudaCliente:0, deudaMia:0};
-            try {
-              if(typeof recaudoGetDeudaHistorica === 'function'){
-                hist = recaudoGetDeudaHistorica(row.cliente);
-              }
-            } catch(e){}
-            // FIX1 ya excluye el dia activo del historico -> sumar ambos
-            row.deudaCliente = Math.max(Number(hist.deudaCliente||0) + savedDC, 0);
-            row.deudaMia     = Math.max(Number(hist.deudaMia||0)     + savedDM, 0);
-          });
-        } catch(e){ console.warn('V17 fixDeudaAcumulada:', e); }
-        return rows;
-      };
-      window.recaudoConstruirData.__v17 = true;
-      console.log('V17: deuda acumulada historica + dia activo aplicada.');
-    }
-    wrap();
-  })();
-
-  // V18 REVERTIDO: el DOM fix rompia el layout. Volvemos al estado previo.
-  console.log('Parche V14+V15+V16+V17 aplicado (V18 revertido).');
+  // V17 y V18 REVERTIDOS: rompian la entrada de datos en el input DEUDA.
+  // Volvemos al comportamiento FIX2 original (row.deudaCliente = savedDC).
+  console.log('Parche V14+V15+V16 aplicado (V17/V18 revertidos).');
 })();
 
 </script>
