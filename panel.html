@@ -11350,7 +11350,172 @@ console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
     window.carteraEliminarPago.__v15 = true;
   })();
 
-  console.log('Parche V14+V15 aplicado: checkbox respetado, negativos ok, fecha fija, X Tiberio refresca.');
+  // ---------- 9. V15.2: checkbox IZQUIERDO suma la deuda REAL al Recaudo Domi
+  //             Usa saldo historico pendiente (no el input del dia). ----------
+  window.recaudoToggleDeudaDomi = function(nombre){
+    var cb = document.getElementById('rec_deuda_domi_' + nombre);
+    var estado = (typeof recaudoLeerEstado === 'function') ? recaudoLeerEstado() : {};
+    if(!estado[nombre]) estado[nombre] = {};
+
+    // 1. Saldo pendiente REAL (historico - pagos)
+    var deudaReal = 0;
+    try {
+      var h = (typeof recaudoGetDeudaHistorica === 'function')
+        ? recaudoGetDeudaHistorica(nombre) : null;
+      if(h) deudaReal = Number(h.deudaCliente) || 0;
+    } catch(e){}
+
+    // 2. Si el input del dia tiene valor escrito, manda ese (usuario decidio)
+    try {
+      var inp = document.getElementById('rec_dc_' + nombre);
+      if(inp){
+        var raw = (inp.dataset.raw || inp.value || '').toString();
+        var v = Number(raw.replace(/\./g,'').replace(/,/g,'').replace(/[^0-9]/g,'')) || 0;
+        if(v > 0) deudaReal = v;
+      }
+    } catch(e){}
+
+    var domiActual = Number(estado[nombre].recaudoDomi) || 0;
+    if(cb && cb.checked){
+      estado[nombre].deudaEnDomi    = true;
+      estado[nombre].deudaDomiMonto = deudaReal; // guardar monto exacto para poder revertir
+      estado[nombre].recaudoDomi    = domiActual + deudaReal;
+    } else {
+      estado[nombre].deudaEnDomi = false;
+      var revert = Number(estado[nombre].deudaDomiMonto) || deudaReal;
+      estado[nombre].recaudoDomi = Math.max(domiActual - revert, 0);
+      estado[nombre].deudaDomiMonto = 0;
+    }
+    if(typeof recaudoGuardarEstado === 'function') recaudoGuardarEstado(estado);
+    if(typeof renderRecaudo === 'function') renderRecaudo();
+  };
+
+  // Refrescar el onchange de los checkboxes ya inyectados (el wrapper FIX4
+  // los crea con un monto fijo; forzamos que llamen a nuestra version sin arg)
+  (function resyncCheckboxDomi(){
+    function reatar(){
+      document.querySelectorAll('[id^="rec_deuda_domi_"]').forEach(function(cb){
+        var nombre = cb.id.replace('rec_deuda_domi_','');
+        cb.setAttribute('onchange',
+          "recaudoToggleDeudaDomi('"+String(nombre).replace(/'/g,"\\'")+"')"
+        );
+      });
+    }
+    setTimeout(reatar, 900);
+    setInterval(reatar, 3000);
+  })();
+
+  // ---------- 10. V15.2: X del historial v3 con reversa REAL del pago ----------
+  (function xHistorialReal(){
+    if(typeof window.carteraHistEliminar !== 'function') return;
+    if(window.carteraHistEliminar.__v152) return;
+    var _prev = window.carteraHistEliminar;
+    window.carteraHistEliminar = function(nombre, id){
+      try {
+        var hist = (typeof carteraHistLeer === 'function') ? carteraHistLeer(nombre) : [];
+        var entry = hist.find(function(x){ return x && x.id === id; });
+        if(!entry) return _prev(nombre, id);
+
+        var esPago = entry.tipo === 'pago';
+        var monto  = Number(entry.pagado || 0);
+        var msg = esPago
+          ? ('Eliminar este PAGO de $'+monto.toLocaleString('es-CO')+' ?\n\n'+
+             'Se revertira en TODO el sistema: cartera, recaudo, saldo de cuenta y ledger.')
+          : ('Eliminar esta linea del historial?\n\n'+
+             'Solo se borra la fila visual. La deuda real del dia NO se modifica.');
+        if(!confirm(msg)) return;
+
+        var antes = 0;
+        try {
+          var info = (typeof recaudoGetDeudaHistorica === 'function')
+            ? recaudoGetDeudaHistorica(nombre) : {deudaCliente:0};
+          antes = Number(info.deudaCliente)||0;
+        } catch(e){}
+
+        // Si es pago, revertir en cartera_pagos_historial via carteraEliminarPago
+        if(esPago && monto > 0){
+          if(nombre === 'MARKET DEL RIO - TIBERIO' && typeof carteraEliminarPago === 'function'){
+            // carteraEliminarPago usa indices en la lista filtrada por cliente
+            var pagos = [];
+            try { pagos = JSON.parse(localStorage.getItem('cartera_pagos_historial')||'[]'); } catch(e){}
+            var filtrados = [];
+            pagos.forEach(function(p){ if(p.cliente === nombre) filtrados.push(p); });
+            var targetIdx = -1;
+            for(var i = filtrados.length - 1; i >= 0; i--){
+              if(Number(filtrados[i].monto) === monto){ targetIdx = i; break; }
+            }
+            if(targetIdx >= 0){
+              // Silenciar el confirm interno
+              var _cf = window.confirm;
+              window.confirm = function(){ return true; };
+              try { carteraEliminarPago(targetIdx); } catch(e){ console.warn('reversa:', e); }
+              window.confirm = _cf;
+            }
+          } else {
+            // Reversa manual para clientes no-Tiberio
+            try {
+              var pagos2 = JSON.parse(localStorage.getItem('cartera_pagos_historial')||'[]');
+              var ix = -1;
+              for(var j = pagos2.length - 1; j >= 0; j--){
+                if(pagos2[j].cliente === nombre && Number(pagos2[j].monto) === monto){ ix = j; break; }
+              }
+              if(ix >= 0){
+                var pago = pagos2[ix];
+                pagos2.splice(ix, 1);
+                localStorage.setItem('cartera_pagos_historial', JSON.stringify(pagos2));
+                var cart = {};
+                try { cart = JSON.parse(localStorage.getItem('cartera_deudas')||'{}'); } catch(e){}
+                if(cart[nombre]){
+                  cart[nombre].deudasPagadas = Math.max(0, (Number(cart[nombre].deudasPagadas)||0) - monto);
+                  localStorage.setItem('cartera_deudas', JSON.stringify(cart));
+                }
+                if(pago.cuentaIdx >= 0 && Array.isArray(cuentasMemoria) && cuentasMemoria[pago.cuentaIdx]){
+                  cuentasMemoria[pago.cuentaIdx].saldo -= monto;
+                  if(typeof cuentasGuardar === 'function') cuentasGuardar();
+                }
+              }
+            } catch(e){ console.warn('reversa manual:', e); }
+          }
+        }
+
+        // Borrar la linea del historial v3 y recalcular
+        var nuevo = hist.filter(function(x){ return x && x.id !== id; });
+        if(typeof carteraHistGuardar === 'function') carteraHistGuardar(nombre, nuevo);
+        if(typeof carteraHistRecalcular === 'function') carteraHistRecalcular(nombre);
+
+        // Ledger
+        var despues = 0;
+        try {
+          var info2 = (typeof recaudoGetDeudaHistorica === 'function')
+            ? recaudoGetDeudaHistorica(nombre) : {deudaCliente:0};
+          despues = Number(info2.deudaCliente)||0;
+        } catch(e){}
+        if(typeof window.ledgerLog === 'function'){
+          window.ledgerLog({
+            tipo: esPago ? 'pago_revertido' : 'historial_linea_eliminada',
+            origen:'cartera-historial', cliente: nombre, monto: monto,
+            saldoAntes: antes, saldoDespues: despues,
+            descripcion: esPago
+              ? 'Pago revertido desde historial '+nombre
+              : 'Linea de historial borrada '+nombre
+          });
+        }
+
+        // Refrescar UIs
+        if(typeof renderCartera === 'function') renderCartera();
+        if(typeof renderRecaudo === 'function') renderRecaudo();
+        var overlay = document.getElementById('carteraModalOverlay');
+        if(overlay) overlay.remove();
+
+      } catch(e){
+        console.error('V15.2 xHistorialReal:', e);
+        alert('No se pudo eliminar la linea: '+e.message);
+      }
+    };
+    window.carteraHistEliminar.__v152 = true;
+  })();
+
+  console.log('Parche V14+V15+V15.2 aplicado: checkbox respetado, fecha fija, X con reversa real, domi suma saldo real.');
 })();
 
 </script>
