@@ -3261,8 +3261,12 @@ async function recaudoConstruirData(){
       recibido: !!saved.recibido,
       nequi: Number(saved.nequi || 0),
       bancolombia: Number(saved.bancolombia || 0),
-      deudaCliente: deudaHist.deudaCliente,
-      deudaMia: deudaHist.deudaMia,
+      deudaCliente: Number(saved.deudaCliente || 0),
+      deudaMia: Number(saved.deudaMia || 0),
+      _deudaHistCliente: deudaHist.deudaCliente,
+      _deudaHistMia: deudaHist.deudaMia,
+      _deudaTotalCliente: deudaHist.deudaCliente + Number(saved.deudaCliente || 0),
+      _deudaTotalMia: deudaHist.deudaMia + Number(saved.deudaMia || 0),
       deudasPagadas: deudaHist.deudasPagadas,
       deudaMetodo: saved.deudaMetodo || null,
       deudaBanco: saved.deudaBanco || null,
@@ -3273,13 +3277,13 @@ async function recaudoConstruirData(){
       observacion: saved.observacion || ""
     };
  
-    row.resumen = recaudoClasificarResumen(row.deudaCliente, row.deudaMia);
+    row.resumen = recaudoClasificarResumen(row._deudaTotalCliente, row._deudaTotalMia);
     row.totalTransferencia = row.nequi + row.bancolombia;
  
     // EFECTIVO NETO POR CLIENTE (solo lo que entregó en efectivo físico)
     // Si marcaste recaudo domi, el cliente le dio al domiciliario el efectivo
     // Si no, el efectivo es: subtotal - transferencias - faltantes - salidas - deudaMiaDescontada
-    let efectivoFila = row.subtotal - row.totalTransferencia - row.faltantes - row.salidas - row.deudaMiaPagada;
+    let efectivoFila = row.subtotal - row.totalTransferencia - row.faltantes - row.salidas - row.deudaMiaPagada - row.deudaCliente - row.deudaMia;
     if(efectivoFila < 0) efectivoFila = 0;
     row.efectivoNeto = efectivoFila;
  
@@ -3525,9 +3529,13 @@ async function renderRecaudo(){
                 bgColor = 'rgba(245,158,11,0.15)'; // NARANJA si marcó recaudo domi
               }
  
-              // HTML de deuda
+              // HTML de deuda — usa _deudaTotal (hist+hoy) para badge, deudaCliente (solo hoy) para inputs
               let deudaHtml = '';
-              if(r.deudaCliente > 0 || r.deudaMia > 0){
+              let totalDC = r._deudaTotalCliente || 0;
+              let totalDM = r._deudaTotalMia || 0;
+              let tieneDeudaTotal = totalDC > 0 || totalDM > 0;
+
+              if(tieneDeudaTotal){
                 if(r.deudasPagadas > 0 && r.deudaMetodo){
                   let metodoIcono = r.deudaMetodo === 'efectivo' ? '💵' : '🏦';
                   let metodoLabel = r.deudaMetodo === 'efectivo' ? 'Efectivo' : (r.deudaBanco || 'Transf.');
@@ -3536,7 +3544,7 @@ async function renderRecaudo(){
                       ✓ ${metodoIcono} ${metodoLabel}
                     </div>
                     <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox" checked
-                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})"
+                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${totalDC}, ${totalDM})"
                       title="Click para revertir">
                   `;
                 } else if(r.deudaMiaPagada > 0){
@@ -3545,16 +3553,16 @@ async function renderRecaudo(){
                       ✓ Descontado
                     </div>
                     <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox" checked
-                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})">
+                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${totalDC}, ${totalDM})">
                   `;
                 } else {
                   deudaHtml = `
-                    <div style="font-size:11px;color:${r.deudaCliente > 0 ? '#fca5a5' : '#93c5fd'};font-weight:700;margin-bottom:3px;">
-                      ${r.deudaCliente > 0 ? '⚠️ ' + recaudoMoney(r.deudaCliente) : '💙 ' + recaudoMoney(r.deudaMia)}
+                    <div style="font-size:11px;color:${totalDC > 0 ? '#fca5a5' : '#93c5fd'};font-weight:700;margin-bottom:3px;">
+                      ${totalDC > 0 ? '⚠️ ' + recaudoMoney(totalDC) : '💙 ' + recaudoMoney(totalDM)}
                     </div>
                     <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox"
-                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})"
-                      title="${r.deudaCliente > 0 ? 'Marcar pago' : 'Descontar'}">
+                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${totalDC}, ${totalDM})"
+                      title="${totalDC > 0 ? 'Marcar pago' : 'Descontar'}">
                   `;
                 }
               } else {
@@ -10312,23 +10320,20 @@ console.log('✅ Parche historial deuda por día cargado');
 
 })();
 
+
+// =====================================================
+// DEUDA FIXES + RESET BUTTON
+// =====================================================
 (function(){
 
-  // ══════════════════════════════════════════════════════
   // FIX 1: recaudoGetDeudaHistorica — excluye el día activo
-  // para no duplicar la deuda al recargar
-  // ══════════════════════════════════════════════════════
   window.recaudoGetDeudaHistorica = function(nombre) {
     let deudaCliente = 0, deudaMia = 0;
-
-    let fechaActiva = (typeof cajaFechaHoy === 'function')
-      ? cajaFechaHoy()
-      : new Date().toISOString().split('T')[0];
+    let fechaActiva = (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
     let keyActivo = 'recaudo_' + fechaActiva;
 
     for (let i = 0; i < localStorage.length; i++) {
       let key = localStorage.key(i);
-      // Solo días ANTERIORES al activo — el activo viene de saved directo
       if (key && key.startsWith('recaudo_') && key !== keyActivo) {
         try {
           let obj = JSON.parse(localStorage.getItem(key));
@@ -10357,111 +10362,74 @@ console.log('✅ Parche historial deuda por día cargado');
     };
   };
 
-  // ══════════════════════════════════════════════════════
-  // FIX 2: recaudoConstruirData — usar saved del día activo
-  // para que la deuda ingresada por fecha sea exactamente la que se muestra
-  // ══════════════════════════════════════════════════════
-  var _origConstruir = window.recaudoConstruirData;
-  window.recaudoConstruirData = async function() {
-    let rows = await _origConstruir.apply(this, arguments);
-    let estado = recaudoLeerEstado();
-
-    rows.forEach(function(row) {
-      let saved = estado[row.cliente] || {};
-      let savedDC = Number(saved.deudaCliente) || 0;
-      let savedDM = Number(saved.deudaMia)     || 0;
-
-      // Si el día activo tiene deuda guardada, usarla directamente (estática)
-      // No acumular con el histórico — el histórico ya excluye este día (Fix 1)
-      if (savedDC > 0) row.deudaCliente = savedDC;
-      if (savedDM > 0) row.deudaMia     = savedDM;
-
-      // Cargar estado del checkbox de deuda-en-domi
-      row.deudaEnDomi = !!saved.deudaEnDomi;
-    });
-
-    return rows;
-  };
-
-  // ══════════════════════════════════════════════════════
-  // FIX 3: Función nueva — checkbox sumar deuda a recaudo domi
-  // ══════════════════════════════════════════════════════
+  // FIX 3: Toggle deuda en recaudo domi
   window.recaudoToggleDeudaDomi = function(nombre, deudaCliente) {
     let cb    = document.getElementById('rec_deuda_domi_' + nombre);
     let estado = recaudoLeerEstado();
     if (!estado[nombre]) estado[nombre] = {};
 
-    // Leer deuda actual del cliente desde el input por si el usuario la cambió
     try {
-      let inputDC = document.getElementById('rec_dc_' + nombre);
-      if (inputDC) {
-        let val = Number(inputDC.dataset.raw || inputDC.value.replace(/\./g,'').replace(/,/g,'')) || 0;
-        if (val > 0) deudaCliente = val;
-      }
-    } catch(e) {}
+      let inp = document.getElementById('rec_dc_' + nombre);
+      let val = inp ? Number(inp.value) || 0 : 0;
+      if (val > 0) deudaCliente = val;
+    } catch(e){}
 
     let domiActual = Number(estado[nombre].recaudoDomi) || 0;
 
     if (cb && cb.checked) {
-      estado[nombre].deudaEnDomi  = true;
+      estado[nombre].deudaEnDomi = true;
       estado[nombre].recaudoDomi  = domiActual + Number(deudaCliente);
     } else {
-      estado[nombre].deudaEnDomi  = false;
+      estado[nombre].deudaEnDomi = false;
       estado[nombre].recaudoDomi  = Math.max(domiActual - Number(deudaCliente), 0);
     }
-
     recaudoGuardarEstado(estado);
     renderRecaudo();
   };
 
-  // ══════════════════════════════════════════════════════
-  // FIX 4: Inyectar el checkbox de deuda-domi en la tabla
-  // después de que renderRecaudo pinta el HTML
-  // ══════════════════════════════════════════════════════
-  var _origRender = window.renderRecaudo;
-  window.renderRecaudo = async function() {
-    let r = await _origRender.apply(this, arguments);
+  // Botón RESET checkboxes
+  var _origRenderRecaudo_reset = window.renderRecaudo;
+  window.renderRecaudo = async function(){
+    if(typeof _origRenderRecaudo_reset === 'function') await _origRenderRecaudo_reset();
 
-    setTimeout(function() {
-      try {
-        let estado = recaudoLeerEstado();
+    setTimeout(function(){
+      var body = document.getElementById('recaudoBody');
+      if(!body || document.getElementById('btnResetRecaudo')) return;
 
-        // Buscar cada celda de recaudo-domi y agregar el checkbox izquierdo si no existe
-        document.querySelectorAll('[id^="rec_domi_"]').forEach(function(cbDomi) {
-          let nombre = cbDomi.id.replace('rec_domi_', '');
-          let idDeudaDomi = 'rec_deuda_domi_' + nombre;
+      // Find the Actualizar button
+      var btns = body.querySelectorAll('button');
+      var actualizarBtn = null;
+      btns.forEach(function(b){
+        if(b.textContent.indexOf('Actualizar') > -1) actualizarBtn = b;
+      });
 
-          // Si ya existe el checkbox de deuda domi, no duplicar
-          if (document.getElementById(idDeudaDomi)) return;
-
-          let saved      = estado[nombre] || {};
-          let deudaDC    = Number(saved.deudaCliente) || 0;
-          let deudaEnDomi = !!saved.deudaEnDomi;
-
-          let cbNuevo = document.createElement('input');
-          cbNuevo.type      = 'checkbox';
-          cbNuevo.id        = idDeudaDomi;
-          cbNuevo.className = 'recaudo-check';
-          cbNuevo.checked   = deudaEnDomi;
-          cbNuevo.title     = 'Sumar deuda del cliente al recaudo domi';
-          cbNuevo.style.cssText = 'margin-right:4px;accent-color:#f59e0b;';
-          cbNuevo.setAttribute('onchange',
-            "recaudoToggleDeudaDomi('" + nombre.replace(/'/g, "\\'") + "'," + deudaDC + ")"
-          );
-
-          // Insertar ANTES del checkbox domi original
-          cbDomi.parentNode.insertBefore(cbNuevo, cbDomi);
-        });
-      } catch(e) {
-        console.error('Parche deuda-domi checkbox:', e);
+      if(actualizarBtn && actualizarBtn.parentNode){
+        var resetBtn = document.createElement('button');
+        resetBtn.id = 'btnResetRecaudo';
+        resetBtn.style.cssText = 'padding:7px 14px;border-radius:8px;border:1px solid rgba(239,68,68,0.4);background:rgba(239,68,68,0.15);color:#fca5a5;font-weight:700;cursor:pointer;font-size:12px;font-family:Inter,sans-serif;margin-left:6px;';
+        resetBtn.textContent = '🔄 Reset Checks';
+        resetBtn.title = 'Limpiar checkboxes Recaudo Domi y Recibido';
+        resetBtn.onclick = function(){
+          if(!confirm('¿Limpiar TODOS los checkboxes de Recaudo Domi y Recibido del día?')) return;
+          var fk = 'recaudo_' + cajaFechaHoy();
+          var est = {};
+          try { est = JSON.parse(localStorage.getItem(fk) || '{}'); } catch(e){}
+          Object.keys(est).forEach(function(n){
+            if(n.startsWith('__')) return;
+            if(est[n]){
+              est[n].recaudoDomi = 0;
+              est[n].recibido = false;
+            }
+          });
+          localStorage.setItem(fk, JSON.stringify(est));
+          renderRecaudo();
+        };
+        actualizarBtn.parentNode.insertBefore(resetBtn, actualizarBtn.nextSibling);
       }
-    }, 120);
-
-    return r;
+    }, 400);
   };
 
-  console.log('✅ Parche recaudo: sin duplicación + deuda estática + checkbox deuda-domi');
-
+  console.log('✅ Deuda fixes + Reset button activos');
 })();
 
 // =====================================================
@@ -10874,119 +10842,6 @@ console.log('✅ Parche historial deuda por día cargado');
 
   console.log('☁️ Supabase Realtime Sync V12 iniciado');
 })();
-// =====================================================
-// 2. EFECTIVO REAL: DESCONTAR DEUDAS DEL DÍA
-// Override de renderRecaudo para recalcular el efectivo total
-// =====================================================
-var _origRenderRecaudo_v13 = window.renderRecaudo;
-window.renderRecaudo = async function(){
-  if(typeof _origRenderRecaudo_v13 === 'function') await _origRenderRecaudo_v13();
- 
-  // Después del render, recalcular el EFECTIVO TOTAL descontando deudas
-  setTimeout(function(){
-    var body = document.getElementById('recaudoBody');
-    if(!body) return;
- 
-    // Recalcular desde el cache
-    var cache = window._recaudoCache;
-    if(!cache || !cache.rows) return;
- 
-    var efectivoReal = 0;
-    var totalDeudaCliente = 0;
-    var totalDeudaMia = 0;
- 
-    cache.rows.forEach(function(r){
-      efectivoReal += r.efectivoNeto || 0;
-      totalDeudaCliente += r.deudaCliente || 0;
-      totalDeudaMia += r.deudaMia || 0;
-    });
- 
-    // Actualizar la tarjeta EFECTIVO en el header
-    var cards = body.querySelectorAll('div');
-    cards.forEach(function(d){
-      // Buscar la tarjeta que dice "EFECTIVO" y tiene el monto
-      var spans = d.querySelectorAll('span');
-      spans.forEach(function(s){
-        if(s.textContent.trim() === 'Efectivo' && s.style.color === 'rgb(74, 222, 128)'){
-          // Encontrada la etiqueta "Efectivo"
-          var parent = s.closest('div[style*="background"]');
-          if(parent){
-            var valDiv = parent.querySelector('div[style*="font-weight:800"]');
-            if(valDiv){
-              valDiv.textContent = '$' + efectivoReal.toLocaleString('es-CO');
-            }
-          }
-        }
-      });
-    });
- 
-    // Actualizar la barra de totales abajo
-    var miniDivs = body.querySelectorAll('.recaudo-mini');
-    miniDivs.forEach(function(mini){
-      var lab = mini.querySelector('.lab');
-      var val = mini.querySelector('.val');
-      if(lab && val){
-        if(lab.textContent.indexOf('Efectivo') > -1 && lab.textContent.indexOf('💵') > -1){
-          val.textContent = '$' + efectivoReal.toLocaleString('es-CO');
-        }
-      }
-    });
- 
-    // Actualizar el cache con el valor real
-    if(cache.resumen){
-      cache.resumen.netoEfectivo = efectivoReal;
-      if(cache.resumen.desglose){
-        cache.resumen.desglose.efectivoVentas = efectivoReal;
-        cache.resumen.desglose.efectivoTotal = efectivoReal;
-      }
-    }
- 
-    // =============================================
-    // INYECTAR BOTÓN RESET al lado de Actualizar
-    // =============================================
-    if(!document.getElementById('btnResetRecaudo')){
-      var actualizarBtn = body.querySelector('.btn-transferir[onclick*="renderRecaudo"]');
-      if(actualizarBtn && actualizarBtn.parentNode){
-        var resetBtn = document.createElement('button');
-        resetBtn.id = 'btnResetRecaudo';
-        resetBtn.className = 'btn-transferir';
-        resetBtn.style.cssText = 'background:rgba(239,68,68,0.2)!important;border:1px solid rgba(239,68,68,0.4)!important;color:#fca5a5!important;';
-        resetBtn.textContent = '🔄 Reset Checks';
-        resetBtn.title = 'Limpiar todos los checkboxes de Recaudo Domi y Recibido';
-        resetBtn.onclick = function(){
-          if(!confirm('¿Limpiar TODOS los checkboxes de Recaudo Domi y Recibido del día?')) return;
-          var fk = 'recaudo_' + cajaFechaHoy();
-          var est = {};
-          try { est = JSON.parse(localStorage.getItem(fk) || '{}'); } catch(e){}
-          Object.keys(est).forEach(function(nombre){
-            if(nombre.startsWith('__')) return;
-            if(est[nombre]){
-              est[nombre].recaudoDomi = 0;
-              est[nombre].recibido = false;
-            }
-          });
-          localStorage.setItem(fk, JSON.stringify(est));
-          renderRecaudo();
-        };
-        actualizarBtn.parentNode.insertBefore(resetBtn, actualizarBtn.nextSibling);
-      }
-    }
- 
-    // =============================================
-    // Resaltar $0 en amarillo
-    // =============================================
-    var tds = body.querySelectorAll('td');
-    tds.forEach(function(td){
-      if(td.textContent.trim() === '$0' && td.style.fontWeight === '800'){
-        td.style.background = 'rgba(251,191,36,0.15)';
-        td.style.color = '#fbbf24';
-      }
-    });
- 
-  }, 300);
-};
- 
-console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
