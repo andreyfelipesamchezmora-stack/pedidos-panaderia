@@ -11247,40 +11247,121 @@ console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
     };
   }
 
-  // ---------- 5. FIX deuda por fecha: si el dia activo NO tiene saved,
-  //             mostrar 0 en las columnas (no acumulado historico) ----------
-  // Se ejecuta DESPUES del wrapper V13 para dejar la ultima palabra.
-  (function aplicarFixFechaDeuda(){
-    var tries = 0;
-    function tryWrap(){
-      if(typeof window.recaudoConstruirData !== 'function'){
-        if(++tries < 20) return setTimeout(tryWrap, 200);
-        return;
-      }
-      var _prev = window.recaudoConstruirData;
-      if(_prev.__v14FechaFix) return; // evitar doble wrap
-      window.recaudoConstruirData = async function(){
-        var rows = await _prev.apply(this, arguments);
-        var estado = (typeof recaudoLeerEstado === 'function') ? recaudoLeerEstado() : {};
-        if(Array.isArray(rows)){
-          rows.forEach(function(row){
-            var saved = estado[row.cliente] || {};
-            // SIEMPRE tomar el valor del dia activo (0 si no existe),
-            // nunca el acumulado historico inyectado por construcciones previas.
-            row.deudaCliente = Number(saved.deudaCliente) || 0;
-            row.deudaMia     = Number(saved.deudaMia)     || 0;
-          });
-        }
-        return rows;
-      };
-      window.recaudoConstruirData.__v14FechaFix = true;
-      try { if(typeof renderRecaudo === 'function') renderRecaudo(); } catch(e){}
-      console.log('Parche V14.1: deuda estricta por fecha activa (0 si no hay guardado)');
+  // ---------- 5. V15: permitir deudas NEGATIVAS en "Ajustar deuda"
+  //                    (escribir -5000 resta del saldo; +5000 suma) ----------
+  // Reemplaza la guarda anti-negativos del paso 2.
+  window.carteraGuardarDeuda = function(nombre){
+    var elC = document.getElementById('cartAddDeudaC');
+    var elM = document.getElementById('cartAddDeudaM');
+    var addC = Number(elC && elC.value) || 0;
+    var addM = Number(elM && elM.value) || 0;
+    if(addC === 0 && addM === 0){ cerrarMC(); return; }
+
+    var info = (typeof recaudoGetDeudaHistorica === 'function')
+      ? recaudoGetDeudaHistorica(nombre)
+      : {deudaCliente:0, deudaMia:0, deudasPagadas:0};
+    var antesC = Number(info.deudaCliente)||0;
+    var antesM = Number(info.deudaMia)||0;
+
+    var estado = (typeof recaudoLeerEstado === 'function') ? recaudoLeerEstado() : {};
+    if(!estado[nombre]) estado[nombre] = {};
+    var nuevoC = Math.max((Number(estado[nombre].deudaCliente)||0) + addC, 0);
+    var nuevoM = Math.max((Number(estado[nombre].deudaMia)||0)     + addM, 0);
+    estado[nombre].deudaCliente = nuevoC;
+    estado[nombre].deudaMia     = nuevoM;
+    if(typeof recaudoGuardarEstado === 'function') recaudoGuardarEstado(estado);
+
+    if(addC !== 0){
+      window.ledgerLog({
+        tipo: addC > 0 ? 'deuda_aumento_cliente' : 'deuda_ajuste_cliente',
+        origen:'cartera', cliente: nombre, monto: Math.abs(addC),
+        saldoAntes: antesC, saldoDespues: Math.max(antesC + addC, 0),
+        descripcion: (addC > 0 ? 'Aumento ' : 'Ajuste (resta) ') + 'deuda me debe ' + nombre
+      });
     }
-    tryWrap();
+    if(addM !== 0){
+      window.ledgerLog({
+        tipo: addM > 0 ? 'deuda_aumento_mia' : 'deuda_ajuste_mia',
+        origen:'cartera', cliente: nombre, monto: Math.abs(addM),
+        saldoAntes: antesM, saldoDespues: Math.max(antesM + addM, 0),
+        descripcion: (addM > 0 ? 'Aumento ' : 'Ajuste (resta) ') + 'deuda le debo ' + nombre
+      });
+    }
+
+    cerrarMC();
+    if(typeof renderCartera === 'function') renderCartera();
+    if(typeof renderRecaudo === 'function') renderRecaudo();
+  };
+
+  // Quitar min="0" en el modal para permitir negativos (se re-inyecta cada vez
+  // que se abre el modal, asi que envolvemos carteraEditarDeuda para ajustar).
+  var _prevEditar = window.carteraEditarDeuda;
+  window.carteraEditarDeuda = function(nombre){
+    _prevEditar(nombre);
+    setTimeout(function(){
+      var c = document.getElementById('cartAddDeudaC');
+      var m = document.getElementById('cartAddDeudaM');
+      if(c){ c.removeAttribute('min'); c.placeholder = 'Ej: 5000 o -5000'; }
+      if(m){ m.removeAttribute('min'); m.placeholder = 'Ej: 5000 o -5000'; }
+      var hint = document.createElement('small');
+      hint.style.cssText = 'display:block;color:#fbbf24;margin-top:4px;font-size:11px;';
+      hint.textContent = 'Usa numeros negativos (-1000) para RESTAR de la deuda.';
+      if(c && c.parentNode && !c.parentNode.querySelector('.v15-hint')){
+        hint.className = 'v15-hint';
+        c.parentNode.appendChild(hint);
+      }
+    }, 30);
+  };
+
+  // ---------- 6. V15: FIJAR FECHA a HOY (no dejar que se cambie sola) ----------
+  (function fijarFechaHoy(){
+    function hoy(){
+      try { return (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10); }
+      catch(e){ return new Date().toISOString().slice(0,10); }
+    }
+    function ajustar(){
+      var inputs = document.querySelectorAll('input[type="date"]');
+      inputs.forEach(function(inp){
+        if(inp.dataset._v15Hook) return;
+        inp.dataset._v15Hook = '1';
+        var h = hoy();
+        if(inp.value !== h) inp.value = h;
+        inp.addEventListener('change', function(){
+          var h2 = hoy();
+          if(inp.value !== h2){
+            inp.value = h2;
+            // Disparar un evento para que listeners existentes recalculen con la fecha de hoy
+            try { inp.dispatchEvent(new Event('input',{bubbles:true})); } catch(e){}
+          }
+        });
+      });
+    }
+    // Ajuste inicial y observar cambios del DOM por si el input se re-crea
+    setTimeout(ajustar, 600);
+    setInterval(ajustar, 2000);
   })();
 
-  console.log('Parche V14 aplicado: ledger persistente + deuda acumulativa + boton invisible trazado');
+  // ---------- 7. V15: refrescar historial de TIBERIO tras eliminar pago ----------
+  // La "X" original (linea 3926) llama carteraEliminarPago(idx), que termina
+  // invocando renderCartera(). El modal de TIBERIO no siempre se re-dibuja.
+  // Forzamos re-render si el modal esta abierto.
+  (function fixXTiberio(){
+    var _prevElim = window.carteraEliminarPago;
+    if(typeof _prevElim !== 'function' || _prevElim.__v15) return;
+    window.carteraEliminarPago = function(idx){
+      var r = _prevElim.apply(this, arguments);
+      setTimeout(function(){
+        try { if(typeof renderCartera === 'function') renderCartera(); } catch(e){}
+        // Si el overlay de historial Tiberio sigue abierto, lo reconstruimos
+        var overlay = document.getElementById('carteraModalOverlay');
+        if(overlay){ overlay.remove(); }
+      }, 50);
+      return r;
+    };
+    window.carteraEliminarPago.__v15 = true;
+  })();
+
+  console.log('Parche V14+V15 aplicado: checkbox respetado, negativos ok, fecha fija, X Tiberio refresca.');
 })();
 
 </script>
