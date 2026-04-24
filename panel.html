@@ -10368,12 +10368,21 @@ console.log('✅ Parche historial deuda por día cargado');
 var DK = 'vn_deudas_v20';
 function dLeer(){ try{return JSON.parse(localStorage.getItem(DK)||'{}');}catch(e){return {};} }
 function dGuardar(d){ localStorage.setItem(DK, JSON.stringify(d||{})); }
-function dGet(n){ var d=dLeer(); if(!d[n]) d[n]={sc:0,sm:0,h:[]}; return d[n]; }
+function dGet(n){ var d=dLeer(); if(!d[n]) d[n]={sc:0,sm:0,h:[]}; if(!Array.isArray(d[n].h)) d[n].h=[]; if(typeof d[n].sc!=='number') d[n].sc=Number(d[n].sc)||0; if(typeof d[n].sm!=='number') d[n].sm=Number(d[n].sm)||0; return d[n]; }
 function dMoney(n){ return '$'+(Number(n)||0).toLocaleString('es-CO'); }
+
+// Normaliza la estructura de un registro de deuda (migración segura)
+function dNorm(d, nombre){
+  if(!d[nombre]) d[nombre] = {sc:0, sm:0, h:[]};
+  if(typeof d[nombre].sc !== 'number') d[nombre].sc = Number(d[nombre].sc)||0;
+  if(typeof d[nombre].sm !== 'number') d[nombre].sm = Number(d[nombre].sm)||0;
+  if(!Array.isArray(d[nombre].h)) d[nombre].h = [];
+  return d[nombre];
+}
 
 // Agregar deuda
 window.vnDeudaAgregar = function(nombre, tipo, monto, nota){
-  var d=dLeer(); if(!d[nombre]) d[nombre]={sc:0,sm:0,h:[]};
+  var d=dLeer(); dNorm(d, nombre);
   monto=Math.abs(Number(monto)||0); if(monto<=0) return;
   if(tipo==='cliente') d[nombre].sc+=monto; else d[nombre].sm+=monto;
   d[nombre].h.push({id:'d'+Date.now(),fecha:new Date().toISOString().slice(0,10),hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),tipo:'deuda',sub:tipo,monto:monto,saldo:tipo==='cliente'?d[nombre].sc:d[nombre].sm,nota:nota||''});
@@ -10385,7 +10394,7 @@ window.vnDeudaAgregar = function(nombre, tipo, monto, nota){
 
 // Pagar deuda
 window.vnDeudaPagar = function(nombre, tipo, monto, metodo, banco, ci, nota){
-  var d=dLeer(); if(!d[nombre]) d[nombre]={sc:0,sm:0,h:[]};
+  var d=dLeer(); dNorm(d, nombre);
   monto=Math.abs(Number(monto)||0); if(monto<=0) return;
   if(tipo==='cliente') d[nombre].sc=Math.max(d[nombre].sc-monto,0); else d[nombre].sm=Math.max(d[nombre].sm-monto,0);
   d[nombre].h.push({id:'p'+Date.now(),fecha:new Date().toISOString().slice(0,10),hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),tipo:'pago',sub:tipo,monto:monto,metodo:metodo||'',banco:banco||'',saldo:tipo==='cliente'?d[nombre].sc:d[nombre].sm,nota:nota||''});
@@ -10400,7 +10409,7 @@ window.vnDeudaPagar = function(nombre, tipo, monto, metodo, banco, ci, nota){
 
 // Set saldo inicial
 window.vnDeudaSetInicial = function(nombre, tipo, monto){
-  var d=dLeer(); if(!d[nombre]) d[nombre]={sc:0,sm:0,h:[]};
+  var d=dLeer(); dNorm(d, nombre);
   monto=Math.abs(Number(monto)||0);
   if(tipo==='cliente') d[nombre].sc=monto; else d[nombre].sm=monto;
   d[nombre].h.push({id:'i'+Date.now(),fecha:new Date().toISOString().slice(0,10),hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),tipo:'saldo_ini',sub:tipo,monto:monto,saldo:monto,nota:'Saldo inicial'});
