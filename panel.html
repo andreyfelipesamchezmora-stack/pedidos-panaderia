@@ -11247,6 +11247,39 @@ console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
     };
   }
 
+  // ---------- 5. FIX deuda por fecha: si el dia activo NO tiene saved,
+  //             mostrar 0 en las columnas (no acumulado historico) ----------
+  // Se ejecuta DESPUES del wrapper V13 para dejar la ultima palabra.
+  (function aplicarFixFechaDeuda(){
+    var tries = 0;
+    function tryWrap(){
+      if(typeof window.recaudoConstruirData !== 'function'){
+        if(++tries < 20) return setTimeout(tryWrap, 200);
+        return;
+      }
+      var _prev = window.recaudoConstruirData;
+      if(_prev.__v14FechaFix) return; // evitar doble wrap
+      window.recaudoConstruirData = async function(){
+        var rows = await _prev.apply(this, arguments);
+        var estado = (typeof recaudoLeerEstado === 'function') ? recaudoLeerEstado() : {};
+        if(Array.isArray(rows)){
+          rows.forEach(function(row){
+            var saved = estado[row.cliente] || {};
+            // SIEMPRE tomar el valor del dia activo (0 si no existe),
+            // nunca el acumulado historico inyectado por construcciones previas.
+            row.deudaCliente = Number(saved.deudaCliente) || 0;
+            row.deudaMia     = Number(saved.deudaMia)     || 0;
+          });
+        }
+        return rows;
+      };
+      window.recaudoConstruirData.__v14FechaFix = true;
+      try { if(typeof renderRecaudo === 'function') renderRecaudo(); } catch(e){}
+      console.log('Parche V14.1: deuda estricta por fecha activa (0 si no hay guardado)');
+    }
+    tryWrap();
+  })();
+
   console.log('Parche V14 aplicado: ledger persistente + deuda acumulativa + boton invisible trazado');
 })();
 
