@@ -11247,71 +11247,60 @@ console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
     };
   }
 
-  // ---------- 5. V15: permitir deudas NEGATIVAS en "Ajustar deuda"
-  //                    (escribir -5000 resta del saldo; +5000 suma) ----------
-  // Reemplaza la guarda anti-negativos del paso 2.
-  window.carteraGuardarDeuda = function(nombre){
-    var elC = document.getElementById('cartAddDeudaC');
-    var elM = document.getElementById('cartAddDeudaM');
-    var addC = Number(elC && elC.value) || 0;
-    var addM = Number(elM && elM.value) || 0;
-    if(addC === 0 && addM === 0){ cerrarMC(); return; }
+  // ---------- 5. V15.1: Ajustar deuda sin negativos (revertido).
+  //             Solo SUMA; el modal Cartera vuelve a inputs en 0 min. ----------
+  // (Se deja la implementacion del paso 2 tal cual. No se redefine aqui.)
 
-    var info = (typeof recaudoGetDeudaHistorica === 'function')
-      ? recaudoGetDeudaHistorica(nombre)
-      : {deudaCliente:0, deudaMia:0, deudasPagadas:0};
-    var antesC = Number(info.deudaCliente)||0;
-    var antesM = Number(info.deudaMia)||0;
-
-    var estado = (typeof recaudoLeerEstado === 'function') ? recaudoLeerEstado() : {};
-    if(!estado[nombre]) estado[nombre] = {};
-    var nuevoC = Math.max((Number(estado[nombre].deudaCliente)||0) + addC, 0);
-    var nuevoM = Math.max((Number(estado[nombre].deudaMia)||0)     + addM, 0);
-    estado[nombre].deudaCliente = nuevoC;
-    estado[nombre].deudaMia     = nuevoM;
-    if(typeof recaudoGuardarEstado === 'function') recaudoGuardarEstado(estado);
-
-    if(addC !== 0){
-      window.ledgerLog({
-        tipo: addC > 0 ? 'deuda_aumento_cliente' : 'deuda_ajuste_cliente',
-        origen:'cartera', cliente: nombre, monto: Math.abs(addC),
-        saldoAntes: antesC, saldoDespues: Math.max(antesC + addC, 0),
-        descripcion: (addC > 0 ? 'Aumento ' : 'Ajuste (resta) ') + 'deuda me debe ' + nombre
-      });
+  // ---------- 8. V15.1: Vaciar INPUTS rec_dc_/rec_dm_ cuando el dia activo
+  //             no tiene valor guardado. El checkbox/saldo acumulado sigue
+  //             apareciendo porque se dibuja con la deuda historica. ----------
+  (function limpiarInputsDelDia(){
+    function barrer(){
+      try {
+        var estado = (typeof recaudoLeerEstado === 'function') ? recaudoLeerEstado() : {};
+        // DEUDA CLIENTE
+        document.querySelectorAll('input[id^="rec_dc_"]').forEach(function(inp){
+          var nombre = inp.id.substring('rec_dc_'.length);
+          var saved = estado[nombre] || {};
+          var v = Number(saved.deudaCliente) || 0;
+          if(v <= 0){
+            inp.value = '';
+            inp.dataset.raw = '';
+          }
+        });
+        // YO LE DEBO (mismo criterio)
+        document.querySelectorAll('input[id^="rec_dm_"]').forEach(function(inp){
+          var nombre = inp.id.substring('rec_dm_'.length);
+          var saved = estado[nombre] || {};
+          var v = Number(saved.deudaMia) || 0;
+          if(v <= 0){
+            inp.value = '';
+            inp.dataset.raw = '';
+          }
+        });
+      } catch(e){ console.warn('V15.1 limpiar inputs:', e); }
     }
-    if(addM !== 0){
-      window.ledgerLog({
-        tipo: addM > 0 ? 'deuda_aumento_mia' : 'deuda_ajuste_mia',
-        origen:'cartera', cliente: nombre, monto: Math.abs(addM),
-        saldoAntes: antesM, saldoDespues: Math.max(antesM + addM, 0),
-        descripcion: (addM > 0 ? 'Aumento ' : 'Ajuste (resta) ') + 'deuda le debo ' + nombre
-      });
-    }
-
-    cerrarMC();
-    if(typeof renderCartera === 'function') renderCartera();
-    if(typeof renderRecaudo === 'function') renderRecaudo();
-  };
-
-  // Quitar min="0" en el modal para permitir negativos (se re-inyecta cada vez
-  // que se abre el modal, asi que envolvemos carteraEditarDeuda para ajustar).
-  var _prevEditar = window.carteraEditarDeuda;
-  window.carteraEditarDeuda = function(nombre){
-    _prevEditar(nombre);
-    setTimeout(function(){
-      var c = document.getElementById('cartAddDeudaC');
-      var m = document.getElementById('cartAddDeudaM');
-      if(c){ c.removeAttribute('min'); c.placeholder = 'Ej: 5000 o -5000'; }
-      if(m){ m.removeAttribute('min'); m.placeholder = 'Ej: 5000 o -5000'; }
-      var hint = document.createElement('small');
-      hint.style.cssText = 'display:block;color:#fbbf24;margin-top:4px;font-size:11px;';
-      hint.textContent = 'Usa numeros negativos (-1000) para RESTAR de la deuda.';
-      if(c && c.parentNode && !c.parentNode.querySelector('.v15-hint')){
-        hint.className = 'v15-hint';
-        c.parentNode.appendChild(hint);
+    // Envolver renderRecaudo para correr DESPUES de cada render.
+    var tries = 0;
+    function hook(){
+      if(typeof window.renderRecaudo !== 'function'){
+        if(++tries < 30) return setTimeout(hook, 200);
+        return;
       }
-    }, 30);
-  };
+      if(window.renderRecaudo.__v151) return;
+      var _prev = window.renderRecaudo;
+      window.renderRecaudo = async function(){
+        var r = await _prev.apply(this, arguments);
+        setTimeout(barrer, 350); // dejar que V13 y otros wrappers terminen
+        return r;
+      };
+      window.renderRecaudo.__v151 = true;
+      // Barrido inicial por si ya renderizo
+      setTimeout(barrer, 400);
+      console.log('Parche V15.1: inputs rec_dc_/rec_dm_ respetan solo el dia activo.');
+    }
+    hook();
+  })();
 
   // ---------- 6. V15: FIJAR FECHA a HOY (no dejar que se cambie sola) ----------
   (function fijarFechaHoy(){
