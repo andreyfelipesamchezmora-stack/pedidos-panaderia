@@ -4343,7 +4343,7 @@ function recaudoMarcarDeudaSaldada(nombre, deudaCliente, deudaMia) {
       checkbox.checked = false;
     } else if(deudaMia > 0){
       if(confirm('Le debes $' + Number(deudaMia).toLocaleString("es-CO") + ' a ' + nombre + '.\n¿Descontar de la factura del día?')){
-        rQuMHtpwbtsTXsRMArUQeWyGrRu7gwbZs2(nombre, deudaMia);
+        r3nP5oFahNL86vESFrkKjmuupsQa1mPzN7(nombre, deudaMia);
       } else {
         checkbox.checked = false;
       }
@@ -4513,7 +4513,7 @@ function recaudoConfirmarPago(nombre, monto){
   renderRecaudo();
 }
  
-function rQuMHtpwbtsTXsRMArUQeWyGrRu7gwbZs2(nombre, deudaMia){
+function r3nP5oFahNL86vESFrkKjmuupsQa1mPzN7(nombre, deudaMia){
   let hoy = new Date().toLocaleDateString('es-CO', {day:'numeric', month:'long', year:'numeric'});
  
   let estado = recaudoLeerEstado();
@@ -10495,24 +10495,39 @@ window.vnDeudaModal = function(nombre, tipo){
   var d = dGet(nombre);
   var saldo = tipo==='cliente' ? d.sc : d.sm;
 
+  // Guardar contexto para el botón (evita problemas con comillas en el nombre)
+  window._vnDeudaCtx = { nombre: nombre, tipo: tipo };
+
   mostrarMC(
     '<h3 style="text-align:center;margin-bottom:8px;">'+label+'</h3>'+
     '<div style="text-align:center;font-size:13px;color:#94a3b8;margin-bottom:14px;">'+nombre+'</div>'+
     (saldo > 0 ? '<div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:10px;margin-bottom:14px;text-align:center;"><div style="font-size:11px;color:#fcd34d;font-weight:600;">Saldo actual</div><div style="font-size:22px;font-weight:800;color:'+(tipo==='cliente'?'#fca5a5':'#93c5fd')+';">'+dMoney(saldo)+'</div></div>' : '')+
     '<div class="mc-field"><label>Monto a agregar</label><input id="vnDMonto" type="number" placeholder="Ej: 25000" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:12px;font-size:18px;font-weight:800;text-align:center;"></div>'+
     '<div class="mc-field"><label>Nota (opcional)</label><input id="vnDNota" type="text" placeholder="Ej: Pedido fiado" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px;font-size:13px;"></div>'+
-    '<div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC();renderRecaudo();">Cancelar</button><button class="mc-btn-ok" style="background:'+(tipo==='cliente'?'#dc2626':'#2563eb')+';" onclick="vnDeudaConfirmar(\''+nombre.replace(/'/g,"\\'")+'\',\''+tipo+'\')">Agregar deuda</button></div>'
+    '<div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC();renderRecaudo();">Cancelar</button><button class="mc-btn-ok" style="background:'+(tipo==='cliente'?'#dc2626':'#2563eb')+';" onclick="vnDeudaConfirmar()">Agregar deuda</button></div>'
   );
   setTimeout(function(){ var i=document.getElementById('vnDMonto'); if(i) i.focus(); }, 200);
 };
 
 window.vnDeudaConfirmar = function(nombre, tipo){
-  var monto = Number(document.getElementById('vnDMonto').value)||0;
-  var nota = (document.getElementById('vnDNota').value||'').trim();
-  if(monto<=0){ alert('Ingresa un monto válido'); return; }
-  vnDeudaAgregar(nombre, tipo, monto, nota);
-  cerrarMC();
-  renderRecaudo();
+  try {
+    var ctx = window._vnDeudaCtx || {};
+    nombre = nombre || ctx.nombre;
+    tipo = tipo || ctx.tipo;
+    if(!nombre || !tipo){ alert('Contexto perdido. Reabre el modal.'); return; }
+    var mEl = document.getElementById('vnDMonto');
+    var nEl = document.getElementById('vnDNota');
+    var monto = Number(mEl ? mEl.value : 0)||0;
+    var nota = ((nEl && nEl.value) || '').trim();
+    if(monto<=0){ alert('Ingresa un monto válido'); return; }
+    vnDeudaAgregar(nombre, tipo, monto, nota);
+    window._vnDeudaCtx = null;
+    cerrarMC();
+    if(typeof renderRecaudo==='function') renderRecaudo();
+  } catch(e){
+    console.error('vnDeudaConfirmar error:', e);
+    alert('Error al agregar deuda: '+e.message);
+  }
 };
 
 // Modal pago deuda (desde badge checkbox)
