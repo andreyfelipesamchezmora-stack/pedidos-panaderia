@@ -3842,21 +3842,73 @@ async function renderCartera(filtroMora, filtroNombre) {
   let totalPorPagar  = vnDeudasLista.reduce(function(s,x){return s+x.sm;},0);
   let totalCarteraV20 = totalPorCobrar + totalPorPagar;
 
+  // ========== MERGE vn_deudas_v20 en la lista de Cartera ==========
+  let _existentes = {};
+  listaFiltrada.forEach(function(c){ _existentes[c.nombre] = c; });
+  vnDeudasLista.forEach(function(d){
+    // Última fecha de movimiento
+    let ultimaFecha = '—';
+    if(Array.isArray(d.h) && d.h.length > 0){
+      let last = d.h[d.h.length-1];
+      ultimaFecha = last.fecha || '—';
+    }
+    if(_existentes[d.nombre]){
+      _existentes[d.nombre].deuda = (Number(_existentes[d.nombre].deuda)||0) + d.sc;
+      _existentes[d.nombre]._leDebo = d.sm;
+      if(ultimaFecha !== '—') _existentes[d.nombre].ultimoPago = ultimaFecha;
+    } else {
+      let pasa = true;
+      if(filtroNombre) pasa = d.nombre.toLowerCase().includes(filtroNombre.toLowerCase());
+      if(!pasa) return;
+      listaFiltrada.push({
+        nombre: d.nombre,
+        deuda: d.sc,
+        _leDebo: d.sm,
+        diasMora: 0,
+        ultimoPago: ultimaFecha,
+        estado: d.sc > 0 ? 'Al día' : (d.sm > 0 ? 'Yo le debo' : 'Sin deuda'),
+        semaforo: 'verde',
+        ranking: 'bueno',
+        totalPedidos: d.sc,
+        _fromV20: true
+      });
+    }
+  });
+  listaFiltrada.sort(function(a,b){return (b.deuda||0)-(a.deuda||0);});
+
+  // Actualizar KPIs incluyendo vn_deudas_v20
+  totalCartera = listaFiltrada.reduce(function(s,c){return s+(Number(c.deuda)||0);},0);
+  cartVencer   = cartVencer + totalPorCobrar;
+
   // Cliente seleccionado (persistido en window)
   let selNombre = window._vnCarteraClienteSel || '';
   let selData = (selNombre && vnDeudasStore[selNombre]) ? vnDeudasStore[selNombre] : {sc:0,sm:0,h:[]};
 
   // Lista desplegable de clientes (del panel principal)
+  let _clientesFuente = [];
+  try {
+    if(typeof clientes !== 'undefined' && Array.isArray(clientes)) _clientesFuente = clientes;
+    else if(Array.isArray(window.clientes)) _clientesFuente = window.clientes;
+    else {
+      let raw = JSON.parse(localStorage.getItem('clientes')||'[]');
+      if(Array.isArray(raw)) _clientesFuente = raw;
+    }
+  } catch(e) { _clientesFuente = []; }
+
+  let _nombresSet = {};
+  _clientesFuente.forEach(function(c){
+    let n = typeof c==='string' ? c : (c && c.nombre ? c.nombre : '');
+    if(n) _nombresSet[n] = true;
+  });
+  // También incluir clientes que ya tienen deuda en vn_deudas_v20
+  Object.keys(vnDeudasStore).forEach(function(n){ if(n) _nombresSet[n] = true; });
+
+  let _nombresClientes = Object.keys(_nombresSet).sort(function(a,b){return a.localeCompare(b,'es');});
   let vnClientesOpts = '<option value="">— Seleccionar cliente —</option>';
-  if(Array.isArray(window.clientes)){
-    let nombresClientes = window.clientes.map(function(c){ return typeof c==='string'?c:(c.nombre||''); })
-      .filter(function(n){return !!n;});
-    nombresClientes.sort(function(a,b){return a.localeCompare(b,'es');});
-    nombresClientes.forEach(function(n){
-      let sel = (n===selNombre)?' selected':'';
-      vnClientesOpts += '<option value="'+n.replace(/"/g,'&quot;')+'"'+sel+'>'+n+'</option>';
-    });
-  }
+  _nombresClientes.forEach(function(n){
+    let sel = (n===selNombre)?' selected':'';
+    vnClientesOpts += '<option value="'+n.replace(/"/g,'&quot;')+'"'+sel+'>'+n+'</option>';
+  });
  
   // ========== OPTIONS DE CUENTAS ==========
   let cuentasOpts = '';
