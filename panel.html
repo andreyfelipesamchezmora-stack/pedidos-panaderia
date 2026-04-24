@@ -4343,7 +4343,7 @@ function recaudoMarcarDeudaSaldada(nombre, deudaCliente, deudaMia) {
       checkbox.checked = false;
     } else if(deudaMia > 0){
       if(confirm('Le debes $' + Number(deudaMia).toLocaleString("es-CO") + ' a ' + nombre + '.\n¿Descontar de la factura del día?')){
-        r3nP5oFahNL86vESFrkKjmuupsQa1mPzN7(nombre, deudaMia);
+        rQuMHtpwbtsTXsRMArUQeWyGrRu7gwbZs2(nombre, deudaMia);
       } else {
         checkbox.checked = false;
       }
@@ -4513,7 +4513,7 @@ function recaudoConfirmarPago(nombre, monto){
   renderRecaudo();
 }
  
-function r3nP5oFahNL86vESFrkKjmuupsQa1mPzN7(nombre, deudaMia){
+function rQuMHtpwbtsTXsRMArUQeWyGrRu7gwbZs2(nombre, deudaMia){
   let hoy = new Date().toLocaleDateString('es-CO', {day:'numeric', month:'long', year:'numeric'});
  
   let estado = recaudoLeerEstado();
@@ -5257,7 +5257,10 @@ function recaudoCalcularDesgloseMetodos(rows){
       }
     }
  
-    desglose.efectivoVentas += Math.max(r.subtotal - r.totalTransferencia - r.faltantes - r.salidas - (r.deudaMiaPagada||0), 0);
+    var _efV = r.subtotal - r.totalTransferencia - r.faltantes - r.salidas - (r.deudaMiaPagada||0);
+    // Ajuste por deudas registradas hoy
+    _efV = _efV - (Number(r._deudaClienteHoy)||0) + (Number(r._deudaMiaHoy)||0);
+    desglose.efectivoVentas += Math.max(_efV, 0);
   });
  
   desglose.efectivoTotal = desglose.efectivoVentas + desglose.efectivoDeudas;
@@ -10444,12 +10447,40 @@ window.recaudoGetDeudaHistorica = function(nombre){
 var _bRC = window.recaudoConstruirData;
 window.recaudoConstruirData = async function(){
   var rows = await _bRC.apply(this, arguments);
+  var hoyStr = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10);
   rows.forEach(function(r){
     var d = dGet(r.cliente);
     r._deudaTotalCliente = d.sc || 0;
     r._deudaTotalMia = d.sm || 0;
     r.deudaCliente = 0;
     r.deudaMia = 0;
+
+    // Deudas REGISTRADAS HOY (afectan efectivo del día)
+    var dcHoy = 0, dmHoy = 0, pagoClienteHoyEfectivo = 0, pagoMiaHoyEfectivo = 0;
+    (d.h||[]).forEach(function(x){
+      if(x.fecha !== hoyStr) return;
+      if(x.tipo === 'deuda'){
+        if(x.sub === 'cliente') dcHoy += Number(x.monto)||0;
+        else if(x.sub === 'mia') dmHoy += Number(x.monto)||0;
+      } else if(x.tipo === 'pago' && x.metodo === 'efectivo'){
+        if(x.sub === 'cliente') pagoClienteHoyEfectivo += Number(x.monto)||0;
+        else if(x.sub === 'mia') pagoMiaHoyEfectivo += Number(x.monto)||0;
+      }
+    });
+    r._deudaClienteHoy = dcHoy;
+    r._deudaMiaHoy = dmHoy;
+    r._pagoClienteHoyEfectivo = pagoClienteHoyEfectivo;
+    r._pagoMiaHoyEfectivo = pagoMiaHoyEfectivo;
+
+    // Ajuste al efectivoNeto del día:
+    //  - deuda cliente registrada HOY → NO me pagó esa plata → resta
+    //  - deuda mía registrada HOY → cliente me dio de más / yo recibí → suma
+    //  - pago de deuda en efectivo ya se suma por recaudoDomi/caja aparte
+    var ef = Number(r.efectivoNeto)||0;
+    ef = ef - dcHoy + dmHoy;
+    if(ef < 0) ef = 0;
+    r.efectivoNeto = ef;
+
     if(typeof recaudoClasificarResumen==='function')
       r.resumen = recaudoClasificarResumen(r._deudaTotalCliente, r._deudaTotalMia);
   });
