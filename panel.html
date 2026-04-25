@@ -10829,97 +10829,175 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
 })();
 
 // =====================================================
-// FIX V22 — 2 correcciones quirúrgicas
-// 1. "Yo le debo" de HOY suma al efectivo, de ayer NO
-// 2. Pagos de deuda aparecen en Historial de Contabilidad
+// FIX V22 — Efectivo solo con checkbox recibido
+// + Persistencia historial contable
 // =====================================================
 (function(){
 'use strict';
 
-// A. CARGAR movimientosContables desde localStorage INMEDIATAMENTE
-// (sin esperar los 1200ms del sync de Supabase)
+// A. CARGAR movimientosContables INMEDIATAMENTE
 (function(){
   try {
-    var saved = localStorage.getItem('mc_local');
-    if(saved){
-      var arr = JSON.parse(saved);
-      if(Array.isArray(arr) && arr.length > 0){
-        if(!Array.isArray(window.movimientosContables) || window.movimientosContables.length === 0){
-          window.movimientosContables = arr;
-        }
-      }
-    }
+    var s = localStorage.getItem('mc_local');
+    if(s){ var a=JSON.parse(s); if(Array.isArray(a)&&a.length>0&&(!Array.isArray(window.movimientosContables)||window.movimientosContables.length===0)) window.movimientosContables=a; }
   } catch(e){}
-  // Also load gastosMemoria from localStorage
   try {
-    var gSaved = localStorage.getItem('gm_local');
-    if(gSaved){
-      var gArr = JSON.parse(gSaved);
-      if(Array.isArray(gArr) && gArr.length > 0){
-        if(!Array.isArray(window.gastosMemoria) || window.gastosMemoria.length === 0){
-          window.gastosMemoria = gArr;
-          try { sessionStorage.setItem('gastos', JSON.stringify(gArr)); } catch(e){}
-        }
-      }
-    }
+    var g = localStorage.getItem('gm_local');
+    if(g){ var a=JSON.parse(g); if(Array.isArray(a)&&a.length>0&&(!Array.isArray(window.gastosMemoria)||window.gastosMemoria.length===0)){ window.gastosMemoria=a; try{sessionStorage.setItem('gastos',JSON.stringify(a));}catch(e){} }}
   } catch(e){}
 })();
 
-// B. Override vnDeudaPagar para asegurar persistencia + refresco historial
-var _origVnDeudaPagar = window.vnDeudaPagar;
-window.vnDeudaPagar = function(nombre, tipo, monto, metodo, banco, ci, nota){
-  // Llamar original
-  if(typeof _origVnDeudaPagar === 'function'){
-    _origVnDeudaPagar(nombre, tipo, monto, metodo, banco, ci, nota);
-  }
-  // Persistir INMEDIATAMENTE en localStorage
-  try {
-    if(Array.isArray(window.movimientosContables)){
-      localStorage.setItem('mc_local', JSON.stringify(window.movimientosContables));
-    }
-  } catch(e){}
+// B. Persistir después de cada operación
+var _oPagar = window.vnDeudaPagar;
+window.vnDeudaPagar = function(){
+  if(typeof _oPagar==='function') _oPagar.apply(this, arguments);
+  try { if(Array.isArray(window.movimientosContables)) localStorage.setItem('mc_local', JSON.stringify(window.movimientosContables)); } catch(e){}
 };
-
-// C. Override vnDeudaAgregar para asegurar persistencia
-var _origVnDeudaAgregar = window.vnDeudaAgregar;
-window.vnDeudaAgregar = function(nombre, tipo, monto, nota){
-  if(typeof _origVnDeudaAgregar === 'function'){
-    _origVnDeudaAgregar(nombre, tipo, monto, nota);
-  }
-  try {
-    if(Array.isArray(window.movimientosContables)){
-      localStorage.setItem('mc_local', JSON.stringify(window.movimientosContables));
-    }
-  } catch(e){}
+var _oAgregar = window.vnDeudaAgregar;
+window.vnDeudaAgregar = function(){
+  if(typeof _oAgregar==='function') _oAgregar.apply(this, arguments);
+  try { if(Array.isArray(window.movimientosContables)) localStorage.setItem('mc_local', JSON.stringify(window.movimientosContables)); } catch(e){}
 };
-
-// D. Override agregarGasto para persistir
-var _origAgregarGasto = window.agregarGasto;
-if(typeof _origAgregarGasto === 'function'){
+var _oGasto = window.agregarGasto;
+if(typeof _oGasto==='function'){
   window.agregarGasto = function(){
-    _origAgregarGasto.apply(this, arguments);
-    try {
-      if(Array.isArray(window.movimientosContables))
-        localStorage.setItem('mc_local', JSON.stringify(window.movimientosContables));
-      if(Array.isArray(window.gastosMemoria))
-        localStorage.setItem('gm_local', JSON.stringify(window.gastosMemoria));
-    } catch(e){}
+    _oGasto.apply(this, arguments);
+    try { if(Array.isArray(window.movimientosContables)) localStorage.setItem('mc_local', JSON.stringify(window.movimientosContables)); if(Array.isArray(window.gastosMemoria)) localStorage.setItem('gm_local', JSON.stringify(window.gastosMemoria)); } catch(e){}
   };
 }
-
-// E. Override agregarIngresoExtra para persistir
-var _origAIE2 = window.agregarIngresoExtra;
-if(typeof _origAIE2 === 'function'){
+var _oIngreso = window.agregarIngresoExtra;
+if(typeof _oIngreso==='function'){
   window.agregarIngresoExtra = function(){
-    _origAIE2.apply(this, arguments);
-    try {
-      if(Array.isArray(window.movimientosContables))
-        localStorage.setItem('mc_local', JSON.stringify(window.movimientosContables));
-    } catch(e){}
+    _oIngreso.apply(this, arguments);
+    try { if(Array.isArray(window.movimientosContables)) localStorage.setItem('mc_local', JSON.stringify(window.movimientosContables)); } catch(e){}
   };
 }
 
-console.log('✅ FIX V22: Persistencia + Historial corregidos');
+// C. OVERRIDE renderRecaudo — recalcular EFECTIVO correctamente
+var _oRR = window.renderRecaudo;
+window.renderRecaudo = async function(){
+  if(typeof _oRR === 'function') await _oRR();
+
+  // Recalculate after render
+  setTimeout(function(){
+    var cache = window._recaudoCache;
+    if(!cache || !cache.rows) return;
+
+    var hoyStr = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10);
+    var DK = 'vn_deudas_v20';
+    var dStore = {};
+    try { dStore = JSON.parse(localStorage.getItem(DK)||'{}'); } catch(e){}
+
+    // Recalculate EFECTIVO from scratch
+    var efectivoNuevo = 0;
+    var pagoDeudaEfectivoNuevo = 0;
+    var pagoDeudaNequiNuevo = 0;
+    var pagoDeudaBancoNuevo = 0;
+
+    cache.rows.forEach(function(r){
+      // 1. Solo suma al efectivo si "recibido" está marcado
+      if(r.recibido){
+        var efCliente = Math.max((Number(r.subtotal)||0) - (Number(r.nequi)||0) - (Number(r.bancolombia)||0) - (Number(r.faltantes)||0) - (Number(r.salidas)||0), 0);
+        efectivoNuevo += efCliente;
+      }
+
+      // 2. Deudas registradas HOY desde el DEUDA STORE
+      var dd = dStore[r.cliente];
+      if(dd && Array.isArray(dd.h)){
+        dd.h.forEach(function(x){
+          if((x.fecha||'') !== hoyStr) return;
+          if(x.tipo === 'deuda'){
+            if(x.sub === 'mia'){
+              // Yo le debo al cliente HOY → suma al efectivo (recibí de más)
+              efectivoNuevo += Number(x.monto)||0;
+            } else if(x.sub === 'cliente'){
+              // Cliente me debe HOY → resta del efectivo (no me pagó)
+              efectivoNuevo -= Number(x.monto)||0;
+            }
+          }
+        });
+      }
+
+      // 3. Pagos de deuda (checkbox pago)
+      if(r.deudaMetodo === 'efectivo'){
+        pagoDeudaEfectivoNuevo += Number(r.deudasPagadas)||0;
+      } else if(r.deudaMetodo === 'transferencia'){
+        var bUp = (r.deudaBanco||'').toUpperCase();
+        if(bUp.indexOf('NEQUI') > -1) pagoDeudaNequiNuevo += Number(r.deudasPagadas)||0;
+        else pagoDeudaBancoNuevo += Number(r.deudasPagadas)||0;
+      }
+    });
+
+    // Sumar pagos de deuda en efectivo al total de efectivo
+    if(efectivoNuevo < 0) efectivoNuevo = 0;
+    var efectivoFinal = efectivoNuevo + pagoDeudaEfectivoNuevo;
+
+    var nequiTotal = cache.rows.reduce(function(s,r){return s+(Number(r.nequi)||0);},0) + pagoDeudaNequiNuevo;
+    var bancoTotal = cache.rows.reduce(function(s,r){return s+(Number(r.bancolombia)||0);},0) + pagoDeudaBancoNuevo;
+    var pagosDeudaTransfTotal = pagoDeudaNequiNuevo + pagoDeudaBancoNuevo;
+    var totalRecaudadoNuevo = efectivoFinal + nequiTotal + bancoTotal;
+
+    // Update cache
+    cache.resumen.netoEfectivo = efectivoFinal;
+    cache.resumen.transferencias = nequiTotal + bancoTotal - pagosDeudaTransfTotal;
+    cache.resumen.pagosDeudaTransf = pagosDeudaTransfTotal;
+    if(cache.resumen.desglose){
+      cache.resumen.desglose.efectivoVentas = efectivoNuevo;
+      cache.resumen.desglose.efectivoDeudas = pagoDeudaEfectivoNuevo;
+      cache.resumen.desglose.efectivoTotal = efectivoFinal;
+      cache.resumen.desglose.nequi = nequiTotal;
+      cache.resumen.desglose.bancolombia = bancoTotal;
+      cache.resumen.desglose.pagosDeudaTransf = pagosDeudaTransfTotal;
+      cache.resumen.desglose.totalRecaudado = totalRecaudadoNuevo;
+    }
+
+    // Update the TOP KPI boxes (the 5 colored boxes at the very top)
+    var body = document.getElementById('recaudoBody');
+    if(!body) return;
+
+    // Find the top boxes by their label text
+    var allDivs = body.querySelectorAll('div');
+    allDivs.forEach(function(div){
+      var label = div.querySelector('span');
+      var valueDiv = div.querySelector('div[style*="font-size:16px"], div[style*="font-size:18px"]');
+      if(!label || !valueDiv) return;
+      var labelText = (label.textContent||'').toUpperCase();
+
+      if(labelText.indexOf('EFECTIVO') > -1 && labelText.indexOf('TOTAL') === -1){
+        valueDiv.textContent = '$' + efectivoFinal.toLocaleString('es-CO');
+      }
+      else if(labelText.indexOf('NEQUI') > -1){
+        valueDiv.textContent = '$' + nequiTotal.toLocaleString('es-CO');
+      }
+      else if(labelText.indexOf('BANCOLOMBIA') > -1){
+        valueDiv.textContent = '$' + bancoTotal.toLocaleString('es-CO');
+      }
+      else if(labelText.indexOf('PAGOS DEUDA') > -1 || labelText.indexOf('PAGOS') > -1){
+        valueDiv.textContent = '$' + pagosDeudaTransfTotal.toLocaleString('es-CO');
+      }
+      else if(labelText.indexOf('TOTAL RECAUDADO') > -1 || labelText.indexOf('TOTAL REC') > -1){
+        valueDiv.textContent = '$' + totalRecaudadoNuevo.toLocaleString('es-CO');
+      }
+    });
+
+    // Update bottom totals bar
+    var minis = body.querySelectorAll('.recaudo-mini');
+    minis.forEach(function(mini){
+      var lab = mini.querySelector('.lab');
+      var val = mini.querySelector('.val');
+      if(!lab || !val) return;
+      var lt = (lab.textContent||'').toUpperCase();
+      if(lt.indexOf('EFECTIVO') > -1 && lt.indexOf('TOTAL') === -1) val.textContent = '$' + efectivoFinal.toLocaleString('es-CO');
+      else if(lt.indexOf('NEQUI') > -1) val.textContent = '$' + nequiTotal.toLocaleString('es-CO');
+      else if(lt.indexOf('BANCOLOMBIA') > -1) val.textContent = '$' + bancoTotal.toLocaleString('es-CO');
+      else if(lt.indexOf('PAGOS DEUDA') > -1) val.textContent = '$' + pagosDeudaTransfTotal.toLocaleString('es-CO');
+      else if(lt.indexOf('TOTAL') > -1) val.textContent = '$' + totalRecaudadoNuevo.toLocaleString('es-CO');
+    });
+
+  }, 500);
+};
+
+console.log('✅ FIX V22: Efectivo=0 base, solo recibido+deudas HOY');
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
