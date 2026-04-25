@@ -10524,9 +10524,15 @@ window.recaudoConstruirData = async function(){
     r.deudaMia = 0;
 
     // Deudas REGISTRADAS HOY (afectan efectivo del día)
+    // IMPORTANTE: las entradas RECONSTRUIDAS desde recaudos históricos NO cuentan
+    // aquí (ya están reflejadas en saldos sc/sm; añadirlas a dcHoy/dmHoy haría
+    // que el efectivo del día se reduzca artificialmente cada vez que se cargue).
     var dcHoy = 0, dmHoy = 0, pagoClienteHoyEfectivo = 0, pagoMiaHoyEfectivo = 0;
     (d.h||[]).forEach(function(x){
       if(x.fecha !== hoyStr) return;
+      // Saltar entradas reconstruidas
+      if(x._reconstruido === true) return;
+      if(typeof x.id === 'string' && x.id.charAt(0) === 'r') return;
       if(x.tipo === 'deuda'){
         if(x.sub === 'cliente') dcHoy += Number(x.monto)||0;
         else if(x.sub === 'mia') dmHoy += Number(x.monto)||0;
@@ -10831,6 +10837,393 @@ window.renderRecaudo = async function(){
 };
 
 console.log('✅ Módulo V20: Deudas + Cartera limpio');
+})();
+
+// =====================================================
+// PARCHE V22 — FIX CRÍTICO BUG DEUDAS + RECOVERY
+//   Causa raíz: 'cartera_deudas' (legacy) y 'vn_deudas_v20' (nuevo)
+//   compartían la MISMA fila en Supabase ('cartera_deudas'). Al escribir
+//   la estructura legacy, se sobreescribía la nueva en realtime → se
+//   perdían todas las deudas de todos los clientes.
+//   Solución:
+//     1. Snapshot automático antes de cada escritura a vn_deudas_v20
+//     2. Validar payload entrante en vn_deudas_v20 (debe tener sc/sm/h)
+//        si llega corrupto, NO sobreescribe y restaura snapshot.
+//     3. Bloquear sincronización Supabase de la clave legacy 'cartera_deudas'
+//     4. Hacer atómico el editar saldo (no mete history si monto=0 inútil)
+//     5. Añadir UI "Restaurar deudas" que reconstruye desde recaudo_* históricos
+// =====================================================
+(function(){
+  'use strict';
+  var DK = 'vn_deudas_v20';
+  var BACKUP_PREFIX = 'vn_deudas_v20_bk_';
+  var BACKUP_MAX = 10;
+
+  // --- Helpers ---
+  function _read(){
+    try { return JSON.parse(localStorage.getItem(DK) || '{}') || {}; }
+    catch(e){ return {}; }
+  }
+  function _isV20Shape(obj){
+    if(!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+    var keys = Object.keys(obj);
+    if(keys.length === 0) return true; // vacío válido
+    // Al menos UN cliente debe tener sc, sm o h definidos
+    for(var i=0; i<keys.length; i++){
+      var v = obj[keys[i]];
+      if(v && typeof v === 'object' && (
+        typeof v.sc === 'number' || typeof v.sm === 'number' || Array.isArray(v.h)
+      )) return true;
+    }
+    return false;
+  }
+  function _hasData(obj){
+    if(!obj) return false;
+    var keys = Object.keys(obj);
+    for(var i=0;i<keys.length;i++){
+      var v = obj[keys[i]];
+      if(v && ((Number(v.sc)||0) > 0 || (Number(v.sm)||0) > 0 || (Array.isArray(v.h) && v.h.length>0))) return true;
+    }
+    return false;
+  }
+
+  // --- Backup rotativo ---
+  function _backup(reason){
+    try {
+      var actual = localStorage.getItem(DK);
+      if(!actual) return;
+      var ts = new Date().toISOString();
+      var key = BACKUP_PREFIX + ts.replace(/[:.]/g,'-');
+      var payload = { ts: ts, reason: reason||'auto', data: actual };
+      localStorage.setItem(key, JSON.stringify(payload));
+      // Rotar: dejar máximo BACKUP_MAX
+      var all = [];
+      for(var i=0; i<localStorage.length; i++){
+        var k = localStorage.key(i);
+        if(k && k.indexOf(BACKUP_PREFIX) === 0) all.push(k);
+      }
+      all.sort();
+      while(all.length > BACKUP_MAX){
+        localStorage.removeItem(all.shift());
+      }
+    } catch(e){ console.warn('Backup falló:', e); }
+  }
+
+  // Hacer un backup ahora del estado actual (si existe), por si ya hubo daño no detectado
+  _backup('init');
+
+  // --- Wrap de localStorage.setItem para PROTEGER vn_deudas_v20 ---
+  // CRÍTICO: V22 corre ANTES que V12. Wrappeamos AHORA para que cuando V12
+  // ejecute `LS.set = localStorage.setItem.bind(localStorage)` capture NUESTRO
+  // wrapper. Así toda escritura (local + entrante por realtime) pasa por aquí.
+  // Capturamos el setter CRUDO de Storage.prototype para usar como bypass seguro
+  // (escritura sin disparar sync de V12) cuando sea necesario.
+  var _rawSet = Storage.prototype.setItem;
+  function _rawWrite(key, value){ _rawSet.call(localStorage, key, value); }
+
+  (function _instalarProteccion(){
+    var _prevSet = localStorage.setItem.bind(localStorage);
+
+    localStorage.setItem = function(key, value){
+      try {
+        // CLAVE LEGACY 'cartera_deudas': se permite escritura LOCAL pero NUNCA
+        // se sincroniza a Supabase (porque colisiona con vn_deudas_v20).
+        if(key === 'cartera_deudas'){
+          _rawWrite(key, value);
+          return;
+        }
+
+        if(key === DK){
+          // Validar payload V20
+          var parsed = null;
+          try { parsed = JSON.parse(value); } catch(e){ parsed = null; }
+          var actual = _read();
+          var actualTieneData = _hasData(actual);
+          var entrante = parsed || {};
+          var entranteValido = _isV20Shape(entrante);
+
+          // Si entrante NO tiene forma V20 y trae contenido → REJECT (es corrupción legacy)
+          if(!entranteValido && entrante && Object.keys(entrante).length > 0){
+            console.warn('🛡️ V22: Bloqueada escritura no-V20 a vn_deudas_v20 (estructura inválida).');
+            return; // no escribir
+          }
+          // Si entrante NO tiene forma V20 y actual SÍ tenía data → REJECT
+          if(!entranteValido && actualTieneData){
+            console.warn('🛡️ V22: Bloqueada sobreescritura corrupta a vn_deudas_v20.');
+            return; // no escribir
+          }
+          // Si entrante está vacío pero actual tenía data → backup defensivo
+          if(actualTieneData && entrante && Object.keys(entrante).length === 0){
+            _backup('pre-empty-overwrite');
+          } else {
+            _backup('pre-write');
+          }
+        }
+      } catch(e){ /* no romper la escritura por errores de validación */ }
+
+      return _prevSet(key, value);
+    };
+  })();
+
+  // --- Listar backups disponibles ---
+  window.vnDeudaListarBackups = function(){
+    var all = [];
+    for(var i=0; i<localStorage.length; i++){
+      var k = localStorage.key(i);
+      if(k && k.indexOf(BACKUP_PREFIX) === 0){
+        try {
+          var p = JSON.parse(localStorage.getItem(k));
+          var d = JSON.parse(p.data || '{}');
+          var nClientes = Object.keys(d).filter(function(n){
+            var v = d[n]||{}; return (Number(v.sc)||0)>0 || (Number(v.sm)||0)>0;
+          }).length;
+          all.push({ key: k, ts: p.ts, reason: p.reason, nClientes: nClientes });
+        } catch(e){}
+      }
+    }
+    return all.sort(function(a,b){ return b.ts.localeCompare(a.ts); });
+  };
+
+  // --- Restaurar desde un backup específico ---
+  window.vnDeudaRestaurarBackup = function(backupKey){
+    try {
+      var raw = localStorage.getItem(backupKey);
+      if(!raw){ alert('Backup no encontrado.'); return false; }
+      var p = JSON.parse(raw);
+      if(!p || !p.data){ alert('Backup corrupto.'); return false; }
+      var parsed = JSON.parse(p.data);
+      if(!_isV20Shape(parsed)){ alert('Backup tiene formato inválido.'); return false; }
+      _backup('pre-restore');
+      localStorage.setItem(DK, p.data);
+      alert('✅ Deudas restauradas desde ' + p.ts);
+      if(typeof renderCartera==='function') renderCartera();
+      return true;
+    } catch(e){ alert('Error: '+e.message); return false; }
+  };
+
+  // --- Reconstruir deudas desde recaudo_* históricos ---
+  // Suma deudaCliente y deudaMia por cliente a través de todos los días registrados
+  // y resta los pagos de 'cartera_deudas' (legacy deudasPagadas) si existen.
+  window.vnDeudaReconstruirDesdeRecaudos = function(opciones){
+    opciones = opciones || {};
+    var dryRun = !!opciones.dryRun;
+    var actual = _read();
+    var reconstruido = {};
+
+    // Recorrer todas las entradas recaudo_*
+    for(var i=0; i<localStorage.length; i++){
+      var k = localStorage.key(i);
+      if(!k || k.indexOf('recaudo_') !== 0) continue;
+      var fecha = k.slice('recaudo_'.length);
+      var obj = {};
+      try { obj = JSON.parse(localStorage.getItem(k) || '{}'); } catch(e){ continue; }
+      Object.keys(obj).forEach(function(nombre){
+        if(nombre.indexOf('__') === 0) return;
+        var entry = obj[nombre] || {};
+        var dc = Number(entry.deudaCliente)||0;
+        var dm = Number(entry.deudaMia)||0;
+        if(dc<=0 && dm<=0) return;
+
+        if(!reconstruido[nombre]) reconstruido[nombre] = { sc:0, sm:0, h:[] };
+        if(dc>0){
+          reconstruido[nombre].sc += dc;
+          reconstruido[nombre].h.push({
+            id: 'r'+fecha+'_c_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
+            fecha: fecha, hora: '00:00', tipo: 'deuda', sub: 'cliente',
+            monto: dc, saldo: reconstruido[nombre].sc,
+            nota: 'Reconstruido desde recaudo histórico ('+fecha+')',
+            _reconstruido: true
+          });
+        }
+        if(dm>0){
+          reconstruido[nombre].sm += dm;
+          reconstruido[nombre].h.push({
+            id: 'r'+fecha+'_m_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
+            fecha: fecha, hora: '00:00', tipo: 'deuda', sub: 'mia',
+            monto: dm, saldo: reconstruido[nombre].sm,
+            nota: 'Reconstruido desde recaudo histórico ('+fecha+')',
+            _reconstruido: true
+          });
+        }
+      });
+    }
+
+    // Restar pagos del legacy cartera_deudas
+    try {
+      var cd = JSON.parse(localStorage.getItem('cartera_deudas') || '{}');
+      Object.keys(cd).forEach(function(n){
+        var pagado = Number(cd[n] && cd[n].deudasPagadas)||0;
+        if(pagado>0 && reconstruido[n]){
+          var fpago = (cd[n] && cd[n].fechaPago) || new Date().toISOString().slice(0,10);
+          // Distribuir el pago: primero a sc, luego sm
+          var rest = pagado;
+          var aplicSC = Math.min(reconstruido[n].sc, rest);
+          if(aplicSC>0){
+            reconstruido[n].sc -= aplicSC; rest -= aplicSC;
+            reconstruido[n].h.push({
+              id:'r_pc_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
+              fecha:fpago, hora:'00:00', tipo:'pago', sub:'cliente',
+              monto:aplicSC, metodo:(cd[n].metodoPago||''), banco:(cd[n].banco||''),
+              saldo: reconstruido[n].sc, nota:'Pago reconstruido'
+            });
+          }
+          if(rest>0){
+            var aplicSM = Math.min(reconstruido[n].sm, rest);
+            if(aplicSM>0){
+              reconstruido[n].sm -= aplicSM;
+              reconstruido[n].h.push({
+                id:'r_pm_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
+                fecha:fpago, hora:'00:00', tipo:'pago', sub:'mia',
+                monto:aplicSM, metodo:(cd[n].metodoPago||''), banco:(cd[n].banco||''),
+                saldo: reconstruido[n].sm, nota:'Pago reconstruido'
+              });
+            }
+          }
+        }
+      });
+    } catch(e){}
+
+    // FUSIONAR con datos actuales (no perder lo que ya está bien si existe)
+    var fusionado = {};
+    Object.keys(actual).forEach(function(n){ fusionado[n] = actual[n]; });
+    Object.keys(reconstruido).forEach(function(n){
+      if(!fusionado[n] || ((Number(fusionado[n].sc)||0)===0 && (Number(fusionado[n].sm)||0)===0 && (!fusionado[n].h || fusionado[n].h.length===0))){
+        fusionado[n] = reconstruido[n];
+      }
+      // Si el actual tiene historial, mantenerlo; no machacar.
+    });
+
+    var resumen = {
+      clientesActuales: Object.keys(actual).filter(function(n){
+        var v=actual[n]||{}; return (Number(v.sc)||0)>0||(Number(v.sm)||0)>0;
+      }).length,
+      clientesReconstruidos: Object.keys(reconstruido).length,
+      clientesFusionados: Object.keys(fusionado).filter(function(n){
+        var v=fusionado[n]||{}; return (Number(v.sc)||0)>0||(Number(v.sm)||0)>0;
+      }).length
+    };
+
+    if(dryRun) return { resumen: resumen, datos: fusionado };
+
+    _backup('pre-reconstruir');
+    localStorage.setItem(DK, JSON.stringify(fusionado));
+    return { resumen: resumen };
+  };
+
+  // --- Edit atómico seguro: reemplaza vnCartGuardarEdit y carteraGuardarDeuda ---
+  var _safeSetSaldos = function(nombre, dc, dm){
+    if(!nombre) return;
+    dc = Math.abs(Number(dc)||0);
+    dm = Math.abs(Number(dm)||0);
+    var d = _read();
+    if(!d[nombre]) d[nombre] = { sc:0, sm:0, h:[] };
+    if(!Array.isArray(d[nombre].h)) d[nombre].h = [];
+    var prevSC = Number(d[nombre].sc)||0;
+    var prevSM = Number(d[nombre].sm)||0;
+    d[nombre].sc = dc;
+    d[nombre].sm = dm;
+    if(prevSC !== dc){
+      d[nombre].h.push({
+        id:'e'+Date.now()+'_c_'+Math.random().toString(36).slice(2,5),
+        fecha:new Date().toISOString().slice(0,10),
+        hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),
+        tipo:'saldo_ini', sub:'cliente', monto:dc, saldo:dc,
+        nota:'Edición manual ('+prevSC+' → '+dc+')'
+      });
+    }
+    if(prevSM !== dm){
+      d[nombre].h.push({
+        id:'e'+Date.now()+'_m_'+Math.random().toString(36).slice(2,5),
+        fecha:new Date().toISOString().slice(0,10),
+        hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),
+        tipo:'saldo_ini', sub:'mia', monto:dm, saldo:dm,
+        nota:'Edición manual ('+prevSM+' → '+dm+')'
+      });
+    }
+    _backup('pre-edit-'+nombre);
+    localStorage.setItem(DK, JSON.stringify(d));
+  };
+
+  window.vnCartGuardarEdit = function(nombre){
+    var dc = Number((document.getElementById('vnED1')||{}).value)||0;
+    var dm = Number((document.getElementById('vnED2')||{}).value)||0;
+    _safeSetSaldos(nombre, dc, dm);
+    if(typeof cerrarMC==='function') cerrarMC();
+    if(typeof renderCartera==='function') renderCartera();
+  };
+
+  // Reemplazar también el legacy carteraGuardarDeuda para que use V20 y NO toque
+  // 'cartera_deudas' localStorage (evita la colisión de Supabase).
+  window.carteraGuardarDeuda = function(nombre){
+    var dc = Number((document.getElementById('cartEditDeudaC')||{}).value)||0;
+    var dm = Number((document.getElementById('cartEditDeudaM')||{}).value)||0;
+    _safeSetSaldos(nombre, dc, dm);
+    if(typeof cerrarMC==='function') cerrarMC();
+    if(typeof renderCartera==='function') renderCartera();
+  };
+
+  // --- UI: Modal de recuperación ---
+  window.vnDeudaAbrirRecovery = function(){
+    var sim = window.vnDeudaReconstruirDesdeRecaudos({dryRun:true});
+    var backups = window.vnDeudaListarBackups();
+    var bkHtml = '';
+    if(backups.length === 0){
+      bkHtml = '<div style="color:#94a3b8;font-size:12px;padding:8px;">Sin snapshots aún.</div>';
+    } else {
+      bkHtml = backups.slice(0,8).map(function(b){
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;margin-bottom:6px;background:rgba(255,255,255,0.03);">'+
+          '<div><div style="font-size:12px;font-weight:700;color:#e2e8f0;">'+new Date(b.ts).toLocaleString('es-CO')+'</div>'+
+          '<div style="font-size:10px;color:#94a3b8;">'+b.reason+' · '+b.nClientes+' clientes con deuda</div></div>'+
+          '<button onclick="vnDeudaRestaurarBackup(\''+b.key+'\')" style="padding:6px 12px;background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.3);border-radius:6px;color:#4ade80;font-weight:700;cursor:pointer;font-size:11px;">Restaurar</button>'+
+        '</div>';
+      }).join('');
+    }
+    if(typeof mostrarMC === 'function'){
+      mostrarMC(
+        '<h3 style="text-align:center;">🛟 Recuperar deudas</h3>'+
+        '<div style="background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:12px;margin-bottom:14px;font-size:12px;color:#93c5fd;">'+
+          '<b>Reconstrucción desde recaudo histórico</b><br>'+
+          'Clientes actuales con deuda: <b>'+sim.resumen.clientesActuales+'</b><br>'+
+          'Clientes reconstruibles desde recaudo_*: <b>'+sim.resumen.clientesReconstruidos+'</b><br>'+
+          'Resultado fusionado estimado: <b>'+sim.resumen.clientesFusionados+'</b>'+
+        '</div>'+
+        '<button onclick="if(confirm(\'¿Reconstruir deudas desde recaudo histórico? Se hará backup antes.\')){var r=vnDeudaReconstruirDesdeRecaudos();alert(\'✅ Reconstruidas. Clientes con deuda: \'+r.resumen.clientesFusionados);cerrarMC();if(typeof renderCartera===\'function\')renderCartera();}" style="width:100%;padding:10px;background:#d97706;border:none;border-radius:8px;color:white;font-weight:800;cursor:pointer;margin-bottom:14px;">🔄 Reconstruir desde recaudo histórico</button>'+
+        '<div style="font-size:12px;color:#94a3b8;font-weight:700;margin-bottom:8px;">Snapshots automáticos:</div>'+
+        bkHtml+
+        '<div class="mc-btns" style="margin-top:12px;"><button class="mc-btn-cancel" onclick="cerrarMC()">Cerrar</button></div>'
+      );
+    } else {
+      // Fallback en consola
+      console.table(backups);
+      console.log('Reconstrucción simulada:', sim.resumen);
+    }
+  };
+
+  // --- Inyectar botón "🛟 Restaurar deudas" en la cabecera de cartera ---
+  function _inyectarBoton(){
+    var body = document.getElementById('carteraBody') || document.getElementById('panelCartera');
+    if(!body) return;
+    if(document.getElementById('vnRecoveryBtn')) return;
+    var btn = document.createElement('button');
+    btn.id = 'vnRecoveryBtn';
+    btn.textContent = '🛟 Recuperar deudas';
+    btn.style.cssText = 'position:absolute;top:14px;right:120px;padding:8px 14px;background:rgba(217,119,6,0.18);border:1px solid rgba(217,119,6,0.4);border-radius:10px;color:#fbbf24;font-weight:700;cursor:pointer;font-size:12px;z-index:50;';
+    btn.onclick = function(){ window.vnDeudaAbrirRecovery(); };
+    body.appendChild(btn);
+  }
+  // Hook al renderCartera
+  var _origRC = window.renderCartera;
+  if(typeof _origRC === 'function'){
+    window.renderCartera = async function(){
+      var r = await _origRC.apply(this, arguments);
+      setTimeout(_inyectarBoton, 200);
+      return r;
+    };
+  }
+
+  console.log('✅ Parche V22: Bug de borrado de deudas corregido + recovery instalado');
+  console.log('   Para recuperar: abre Cartera → botón "🛟 Recuperar deudas"');
+  console.log('   O en consola: vnDeudaAbrirRecovery()');
 })();
 
 // =====================================================
