@@ -32,6 +32,7 @@ let movimientosContables = [];
   });
 
   cuentasGuardar();
+  if(typeof window._mcPersist==='function') window._mcPersist();
 }
 function tipoEmoji(tipo){
   const m={"CUENTA CORRIENTE":"🏛️","CUENTA DE AHORRO":"🐖","NEQUI":"📱","DAVIPLATA":"📱","EFECTIVO":"💵"};
@@ -3100,7 +3101,7 @@ function agregarGasto(){
   let cuenta = Number(document.getElementById("gastoCuenta")?.value ?? -1);
   if(!desc||monto<=0){ alert("Completa descripción y valor"); return; }
   if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
-  gastosMemoria.push({descripcion:desc, categoria:cat, monto});
+  gastosMemoria.push({descripcion:desc, categoria:cat, monto, fecha:new Date().toISOString(), cuenta:(cuenta>=0&&cuentasMemoria[cuenta])?cuentasMemoria[cuenta].nombre:'Efectivo'});
   // Descontar de la cuenta seleccionada
   if(cuenta >= 0 && cuentasMemoria[cuenta]){
     registrarMovimiento({
@@ -3112,6 +3113,7 @@ function agregarGasto(){
     cuentasGuardar();
   }
   try{ sessionStorage.setItem("gastos", JSON.stringify(gastosMemoria)); }catch(e){}
+  if(typeof window._mcPersist==='function') window._mcPersist();
   renderConta("resumen");
 }
 
@@ -3258,6 +3260,7 @@ async function recaudoConstruirData(){
       tipo: c.tipo || "moto",
       subtotal: subtotal,
       recaudoDomi: Number(saved.recaudoDomi || 0),
+      domiIncluirDeuda: !!saved.domiIncluirDeuda,
       recibido: !!saved.recibido,
       nequi: Number(saved.nequi || 0),
       bancolombia: Number(saved.bancolombia || 0),
@@ -3359,6 +3362,7 @@ async function renderRecaudo(){
     rows.forEach(function(r){
       bruto += r.subtotal;
       recaudoDomi += r.recaudoDomi;
+      if(r.domiIncluirDeuda) recaudoDomi += (Number(r._deudaTotalCliente)||0);
       nequiVentas += r.nequi;
       bancolombiaVentas += r.bancolombia;
       faltantes += r.faltantes;
@@ -3527,36 +3531,17 @@ async function renderRecaudo(){
  
               // HTML de deuda
               let deudaHtml = '';
-              if(r.deudaCliente > 0 || r.deudaMia > 0){
-                if(r.deudasPagadas > 0 && r.deudaMetodo){
-                  let metodoIcono = r.deudaMetodo === 'efectivo' ? '💵' : '🏦';
-                  let metodoLabel = r.deudaMetodo === 'efectivo' ? 'Efectivo' : (r.deudaBanco || 'Transf.');
+              let _tdc = r._deudaTotalCliente || 0;
+              let _tdm = r._deudaTotalMia || 0;
+              if(_tdc > 0 || _tdm > 0){
                   deudaHtml = `
-                    <div style="font-size:10px;color:#4ade80;font-weight:700;margin-bottom:3px;">
-                      ✓ ${metodoIcono} ${metodoLabel}
+                    <div style="font-size:11px;color:${_tdc > 0 ? '#fca5a5' : '#93c5fd'};font-weight:700;margin-bottom:3px;">
+                      ${_tdc > 0 ? '⚠️ ' + recaudoMoney(_tdc) : '💙 ' + recaudoMoney(_tdm)}
                     </div>
-                    <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox" checked
-                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})"
-                      title="Click para revertir">
+                    <input class="recaudo-check" type="checkbox"
+                      onclick="event.stopPropagation(); vnDeudaPagoModal(${JSON.stringify(safe).replace(/"/g,'&quot;')}, ${_tdc}, ${_tdm}); this.checked=false;"
+                      title="${_tdc > 0 ? 'Registrar pago' : 'Descontar'}">
                   `;
-                } else if(r.deudaMiaPagada > 0){
-                  deudaHtml = `
-                    <div style="font-size:10px;color:#60a5fa;font-weight:700;margin-bottom:3px;">
-                      ✓ Descontado
-                    </div>
-                    <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox" checked
-                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})">
-                  `;
-                } else {
-                  deudaHtml = `
-                    <div style="font-size:11px;color:${r.deudaCliente > 0 ? '#fca5a5' : '#93c5fd'};font-weight:700;margin-bottom:3px;">
-                      ${r.deudaCliente > 0 ? '⚠️ ' + recaudoMoney(r.deudaCliente) : '💙 ' + recaudoMoney(r.deudaMia)}
-                    </div>
-                    <input id="rec_deuda_saldo_${safe}" class="recaudo-check" type="checkbox"
-                      onchange="recaudoMarcarDeudaSaldada('${safe}', ${r.deudaCliente}, ${r.deudaMia})"
-                      title="${r.deudaCliente > 0 ? 'Marcar pago' : 'Descontar'}">
-                  `;
-                }
               } else {
                 deudaHtml = '<span style="color:#4ade80;font-size:11px">✓ Sin deuda</span>';
               }
@@ -3568,32 +3553,41 @@ async function renderRecaudo(){
                   <td>${recaudoMoney(r.subtotal)}</td>
                   <td style="text-align:center;">${deudaHtml}</td>
                   <td style="text-align:center;">
-                    <input id="rec_domi_${safe}" class="recaudo-check" type="checkbox"
-                      ${r.recaudoDomi > 0 ? 'checked' : ''}
-                      onchange="recaudoToggleDomi('${safe}', ${r.subtotal})">
+                    <div style="display:flex;align-items:center;justify-content:center;gap:8px;">
+                      ${_tdc > 0 ? `<input id="rec_domideuda_${safe}" class="recaudo-check" type="checkbox" style="accent-color:#f59e0b;"
+                        ${r.domiIncluirDeuda ? 'checked' : ''}
+                        onclick="recaudoToggleDomiDeuda(${JSON.stringify(safe).replace(/"/g,'&quot;')})"
+                        title="Sumar la deuda (${recaudoMoney(_tdc)}) al total de recaudo domi">` : ''}
+                      <input id="rec_domi_${safe}" class="recaudo-check" type="checkbox"
+                        ${r.recaudoDomi > 0 ? 'checked' : ''}
+                        onclick="recaudoToggleDomi(${JSON.stringify(safe).replace(/"/g,'&quot;')}, ${r.subtotal})">
+                    </div>
                   </td>
                   <td style="text-align:center;">
                     <input id="rec_rec_${safe}" class="recaudo-check" type="checkbox"
                       ${r.recibido ? 'checked' : ''}
-                      onchange="recaudoToggleRecibido('${safe}')">
+                      onclick="recaudoToggleRecibido(${JSON.stringify(safe).replace(/"/g,'&quot;')})">
                   </td>
                   <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.nequi > 0 ? r.nequi.toLocaleString('es-CO') : ''}" data-raw="${r.nequi}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
                   <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.bancolombia > 0 ? r.bancolombia.toLocaleString('es-CO') : ''}" data-raw="${r.bancolombia}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
-                  <td><input id="rec_dc_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"
-  value="${r.deudaCliente > 0 ? r.deudaCliente.toLocaleString('es-CO') : ''}"
-  data-raw="${r.deudaCliente}"
-  style="background:rgba(239,68,68,0.13)!important;border:1px solid rgba(239,68,68,0.35)!important;color:#fca5a5!important;"
-  onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); recaudoAutoCheckDeuda('${safe}');"></td>
-<td><input id="rec_dm_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"
-  value="${r.deudaMia > 0 ? r.deudaMia.toLocaleString('es-CO') : ''}"
-  data-raw="${r.deudaMia}"
-  style="background:rgba(59,130,246,0.13)!important;border:1px solid rgba(59,130,246,0.35)!important;color:#93c5fd!important;"
-  onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); recaudoAutoCheckDeuda('${safe}');"></td>
-                  <td><input id="rec_dm_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.deudaMia > 0 ? r.deudaMia.toLocaleString('es-CO') : ''}" data-raw="${r.deudaMia}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}');"></td>
+                  <td style="text-align:center;">
+                    <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
+                      <input type="checkbox" class="recaudo-check" style="accent-color:#ef4444;"
+                        onclick="event.stopPropagation(); vnDeudaModal(${JSON.stringify(safe).replace(/"/g,'&quot;')}, 'cliente'); this.checked=false;" title="Agregar deuda del cliente">
+                      ${r._deudaTotalCliente > 0 ? '<span style="font-size:10px;color:#fca5a5;font-weight:700;">$'+r._deudaTotalCliente.toLocaleString('es-CO')+'</span>' : ''}
+                    </div>
+                  </td>
+                  <td style="text-align:center;">
+                    <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
+                      <input type="checkbox" class="recaudo-check" style="accent-color:#3b82f6;"
+                        onclick="event.stopPropagation(); vnDeudaModal(${JSON.stringify(safe).replace(/"/g,'&quot;')}, 'mia'); this.checked=false;" title="Agregar deuda mía">
+                      ${r._deudaTotalMia > 0 ? '<span style="font-size:10px;color:#93c5fd;font-weight:700;">$'+r._deudaTotalMia.toLocaleString('es-CO')+'</span>' : ''}
+                    </div>
+                  </td>
                   <td><input id="rec_fal_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"
   value="${r.faltantes > 0 ? r.faltantes.toLocaleString('es-CO') : ''}"
   data-raw="${r.faltantes}"
-  style="background:rgba(234,179,8,0.13)!important;border:1px solid rgba(234,179,8,0.35)!important;color:#fde047!important;"
+  style="background:rgba(168,85,247,0.12)!important;border:1px solid rgba(168,85,247,0.35)!important;color:#c084fc!important;"
   onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo()"></td>
                   <td><input id="rec_sal_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.salidas > 0 ? r.salidas.toLocaleString('es-CO') : ''}" data-raw="${r.salidas}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
                   <td><div class="recaudo-resumen ${r.resumen.clase}">${r.resumen.texto}</div></td>
@@ -3842,21 +3836,89 @@ async function renderCartera(filtroMora, filtroNombre) {
   let totalPedidosTodos = lista.reduce((s,c)=>s+c.totalPedidos,0);
   let pctRecuperacion = totalPedidosTodos > 0 ? Math.round(((totalPedidosTodos - totalCartera)/totalPedidosTodos)*100) : 0;
  
-  // ========== DATOS DE TIBERIO ==========
-  let tiberioNombre = "MARKET DEL RIO - TIBERIO";
- 
-  let pagosTiberio = [];
+  // ========== DATOS DEUDAS V20 (multi-cliente) ==========
+  let vnDeudasStore = {};
+  try { vnDeudasStore = JSON.parse(localStorage.getItem('vn_deudas_v20') || '{}'); } catch(e) { vnDeudasStore = {}; }
+
+  let vnDeudasLista = [];
+  Object.keys(vnDeudasStore).forEach(function(n){
+    let d = vnDeudasStore[n] || {};
+    let sc = Number(d.sc)||0, sm = Number(d.sm)||0;
+    if(sc>0 || sm>0) vnDeudasLista.push({nombre:n, sc:sc, sm:sm, h:d.h||[]});
+  });
+  vnDeudasLista.sort(function(a,b){return (b.sc+b.sm)-(a.sc+a.sm);});
+
+  let totalPorCobrar = vnDeudasLista.reduce(function(s,x){return s+x.sc;},0);
+  let totalPorPagar  = vnDeudasLista.reduce(function(s,x){return s+x.sm;},0);
+  let totalCarteraV20 = totalPorCobrar + totalPorPagar;
+
+  // ========== MERGE vn_deudas_v20 en la lista de Cartera ==========
+  let _existentes = {};
+  listaFiltrada.forEach(function(c){ _existentes[c.nombre] = c; });
+  vnDeudasLista.forEach(function(d){
+    // Última fecha de movimiento
+    let ultimaFecha = '—';
+    if(Array.isArray(d.h) && d.h.length > 0){
+      let last = d.h[d.h.length-1];
+      ultimaFecha = last.fecha || '—';
+    }
+    if(_existentes[d.nombre]){
+      _existentes[d.nombre].deuda = (Number(_existentes[d.nombre].deuda)||0) + d.sc;
+      _existentes[d.nombre]._leDebo = d.sm;
+      if(ultimaFecha !== '—') _existentes[d.nombre].ultimoPago = ultimaFecha;
+    } else {
+      let pasa = true;
+      if(filtroNombre) pasa = d.nombre.toLowerCase().includes(filtroNombre.toLowerCase());
+      if(!pasa) return;
+      listaFiltrada.push({
+        nombre: d.nombre,
+        deuda: d.sc,
+        _leDebo: d.sm,
+        diasMora: 0,
+        ultimoPago: ultimaFecha,
+        estado: d.sc > 0 ? 'Al día' : (d.sm > 0 ? 'Yo le debo' : 'Sin deuda'),
+        semaforo: 'verde',
+        ranking: 'bueno',
+        totalPedidos: d.sc,
+        _fromV20: true
+      });
+    }
+  });
+  listaFiltrada.sort(function(a,b){return (b.deuda||0)-(a.deuda||0);});
+
+  // Actualizar KPIs incluyendo vn_deudas_v20
+  totalCartera = listaFiltrada.reduce(function(s,c){return s+(Number(c.deuda)||0);},0);
+  cartVencer   = cartVencer + totalPorCobrar;
+
+  // Cliente seleccionado (persistido en window)
+  let selNombre = window._vnCarteraClienteSel || '';
+  let selData = (selNombre && vnDeudasStore[selNombre]) ? vnDeudasStore[selNombre] : {sc:0,sm:0,h:[]};
+
+  // Lista desplegable de clientes (del panel principal)
+  let _clientesFuente = [];
   try {
-    pagosTiberio = JSON.parse(localStorage.getItem('cartera_pagos_historial') || '[]');
-    pagosTiberio = pagosTiberio.filter(p => p.cliente === tiberioNombre);
-  } catch(e) { pagosTiberio = []; }
- 
-  let deudaInfo = recaudoGetDeudaHistorica(tiberioNombre);
-  let deudaTotalTiberio = deudaInfo.deudaCliente;
-  let leDeboTiberio = deudaInfo.deudaMia;
-  let pagadoTiberio = deudaInfo.deudasPagadas;
-  let totalPagadoHistorial = pagosTiberio.reduce((s,p) => s + (Number(p.monto)||0), 0);
-  let saldoReal = Math.max(deudaTotalTiberio - pagadoTiberio - totalPagadoHistorial, 0);
+    if(typeof clientes !== 'undefined' && Array.isArray(clientes)) _clientesFuente = clientes;
+    else if(Array.isArray(window.clientes)) _clientesFuente = window.clientes;
+    else {
+      let raw = JSON.parse(localStorage.getItem('clientes')||'[]');
+      if(Array.isArray(raw)) _clientesFuente = raw;
+    }
+  } catch(e) { _clientesFuente = []; }
+
+  let _nombresSet = {};
+  _clientesFuente.forEach(function(c){
+    let n = typeof c==='string' ? c : (c && c.nombre ? c.nombre : '');
+    if(n) _nombresSet[n] = true;
+  });
+  // También incluir clientes que ya tienen deuda en vn_deudas_v20
+  Object.keys(vnDeudasStore).forEach(function(n){ if(n) _nombresSet[n] = true; });
+
+  let _nombresClientes = Object.keys(_nombresSet).sort(function(a,b){return a.localeCompare(b,'es');});
+  let vnClientesOpts = '<option value="">— Seleccionar cliente —</option>';
+  _nombresClientes.forEach(function(n){
+    let sel = (n===selNombre)?' selected':'';
+    vnClientesOpts += '<option value="'+n.replace(/"/g,'&quot;')+'"'+sel+'>'+n+'</option>';
+  });
  
   // ========== OPTIONS DE CUENTAS ==========
   let cuentasOpts = '';
@@ -3866,120 +3928,92 @@ async function renderCartera(filtroMora, filtroNombre) {
     });
   }
  
-  // ========== CUADRO 1: DEUDAS DE TIBERIO ==========
-  let cuadro1Html = '';
- 
-  if (deudaTotalTiberio <= 0 && leDeboTiberio <= 0 && pagosTiberio.length === 0) {
-    cuadro1Html = `
-      <div class="chart-card">
-        <div class="chart-title">\u{1F4CB} Deudas — ${tiberioNombre}</div>
-        <div style="padding:30px;text-align:center;">
-          <div style="font-size:40px;margin-bottom:12px;">\u2705</div>
-          <div style="color:#4ade80;font-size:16px;font-weight:700;margin-bottom:6px;">Sin deudas pendientes</div>
-          <div style="color:#94a3b8;font-size:13px;">Este cliente est\u00e1 al d\u00eda con todos sus pagos.</div>
-        </div>
-      </div>
-    `;
+  // ========== CUADRO 1: HISTORIAL DE CLIENTE SELECCIONADO ==========
+  let histHtml = '';
+  let scSel = Number(selData.sc)||0, smSel = Number(selData.sm)||0;
+  let histArr = Array.isArray(selData.h) ? selData.h.slice() : [];
+  if(selNombre && histArr.length > 0){
+    histArr.reverse();
+    histHtml = '<div style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">';
+    histArr.forEach(function(x){
+      let esPago = x.tipo==='pago', esIni = x.tipo==='saldo_ini';
+      let bg = esPago?'rgba(34,197,94,0.08)':(esIni?'rgba(59,130,246,0.08)':'rgba(255,255,255,0.03)');
+      let lbl = esPago?'PAGO':(esIni?'SALDO INICIAL':'DEUDA');
+      let clr = esPago?'#86efac':(esIni?'#93c5fd':'#fca5a5');
+      let metaStr = '';
+      if(esPago){ metaStr = (x.metodo==='efectivo'?'💵 Efectivo':'🏦 '+(x.banco||'Transferencia')); }
+      histHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:'+bg+';border:1px solid rgba(255,255,255,0.06);border-radius:8px;gap:10px;">'+
+        '<div style="min-width:0;flex:1;">'+
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><span style="font-size:10px;font-weight:800;color:'+clr+';">'+lbl+'</span><span style="font-size:10px;color:#94a3b8;">'+(x.fecha||'')+(x.hora?' '+x.hora:'')+'</span></div>'+
+          (metaStr?'<div style="font-size:11px;color:#cbd5e1;margin-top:2px;">'+metaStr+'</div>':'')+
+          (x.nota?'<div style="font-size:11px;color:#94a3b8;margin-top:2px;">'+x.nota+'</div>':'')+
+          '<div style="display:flex;gap:12px;margin-top:3px;font-size:11px;flex-wrap:wrap;"><span style="color:'+clr+';">Monto: <strong>$'+(Number(x.monto)||0).toLocaleString('es-CO')+'</strong></span><span style="color:#fcd34d;">Saldo: <strong>$'+(Number(x.saldo)||0).toLocaleString('es-CO')+'</strong></span></div>'+
+        '</div>'+
+        '<button onclick="vnDeudaEliminar('+JSON.stringify(selNombre).replace(/"/g,'&quot;')+',\''+(x.id||'').replace(/\'/g,"\\'")+'\')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;" title="Eliminar">✕</button>'+
+      '</div>';
+    });
+    histHtml += '</div>';
+  } else if(selNombre){
+    histHtml = '<div style="padding:24px;text-align:center;color:#64748b;font-size:13px;">Sin movimientos para <strong>'+selNombre+'</strong></div>';
   } else {
-    cuadro1Html = `
-      <div class="chart-card">
-        <div class="chart-title">\u{1F4CB} Deudas — ${tiberioNombre}</div>
- 
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px;">
-          <div style="background:rgba(220,38,38,0.12);border:1px solid rgba(220,38,38,0.25);border-radius:10px;padding:12px;text-align:center;">
-            <div style="font-size:11px;color:#fca5a5;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:4px;">Me debe</div>
-            <div style="font-size:20px;font-weight:800;color:#f87171;">${recaudoMoney(deudaTotalTiberio)}</div>
-          </div>
-          <div style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);border-radius:10px;padding:12px;text-align:center;">
-            <div style="font-size:11px;color:#86efac;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:4px;">Ya pag\u00f3</div>
-            <div style="font-size:20px;font-weight:800;color:#4ade80;">${recaudoMoney(pagadoTiberio + totalPagadoHistorial)}</div>
-          </div>
-          <div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:12px;text-align:center;">
-            <div style="font-size:11px;color:#fcd34d;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:4px;">Saldo pendiente</div>
-            <div style="font-size:20px;font-weight:800;color:#fbbf24;">${recaudoMoney(saldoReal)}</div>
-          </div>
-        </div>
- 
-        ${leDeboTiberio > 0 ? `
-        <div style="background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
-          <span style="font-size:18px;">\u{1F499}</span>
-          <span style="color:#93c5fd;font-size:13px;font-weight:600;">T\u00fa le debes a este cliente: ${recaudoMoney(leDeboTiberio)}</span>
-        </div>
-        ` : ''}
- 
-        <div style="font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.06);">Historial de pagos</div>
- 
-        ${pagosTiberio.length === 0 ? `
-          <div style="padding:16px;text-align:center;color:#64748b;font-size:13px;">No hay pagos registrados a\u00fan</div>
-        ` : `
-          <div style="max-height:220px;overflow-y:auto;">
-            ${pagosTiberio.map((p, idx) => `
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:13px;">
-                <div>
-                  <div style="color:#e2e8f0;font-weight:600;">
-                    ${p.metodo === 'efectivo' ? '\u{1F4B5} Efectivo' : '\u{1F3E6} ' + (p.banco || 'Transferencia')}
-                  </div>
-                  <div style="color:#94a3b8;font-size:11px;">${p.fecha || '\u2014'}${p.nota ? ' \u00b7 ' + p.nota : ''}</div>
-                </div>
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <div style="font-weight:800;color:#4ade80;">+${recaudoMoney(p.monto)}</div>
-                  <button onclick="carteraEliminarPago(${idx})" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;" title="Eliminar pago">\u2715</button>
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        `}
-      </div>
-    `;
+    histHtml = '<div style="padding:24px;text-align:center;color:#64748b;font-size:13px;">Selecciona un cliente de la lista para ver su historial</div>';
   }
- 
-  // ========== CUADRO 2: FORMULARIO DE PAGO ==========
+
+  let cuadro1Html = `
+    <div class="chart-card">
+      <div class="chart-title">📋 Historial de deuda${selNombre?' — '+selNombre:''}</div>
+      ${selNombre ? `
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+          <div style="background:rgba(220,38,38,0.12);border:1px solid rgba(220,38,38,0.25);border-radius:10px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:#fca5a5;text-transform:uppercase;font-weight:600;">Me debe</div>
+            <div style="font-size:18px;font-weight:800;color:#f87171;">${recaudoMoney(scSel)}</div>
+          </div>
+          <div style="background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:#93c5fd;text-transform:uppercase;font-weight:600;">Le debo</div>
+            <div style="font-size:18px;font-weight:800;color:#60a5fa;">${recaudoMoney(smSel)}</div>
+          </div>
+          <div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:#fcd34d;text-transform:uppercase;font-weight:600;">Saldo total</div>
+            <div style="font-size:18px;font-weight:800;color:#fbbf24;">${recaudoMoney(scSel+smSel)}</div>
+          </div>
+        </div>
+      ` : ''}
+      ${histHtml}
+    </div>
+  `;
+
+  // ========== CUADRO 2: SALDO INICIAL PARA CUALQUIER CLIENTE ==========
   let cuadro2Html = `
     <div class="chart-card">
-      <div class="chart-title">\u{1F4B3} Registrar Pago — ${tiberioNombre}</div>
- 
+      <div class="chart-title">⚙️ Establecer saldo inicial de deuda</div>
+
       <div style="margin-bottom:14px;">
-        <label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">Monto del pago</label>
-        <input id="carteraPagoMonto" type="number" placeholder="Ej: 50000" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:12px 14px;font-size:15px;font-family:var(--font-body);font-weight:700;">
-      </div>
- 
-      <div style="margin-bottom:14px;">
-        <label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">M\u00e9todo de pago</label>
-        <div style="display:flex;gap:10px;">
-          <button id="carteraMetodoEfectivo" onclick="carteraSeleccionarMetodo('efectivo')" style="flex:1;padding:14px;border-radius:12px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-size:14px;font-weight:700;cursor:pointer;transition:all 180ms;font-family:var(--font-body);display:flex;flex-direction:column;align-items:center;gap:6px;">
-            <span style="font-size:28px;">\u{1F4B5}</span>
-            Efectivo
-          </button>
-          <button id="carteraMetodoTransferencia" onclick="carteraSeleccionarMetodo('transferencia')" style="flex:1;padding:14px;border-radius:12px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-size:14px;font-weight:700;cursor:pointer;transition:all 180ms;font-family:var(--font-body);display:flex;flex-direction:column;align-items:center;gap:6px;">
-            <span style="font-size:28px;">\u{1F3E6}</span>
-            Transferencia
-          </button>
-        </div>
-      </div>
- 
-      <div id="carteraSelectorCuenta" style="margin-bottom:14px;display:none;">
-        <label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">\u00bfA qu\u00e9 cuenta te pag\u00f3?</label>
-        <select id="carteraCuentaDestino" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:12px 14px;font-size:14px;font-family:var(--font-body);font-weight:600;">
-          ${cuentasOpts}
+        <label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">Seleccionar cliente</label>
+        <select id="vnCartClienteSel" onchange="window._vnCarteraClienteSel=this.value; renderCartera();" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:12px 14px;font-size:14px;font-weight:600;">
+          ${vnClientesOpts}
         </select>
       </div>
- 
-      <div style="margin-bottom:14px;">
-        <label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px;">Nota (opcional)</label>
-        <input id="carteraPagoNota" type="text" placeholder="Ej: Abono parcial, Pago completo..." style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:10px 14px;font-size:13px;font-family:var(--font-body);">
+
+      <div style="margin-bottom:14px;padding:14px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.15);border-radius:10px;">
+        <label style="display:block;font-size:11px;color:#60a5fa;font-weight:600;text-transform:uppercase;margin-bottom:5px;">Tipo de deuda</label>
+        <select id="vnCartTipoDeuda" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px;margin-bottom:10px;font-weight:600;">
+          <option value="cliente">🔴 Me debe (deuda del cliente)</option>
+          <option value="mia">🔵 Le debo (mi deuda)</option>
+        </select>
+        <label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;margin-bottom:5px;">Saldo inicial de deuda</label>
+        <input id="vnCartSaldoInput" type="number" placeholder="Ej: 500000" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:12px 14px;font-size:16px;font-weight:700;margin-bottom:10px;">
+        <button onclick="vnCartSetSaldo()" style="width:100%;padding:12px;background:linear-gradient(135deg,#2563eb,#3b82f6);border:none;border-radius:10px;color:white;font-weight:800;cursor:pointer;font-size:14px;">✅ Establecer saldo inicial</button>
+        <div style="font-size:11px;color:#64748b;margin-top:8px;line-height:1.5;">Establece el saldo inicial de deuda. Las deudas nuevas (desde los checkboxes del recaudo) se suman encima. Todo queda registrado en el historial.</div>
       </div>
- 
-      <button onclick="carteraRegistrarPagoTiberio()" style="width:100%;padding:14px;background:linear-gradient(135deg,#16a34a,#22c55e);border:none;border-radius:12px;color:white;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-body);transition:all 180ms;letter-spacing:0.02em;">
-        \u2705 Registrar Pago
-      </button>
- 
-      <div style="margin-top:14px;padding:12px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.15);border-radius:10px;">
-        <div style="font-size:11px;color:#60a5fa;font-weight:600;margin-bottom:4px;">\u2139\uFE0F \u00bfQu\u00e9 pasa al registrar?</div>
-        <div style="font-size:12px;color:#94a3b8;line-height:1.5;">
-          \u2022 Se descuenta la deuda en <strong style="color:#e2e8f0;">Recaudo</strong><br>
-          \u2022 El dinero se acredita en la <strong style="color:#e2e8f0;">cuenta que elijas</strong><br>
-          \u2022 Se registra como ingreso en <strong style="color:#e2e8f0;">Contabilidad</strong><br>
-          \u2022 Queda en el historial de <strong style="color:#e2e8f0;">Cartera</strong>
+
+      <div style="padding:12px;background:rgba(22,163,74,0.08);border:1px solid rgba(22,163,74,0.15);border-radius:10px;">
+        <div style="font-size:11px;color:#4ade80;font-weight:600;margin-bottom:4px;">ℹ️ ¿Cómo funciona?</div>
+        <div style="font-size:12px;color:#94a3b8;line-height:1.55;">
+          • Selecciona cualquier cliente de la lista desplegable<br>
+          • Elige si te debe o le debes<br>
+          • Escribe el saldo y dale <strong style="color:#e2e8f0;">Establecer</strong><br>
+          • Los checkboxes del recaudo diario suman encima<br>
+          • El historial y la contabilidad se actualizan solos
         </div>
       </div>
     </div>
@@ -5225,7 +5259,10 @@ function recaudoCalcularDesgloseMetodos(rows){
       }
     }
  
-    desglose.efectivoVentas += Math.max(r.subtotal - r.totalTransferencia - r.faltantes - r.salidas - (r.deudaMiaPagada||0), 0);
+    var _efV = r.subtotal - r.totalTransferencia - r.faltantes - r.salidas - (r.deudaMiaPagada||0);
+    // Ajuste por deudas registradas hoy
+    _efV = _efV - (Number(r._deudaClienteHoy)||0) + (Number(r._deudaMiaHoy)||0);
+    desglose.efectivoVentas += Math.max(_efV, 0);
   });
  
   desglose.efectivoTotal = desglose.efectivoVentas + desglose.efectivoDeudas;
@@ -5249,6 +5286,17 @@ function recaudoCalcularDesgloseMetodos(rows){
   recaudoGuardarEstado(estado);
   renderRecaudo();
 }
+
+// Toggle: incluir la deuda del cliente en el total de recaudo domi
+function recaudoToggleDomiDeuda(nombre){
+  let cb = document.getElementById('rec_domideuda_' + nombre);
+  let estado = recaudoLeerEstado();
+  if(!estado[nombre]) estado[nombre] = {};
+  estado[nombre].domiIncluirDeuda = !!(cb && cb.checked);
+  recaudoGuardarEstado(estado);
+  renderRecaudo();
+}
+
 function _contaTabs(activa){
   return '<div class="filter-tabs">'+
     '<button class="ftab '+(activa==="resumen"?"active":"")+'" onclick="renderConta(\'resumen\')">📊 Resumen</button>'+
@@ -6012,6 +6060,7 @@ window.agregarIngresoExtra=function(){
   if(ci>=0&&cuentasMemoria&&cuentasMemoria[ci]){cuentasMemoria[ci].saldo+=monto;cuentasGuardar();}
   if(!Array.isArray(movimientosContables))movimientosContables=[];
   movimientosContables.push({tipo:'ingreso',monto:monto,cuenta:(cuentasMemoria&&cuentasMemoria[ci])?cuentasMemoria[ci].nombre:'Efectivo',descripcion:desc,categoria:cat,fecha:new Date().toISOString()});
+  if(typeof window._mcPersist==='function') window._mcPersist();
   document.getElementById('ingresoDesc').value='';document.getElementById('ingresoMonto').value='';
   window._ingresosCache=(window._ingresosCache||0)+monto;renderConta('resumen');
 };
@@ -6182,6 +6231,7 @@ window.uHistBorrar=function(origen,idx){
     }
     movimientosContables.splice(idx,1);
   }
+  if(typeof window._mcPersist==='function') window._mcPersist();
   renderConta('historial');
 };
 
@@ -6237,7 +6287,7 @@ window.actualizarMarquee=function(){
   var marquee=document.getElementById('obsMarquee');if(!marquee)return;
   var obs=[];try{obs=JSON.parse(localStorage.getItem('obs_marquee')||'[]');}catch(e){}
   try{var fk='recaudo_'+cajaFechaHoy();var est=JSON.parse(localStorage.getItem(fk)||'{}');Object.keys(est).forEach(function(n){if(n.startsWith('__'))return;var o=est[n];if(o&&o.observacion&&o.observacion.trim()){var ya=obs.find(function(x){return x.nombre===n;});if(!ya)obs.push({nombre:n,texto:o.observacion.trim()});else ya.texto=o.observacion.trim();}});}catch(e){}
-  var v={},u=[];obs.forEach(function(o){if(!v[o.nombre]){v[o.nombre]=true;u.push(o);}});obs=u;localStorage.setItem('obs_marquee',JSON.stringify(obs));
+  var v={},u=[];obs.forEach(function(o){var k=(o.nombre||'').replace(/_/g,' ').replace(/\s+/g,' ').trim().toUpperCase();if(!k)return;if(!v[k]){v[k]=true;u.push({nombre:(o.nombre||'').replace(/_/g,' ').replace(/\s+/g,' ').trim(),texto:o.texto||''});}});obs=u;localStorage.setItem('obs_marquee',JSON.stringify(obs));
   if(obs.length===0){marquee.classList.remove('visible');marquee.innerHTML='';return;}
   marquee.classList.add('visible');
   marquee.innerHTML='<div class="obs-marquee-track">'+obs.map(function(o,i){return'<span class="obs-item"><span class="obs-nombre">'+o.nombre+'</span><span class="obs-texto">'+o.texto+'</span><button class="obs-del" onclick="event.stopPropagation();eliminarObsMarquee('+i+')">\u00d7</button></span>';}).join('')+'</div>';
@@ -6383,10 +6433,10 @@ window.renderNomina=function(){
   // QUINCENALES
   html+='<div class="section-title">🍞 Quincenal</div>';
   quin.forEach(function(e){var idx=data.empleados.indexOf(e);var adel=(e.adelantos||[]).reduce(function(s,x){return s+(Number(x.monto)||0);},0);var neto=Math.max((Number(e.salarioQuincena)||0)-adel,0);
-  html+='<div style="background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:20px;margin-bottom:16px;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;"><div style="display:flex;align-items:center;gap:10px;"><div style="width:40px;height:40px;border-radius:10px;background:'+e.color+';display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:white;">'+e.nombre.charAt(0)+'</div><div><div style="font-size:17px;font-weight:800;color:white;">'+e.nombre+'</div><div style="font-size:12px;color:#94a3b8;">Quincenal</div></div></div><input id="nq_sal_'+idx+'" type="text" inputmode="numeric" value="'+(Number(e.salarioQuincena)||0).toLocaleString('es-CO')+'" onblur="nominaEditarSalQ('+idx+',this)" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fbbf24;padding:6px 10px;font-size:18px;font-weight:800;text-align:right;width:160px;" /></div>';
+  html+='<div style="background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:20px;margin-bottom:16px;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;"><div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;"><div style="width:40px;height:40px;border-radius:10px;background:'+e.color+';display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:white;flex-shrink:0;">'+e.nombre.charAt(0)+'</div><div style="flex:1;min-width:0;"><input id="nq_nom_'+idx+'" value="'+(e.nombre||'').replace(/"/g,'&quot;')+'" onblur="nominaEditarNombre('+idx+',this)" style="background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:6px;color:white;padding:4px 8px;font-size:17px;font-weight:800;width:100%;" /><div style="font-size:12px;color:#94a3b8;margin-top:2px;">Quincenal <button onclick="nominaBorrarEmpleado('+idx+')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:11px;margin-left:8px;">🗑 eliminar</button></div></div></div><input id="nq_sal_'+idx+'" type="text" inputmode="numeric" value="'+(Number(e.salarioQuincena)||0).toLocaleString('es-CO')+'" onblur="nominaEditarSalQ('+idx+',this)" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').replace(/\\B(?=(\\d{3})+(?!\\d))/g,\'.\')" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#fbbf24;padding:6px 10px;font-size:18px;font-weight:800;text-align:right;width:160px;flex-shrink:0;" /></div>';
   // Adelantos
   html+='<div style="margin-bottom:14px;"><div style="font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase;margin-bottom:8px;">Adelantos</div>';
-  (e.adelantos||[]).forEach(function(a,ai){html+='<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.15);border-radius:8px;margin-bottom:4px;font-size:13px;"><div><span style="color:#fca5a5;font-weight:700;">-'+nM(a.monto)+'</span> <span style="color:#94a3b8;margin-left:6px;">'+(a.razon||'')+'</span></div><button onclick="nominaBorrarAdelanto('+idx+','+ai+')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:13px;">✕</button></div>';});
+  (e.adelantos||[]).forEach(function(a,ai){html+='<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.15);border-radius:8px;margin-bottom:4px;font-size:13px;"><span style="color:#fca5a5;font-weight:700;font-size:12px;">-$</span><input type="text" inputmode="numeric" value="'+(Number(a.monto)||0).toLocaleString("es-CO")+'" onblur="nominaEditarAdelanto('+idx+','+ai+',\'monto\',this)" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').replace(/\\B(?=(\\d{3})+(?!\\d))/g,\'.\')" style="width:90px;background:rgba(0,0,0,0.2);border:1px solid rgba(239,68,68,0.2);border-radius:6px;color:#fca5a5;font-weight:700;padding:3px 6px;font-size:12px;text-align:right;" /><input type="text" value="'+((a.razon||"").replace(/"/g,"&quot;"))+'" onblur="nominaEditarAdelanto('+idx+','+ai+',\'razon\',this)" placeholder="Razón" style="flex:1;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.08);border-radius:6px;color:#cbd5e1;padding:3px 8px;font-size:12px;" /><button onclick="nominaBorrarAdelanto('+idx+','+ai+')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;">✕</button></div>';});
   html+='<div style="display:flex;gap:4px;margin-top:6px;"><input id="nq_adm_'+idx+'" type="text" inputmode="numeric" placeholder="Monto" style="flex:1;max-width:120px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:6px 10px;font-size:13px;" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').replace(/\\B(?=(\\d{3})+(?!\\d))/g,\'.\')" /><input id="nq_adr_'+idx+'" type="text" placeholder="Razón" style="flex:2;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:6px 10px;font-size:13px;" /><button onclick="nominaAgregarAdelanto('+idx+')" style="padding:6px 12px;background:rgba(239,68,68,0.2);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#f87171;font-weight:700;cursor:pointer;font-size:13px;">+</button></div></div>';
   html+='<div style="display:flex;gap:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);"><div><div style="font-size:10px;color:#94a3b8;">Bruto</div><div style="font-size:16px;font-weight:800;color:white;">'+nM(e.salarioQuincena)+'</div></div><div><div style="font-size:10px;color:#94a3b8;">Adelantos</div><div style="font-size:16px;font-weight:800;color:#f87171;">-'+nM(adel)+'</div></div><div><div style="font-size:10px;color:#4ade80;font-weight:700;">A PAGAR</div><div style="font-size:20px;font-weight:800;color:#4ade80;">'+nM(neto)+'</div></div></div></div>';});
   html+='<div style="margin-bottom:24px;"><button onclick="nominaRegistrarQuincena()" style="width:100%;padding:14px;background:linear-gradient(135deg,#d97706,#f59e0b);border:none;border-radius:12px;color:white;font-size:16px;font-weight:800;cursor:pointer;">💰 REGISTRAR QUINCENA</button></div>';
@@ -6394,11 +6444,11 @@ window.renderNomina=function(){
   // SEMANALES
   html+='<div class="section-title">📋 Asistencia Semanal</div>';
   sem.forEach(function(e){var idx=data.empleados.indexOf(e);var dT=e.asistencia.filter(function(a){return a;}).length;var bruto=dT*(Number(e.salarioDia)||0);var adel=(e.adelantos||[]).reduce(function(s,x){return s+(Number(x.monto)||0);},0);var neto=Math.max(bruto-adel,0);
-  html+='<div style="background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:20px;margin-bottom:16px;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;"><div style="display:flex;align-items:center;gap:10px;"><div style="width:40px;height:40px;border-radius:10px;background:'+e.color+';display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:white;">'+e.nombre.charAt(0)+'</div><div><div style="font-size:17px;font-weight:800;color:white;">'+e.nombre+'</div><div style="font-size:12px;color:#94a3b8;">'+nM(e.salarioDia)+'/día</div></div></div></div>';
+  html+='<div style="background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:20px;margin-bottom:16px;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;"><div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;"><div style="width:40px;height:40px;border-radius:10px;background:'+e.color+';display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:white;flex-shrink:0;">'+e.nombre.charAt(0)+'</div><div style="flex:1;min-width:0;"><input id="ns_nom_'+idx+'" value="'+(e.nombre||"").replace(/"/g,"&quot;")+'" onblur="nominaEditarNombre('+idx+',this)" style="background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:6px;color:white;padding:4px 8px;font-size:17px;font-weight:800;width:100%;" /><div style="font-size:12px;color:#94a3b8;margin-top:4px;display:flex;align-items:center;gap:6px;"><span>Semanal · $</span><input id="ns_sald_'+idx+'" type="text" inputmode="numeric" value="'+(Number(e.salarioDia)||0).toLocaleString("es-CO")+'" onblur="nominaEditarSalD('+idx+',this)" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').replace(/\\B(?=(\\d{3})+(?!\\d))/g,\'.\')" style="width:90px;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.08);border-radius:4px;color:#cbd5e1;padding:2px 6px;font-size:11px;" /><span>/día</span><button onclick="nominaBorrarEmpleado('+idx+')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:11px;margin-left:auto;">🗑 eliminar</button></div></div></div></div>';
   html+='<div style="overflow-x:auto;margin-bottom:12px;"><table style="width:100%;border-collapse:collapse;min-width:500px;"><thead><tr>';DIAS.forEach(function(d){html+='<th style="padding:8px 6px;background:'+e.color+';color:white;font-size:11px;font-weight:700;text-align:center;">'+d+'</th>';});html+='</tr></thead><tbody><tr>';DIAS.forEach(function(d,di){html+='<td style="padding:8px;text-align:center;border:1px solid rgba(255,255,255,0.06);"><input type="checkbox" '+(e.asistencia[di]?'checked':'')+' onchange="nominaToggle('+idx+','+di+')" style="width:20px;height:20px;accent-color:'+e.color+';cursor:pointer;" /></td>';});html+='</tr><tr>';DIAS.forEach(function(d,di){html+='<td style="padding:4px;text-align:center;font-size:12px;color:'+(e.asistencia[di]?'#4ade80':'#475569')+';">'+(e.asistencia[di]?nM(e.salarioDia):'-')+'</td>';});html+='</tr></tbody></table></div>';
   // Adelantos
   html+='<div style="margin-bottom:12px;"><div style="font-size:12px;color:#94a3b8;font-weight:600;text-transform:uppercase;margin-bottom:6px;">Adelantos</div>';
-  (e.adelantos||[]).forEach(function(a,ai){html+='<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.15);border-radius:8px;margin-bottom:3px;font-size:12px;"><div><span style="color:#fca5a5;font-weight:700;">-'+nM(a.monto)+'</span> <span style="color:#94a3b8;margin-left:6px;">'+(a.razon||'')+'</span></div><button onclick="nominaBorrarAdelanto('+idx+','+ai+')" style="background:none;border:none;color:#64748b;cursor:pointer;">✕</button></div>';});
+  (e.adelantos||[]).forEach(function(a,ai){html+='<div style="display:flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.15);border-radius:8px;margin-bottom:3px;font-size:12px;"><span style="color:#fca5a5;font-weight:700;font-size:11px;">-$</span><input type="text" inputmode="numeric" value="'+(Number(a.monto)||0).toLocaleString("es-CO")+'" onblur="nominaEditarAdelanto('+idx+','+ai+',\'monto\',this)" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').replace(/\\B(?=(\\d{3})+(?!\\d))/g,\'.\')" style="width:80px;background:rgba(0,0,0,0.2);border:1px solid rgba(239,68,68,0.2);border-radius:6px;color:#fca5a5;font-weight:700;padding:2px 6px;font-size:11px;text-align:right;" /><input type="text" value="'+((a.razon||"").replace(/"/g,"&quot;"))+'" onblur="nominaEditarAdelanto('+idx+','+ai+',\'razon\',this)" placeholder="Razón" style="flex:1;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.08);border-radius:6px;color:#cbd5e1;padding:2px 6px;font-size:11px;" /><button onclick="nominaBorrarAdelanto('+idx+','+ai+')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:13px;">✕</button></div>';});
   html+='<div style="display:flex;gap:4px;margin-top:4px;"><input id="ns_adm_'+idx+'" type="text" inputmode="numeric" placeholder="Monto" style="flex:1;max-width:100px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:5px 8px;font-size:12px;" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').replace(/\\B(?=(\\d{3})+(?!\\d))/g,\'.\')" /><input id="ns_adr_'+idx+'" type="text" placeholder="Razón" style="flex:2;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:5px 8px;font-size:12px;" /><button onclick="nominaAgregarAdelanto('+idx+')" style="padding:5px 10px;background:rgba(239,68,68,0.2);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#f87171;font-weight:700;cursor:pointer;font-size:12px;">+</button></div></div>';
   html+='<div style="display:flex;gap:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);"><div><div style="font-size:10px;color:#94a3b8;">Días</div><div style="font-size:16px;font-weight:800;color:white;">'+dT+'/6</div></div><div><div style="font-size:10px;color:#94a3b8;">Bruto</div><div style="font-size:16px;font-weight:800;color:white;">'+nM(bruto)+'</div></div><div><div style="font-size:10px;color:#94a3b8;">Adelantos</div><div style="font-size:16px;font-weight:800;color:#f87171;">-'+nM(adel)+'</div></div><div style="background:rgba(22,163,74,0.12);border:1px solid rgba(22,163,74,0.2);border-radius:10px;padding:6px 14px;"><div style="font-size:10px;color:#4ade80;font-weight:700;">A PAGAR</div><div style="font-size:22px;font-weight:800;color:#4ade80;">'+nM(neto)+'</div></div></div></div>';});
   html+='<div style="margin-bottom:24px;"><button onclick="nominaRegistrarSemanal()" style="width:100%;padding:16px;background:linear-gradient(135deg,#16a34a,#22c55e);border:none;border-radius:12px;color:white;font-size:18px;font-weight:800;cursor:pointer;">✅ REGISTRAR SEMANAL</button></div>';
@@ -6414,6 +6464,10 @@ window.renderNomina=function(){
 // Nómina funciones
 window.nominaToggle=function(idx,dia){var d=_nLeer();d.empleados[idx].asistencia[dia]=!d.empleados[idx].asistencia[dia];_nGuardar(d);renderNomina();};
 window.nominaEditarSalQ=function(idx,inp){var d=_nLeer();d.empleados[idx].salarioQuincena=Number(inp.value.replace(/\./g,''))||0;_nGuardar(d);renderNomina();};
+window.nominaEditarSalD=function(idx,inp){var d=_nLeer();d.empleados[idx].salarioDia=Number(inp.value.replace(/\./g,''))||0;_nGuardar(d);renderNomina();};
+window.nominaEditarNombre=function(idx,inp){var nv=(inp.value||'').trim().toUpperCase();if(!nv){alert('El nombre no puede estar vacío');renderNomina();return;}var d=_nLeer();if(d.empleados[idx]){d.empleados[idx].nombre=nv;_nGuardar(d);}renderNomina();};
+window.nominaEditarAdelanto=function(idx,ai,campo,inp){var d=_nLeer();if(!d.empleados[idx]||!d.empleados[idx].adelantos||!d.empleados[idx].adelantos[ai])return;if(campo==='monto'){d.empleados[idx].adelantos[ai].monto=Number((inp.value||'').replace(/\./g,''))||0;}else if(campo==='razon'){d.empleados[idx].adelantos[ai].razon=(inp.value||'').trim();}_nGuardar(d);renderNomina();};
+window.nominaBorrarEmpleado=function(idx){var d=_nLeer();if(!d.empleados[idx])return;if(!confirm('¿Eliminar al empleado "'+d.empleados[idx].nombre+'"? Esta acción no se puede deshacer.'))return;d.empleados.splice(idx,1);_nGuardar(d);renderNomina();};
 window.nominaAgregarAdelanto=function(idx){var mi=document.getElementById('nq_adm_'+idx)||document.getElementById('ns_adm_'+idx);var ri=document.getElementById('nq_adr_'+idx)||document.getElementById('ns_adr_'+idx);if(!mi)return;var m=Number(mi.value.replace(/\./g,''))||0;var r=ri?ri.value.trim():'';if(m<=0){alert('Ingresa monto');return;}var d=_nLeer();if(!d.empleados[idx].adelantos)d.empleados[idx].adelantos=[];d.empleados[idx].adelantos.push({monto:m,razon:r||'Adelanto',fecha:new Date().toLocaleDateString('es-CO')});_nGuardar(d);renderNomina();};
 window.nominaBorrarAdelanto=function(idx,ai){var d=_nLeer();if(!confirm('¿Eliminar adelanto?'))return;d.empleados[idx].adelantos.splice(ai,1);_nGuardar(d);renderNomina();};
 
@@ -6433,8 +6487,9 @@ q.forEach(function(e){e.adelantos=[];});_nGuardar(d);renderNomina();alert('✅ Q
 
 function _nRegistrarGasto(monto,desc){
   if(!Array.isArray(movimientosContables))movimientosContables=[];movimientosContables.push({tipo:'gasto',monto:monto,cuenta:'Efectivo',descripcion:desc,categoria:'Nómina',fecha:new Date().toISOString()});
-  if(!Array.isArray(gastosMemoria))gastosMemoria=[];gastosMemoria.push({descripcion:desc,categoria:'Costo',monto:monto,fecha:new Date().toISOString()});try{sessionStorage.setItem('gastos',JSON.stringify(gastosMemoria));}catch(e){}
+  if(!Array.isArray(gastosMemoria))gastosMemoria=[];gastosMemoria.push({descripcion:desc,categoria:'Costo',monto:monto,cuenta:'Efectivo',fecha:new Date().toISOString()});try{sessionStorage.setItem('gastos',JSON.stringify(gastosMemoria));}catch(e){}
   if(Array.isArray(cuentasMemoria)){var i=cuentasMemoria.findIndex(function(c){return c.tipo==='EFECTIVO';});if(i>=0){cuentasMemoria[i].saldo-=monto;cuentasGuardar();}}
+  if(typeof window._mcPersist==='function') window._mcPersist();
 }
 window.nominaAgregarEmpleado=function(){mostrarMC('<h3>➕ Nuevo empleado</h3><div class="mc-field"><label>Nombre</label><input id="neNom" placeholder="Ej: CARLOS"></div><div class="mc-field"><label>Tipo</label><select id="neTipo"><option value="semanal">Semanal</option><option value="quincenal">Quincenal</option></select></div><div class="mc-field"><label>Salario diario</label><input id="neSalD" type="number" value="30000"></div><div class="mc-field"><label>Salario quincena</label><input id="neSalQ" type="number" value="0"></div><div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button><button class="mc-btn-ok" style="background:#eab308;" onclick="nominaConfirmarNuevo()">Crear</button></div>');};
 window.nominaConfirmarNuevo=function(){var n=(document.getElementById('neNom').value||'').trim().toUpperCase();if(!n){alert('Nombre');return;}var d=_nLeer();d.empleados.push({id:n.toLowerCase().replace(/\s+/g,'_'),nombre:n,color:'#'+Math.floor(Math.random()*16777215).toString(16),tipo:document.getElementById('neTipo').value,salarioDia:Number(document.getElementById('neSalD').value)||0,salarioQuincena:Number(document.getElementById('neSalQ').value)||0,asistencia:[false,false,false,false,false,false],adelantos:[]});_nGuardar(d);cerrarMC();renderNomina();};
@@ -8855,6 +8910,20 @@ window.cajaCalcularResumen = function(ventas, movimientos, sesion){
     if(tipo==="ingreso") ingresosExtra += valor;
     if(tipo==="egreso") egresos += valor;
   });
+  // INTEGRACIÓN CONTABLE: incluir ingresos/gastos del Resumen (movimientosContables) del día
+  try{
+    var hoyISO = (typeof cajaFechaHoy==='function')?cajaFechaHoy():new Date().toISOString().slice(0,10);
+    if(Array.isArray(window.movimientosContables)){
+      window.movimientosContables.forEach(function(m){
+        if(!m||!m.fecha) return;
+        var fIso='';try{fIso=new Date(m.fecha).toISOString().slice(0,10);}catch(e){}
+        if(fIso!==hoyISO) return;
+        var v=Number(m.monto)||0;var t=(m.tipo||'').toLowerCase();
+        if(t==='ingreso') ingresosExtra += v;
+        else if(t==='gasto') egresos += v;
+      });
+    }
+  }catch(e){}
  
   // Pagos de deuda en efectivo (suman al efectivo esperado)
   var pagoDeudaEfec = recDesg ? (Number(recDesg.efectivoDeudas)||0) : 0;
@@ -10312,2208 +10381,451 @@ console.log('✅ Parche historial deuda por día cargado');
 
 })();
 
-(function(){
-
-  // ══════════════════════════════════════════════════════
-  // FIX 1: recaudoGetDeudaHistorica — excluye el día activo
-  // para no duplicar la deuda al recargar
-  // ══════════════════════════════════════════════════════
-  window.recaudoGetDeudaHistorica = function(nombre) {
-    let deudaCliente = 0, deudaMia = 0;
-
-    let fechaActiva = (typeof cajaFechaHoy === 'function')
-      ? cajaFechaHoy()
-      : new Date().toISOString().split('T')[0];
-    let keyActivo = 'recaudo_' + fechaActiva;
-
-    for (let i = 0; i < localStorage.length; i++) {
-      let key = localStorage.key(i);
-      // Solo días ANTERIORES al activo — el activo viene de saved directo
-      if (key && key.startsWith('recaudo_') && key !== keyActivo) {
-        try {
-          let obj = JSON.parse(localStorage.getItem(key));
-          if (obj && obj[nombre]) {
-            deudaCliente += Number(obj[nombre].deudaCliente) || 0;
-            deudaMia     += Number(obj[nombre].deudaMia)     || 0;
-          }
-        } catch(e) {}
-      }
-    }
-
-    let deudasPagadas = 0, fechaPago = '—';
-    try {
-      let cartera = JSON.parse(localStorage.getItem('cartera_deudas') || '{}');
-      if (cartera[nombre]) {
-        deudasPagadas = Number(cartera[nombre].deudasPagadas) || 0;
-        fechaPago     = cartera[nombre].fechaPago || '—';
-      }
-    } catch(e) {}
-
-    return {
-      deudaCliente:  Math.max(deudaCliente - deudasPagadas, 0),
-      deudaMia:      Math.max(deudaMia - deudasPagadas, 0),
-      deudasPagadas,
-      fechaPago
-    };
-  };
-
-  // ══════════════════════════════════════════════════════
-  // FIX 2: recaudoConstruirData — usar saved del día activo
-  // para que la deuda ingresada por fecha sea exactamente la que se muestra
-  // ══════════════════════════════════════════════════════
-  var _origConstruir = window.recaudoConstruirData;
-  window.recaudoConstruirData = async function() {
-    let rows = await _origConstruir.apply(this, arguments);
-    let estado = recaudoLeerEstado();
-
-    rows.forEach(function(row) {
-      let saved = estado[row.cliente] || {};
-      let savedDC = Number(saved.deudaCliente) || 0;
-      let savedDM = Number(saved.deudaMia)     || 0;
-
-      // Si el día activo tiene deuda guardada, usarla directamente (estática)
-      // No acumular con el histórico — el histórico ya excluye este día (Fix 1)
-      if (savedDC > 0) row.deudaCliente = savedDC;
-      if (savedDM > 0) row.deudaMia     = savedDM;
-
-      // Cargar estado del checkbox de deuda-en-domi
-      row.deudaEnDomi = !!saved.deudaEnDomi;
-    });
-
-    return rows;
-  };
-
-  // ══════════════════════════════════════════════════════
-  // FIX 3: Función nueva — checkbox sumar deuda a recaudo domi
-  // ══════════════════════════════════════════════════════
-  window.recaudoToggleDeudaDomi = function(nombre, deudaCliente) {
-    let cb    = document.getElementById('rec_deuda_domi_' + nombre);
-    let estado = recaudoLeerEstado();
-    if (!estado[nombre]) estado[nombre] = {};
-
-    // Leer deuda actual del cliente desde el input por si el usuario la cambió
-    try {
-      let inputDC = document.getElementById('rec_dc_' + nombre);
-      if (inputDC) {
-        let val = Number(inputDC.dataset.raw || inputDC.value.replace(/\./g,'').replace(/,/g,'')) || 0;
-        if (val > 0) deudaCliente = val;
-      }
-    } catch(e) {}
-
-    let domiActual = Number(estado[nombre].recaudoDomi) || 0;
-
-    if (cb && cb.checked) {
-      estado[nombre].deudaEnDomi  = true;
-      estado[nombre].recaudoDomi  = domiActual + Number(deudaCliente);
-    } else {
-      estado[nombre].deudaEnDomi  = false;
-      estado[nombre].recaudoDomi  = Math.max(domiActual - Number(deudaCliente), 0);
-    }
-
-    recaudoGuardarEstado(estado);
-    renderRecaudo();
-  };
-
-  // ══════════════════════════════════════════════════════
-  // FIX 4: Inyectar el checkbox de deuda-domi en la tabla
-  // después de que renderRecaudo pinta el HTML
-  // ══════════════════════════════════════════════════════
-  var _origRender = window.renderRecaudo;
-  window.renderRecaudo = async function() {
-    let r = await _origRender.apply(this, arguments);
-
-    setTimeout(function() {
-      try {
-        let estado = recaudoLeerEstado();
-
-        // Buscar cada celda de recaudo-domi y agregar el checkbox izquierdo si no existe
-        document.querySelectorAll('[id^="rec_domi_"]').forEach(function(cbDomi) {
-          let nombre = cbDomi.id.replace('rec_domi_', '');
-          let idDeudaDomi = 'rec_deuda_domi_' + nombre;
-
-          // Si ya existe el checkbox de deuda domi, no duplicar
-          if (document.getElementById(idDeudaDomi)) return;
-
-          let saved      = estado[nombre] || {};
-          let deudaDC    = Number(saved.deudaCliente) || 0;
-          let deudaEnDomi = !!saved.deudaEnDomi;
-
-          let cbNuevo = document.createElement('input');
-          cbNuevo.type      = 'checkbox';
-          cbNuevo.id        = idDeudaDomi;
-          cbNuevo.className = 'recaudo-check';
-          cbNuevo.checked   = deudaEnDomi;
-          cbNuevo.title     = 'Sumar deuda del cliente al recaudo domi';
-          cbNuevo.style.cssText = 'margin-right:4px;accent-color:#f59e0b;';
-          cbNuevo.setAttribute('onchange',
-            "recaudoToggleDeudaDomi('" + nombre.replace(/'/g, "\\'") + "'," + deudaDC + ")"
-          );
-
-          // Insertar ANTES del checkbox domi original
-          cbDomi.parentNode.insertBefore(cbNuevo, cbDomi);
-        });
-      } catch(e) {
-        console.error('Parche deuda-domi checkbox:', e);
-      }
-    }, 120);
-
-    return r;
-  };
-
-  console.log('✅ Parche recaudo: sin duplicación + deuda estática + checkbox deuda-domi');
-
-})();
 
 // =====================================================
-// SUPABASE REALTIME SYNC V12
-// Sincronización en TIEMPO REAL entre navegadores
-// Cada cambio se refleja en 1-2 segundos en el otro
-// =====================================================
-(function(){
-  'use strict';
-
-  // ==========================================
-  // MAPEO COMPLETO
-  // ==========================================
-  var MAP = {
-    'clientes':               'clientes_config',
-    'clientesDatos':          'clientes_datos',
-    'cuentasMemoria':         'cuentas_bancarias',
-    'transferenciasMem':      'transferencias',
-    'cuotas_obligaciones':    'cuotas_obligaciones',
-    'contabilidad_categorias':'categorias_contables',
-    'cartera_deudas':         'cartera_deudas',
-    'cartera_pagos_historial':'cartera_pagos',
-    'obs_marquee':            'observaciones_marquee',
-    'nomina_data':            'nomina_config',
-    'cuentas_por_pagar':      'cuentas_por_pagar'
-  };
-
-  // Inverso: tabla → localStorage key
-  var RMAP = {};
-  for(var k in MAP) RMAP[MAP[k]] = k;
-
-  // Todas las tablas que necesitamos monitorear
-  var TODAS_TABLAS = Object.values(MAP).concat(['movimientos_contables','gastos_manuales','recaudo_diario','monedas_diario']);
-
-  // Guardar refs originales ANTES de interceptar
-  var LS = {
-    set: localStorage.setItem.bind(localStorage),
-    get: localStorage.getItem.bind(localStorage),
-    rem: localStorage.removeItem.bind(localStorage)
-  };
-  var SS = {
-    set: sessionStorage.setItem.bind(sessionStorage),
-    get: sessionStorage.getItem.bind(sessionStorage)
-  };
-
-  // Flag para evitar loops infinitos (cuando recibimos un update de Realtime no queremos re-subir)
-  var _skipUpload = false;
-
-  // ==========================================
-  // ESCRIBIR A SUPABASE (upsert)
-  // ==========================================
-  async function subir(tabla, datos){
-    try {
-      var r = await db.from(tabla).upsert(
-        {id: 1, datos: datos, updated_at: new Date().toISOString()},
-        {onConflict: 'id', ignoreDuplicates: false}
-      );
-      if(r.error){
-        console.error('☁️✗ '+tabla+': '+r.error.message);
-        return false;
-      }
-      return true;
-    } catch(e){
-      console.error('☁️✗ '+tabla+': '+e.message);
-      return false;
-    }
-  }
-
-  async function subirFecha(tabla, fecha, datos){
-    try {
-      var r = await db.from(tabla).upsert(
-        {fecha: fecha, datos: datos, updated_at: new Date().toISOString()},
-        {onConflict: 'fecha', ignoreDuplicates: false}
-      );
-      return !r.error;
-    } catch(e){ return false; }
-  }
-
-  // ==========================================
-  // LEER DE SUPABASE
-  // ==========================================
-  async function bajar(tabla){
-    try {
-      var r = await db.from(tabla).select('datos').eq('id',1).maybeSingle();
-      if(!r || r.error || !r.data) return null;
-      return r.data.datos;
-    } catch(e){ return null; }
-  }
-
-  async function bajarFecha(tabla, fecha){
-    try {
-      var r = await db.from(tabla).select('datos').eq('fecha',fecha).maybeSingle();
-      if(!r || r.error || !r.data) return null;
-      return r.data.datos;
-    } catch(e){ return null; }
-  }
-
-  // ==========================================
-  // APLICAR DATOS A MEMORIA + LOCALSTORAGE
-  // ==========================================
-  function aplicar(tabla, datos){
-    if(!datos) return;
-    _skipUpload = true;
-
-    var lsKey = RMAP[tabla];
-
-    if(tabla === 'clientes_config'){
-      if(Array.isArray(datos) && datos.length > 0){
-        window.clientes = datos;
-        LS.set('clientes', JSON.stringify(datos));
-      }
-    }
-    else if(tabla === 'cuentas_bancarias'){
-      if(Array.isArray(datos) && datos.length > 0){
-        window.cuentasMemoria = datos;
-        LS.set('cuentasMemoria', JSON.stringify(datos));
-      }
-    }
-    else if(tabla === 'transferencias'){
-      window.transferenciasMem = datos;
-      LS.set('transferenciasMem', JSON.stringify(datos));
-    }
-    else if(tabla === 'movimientos_contables'){
-      if(Array.isArray(datos) && datos.length > 0){
-        window.movimientosContables = datos;
-      }
-    }
-    else if(tabla === 'gastos_manuales'){
-      if(Array.isArray(datos) && datos.length > 0){
-        window.gastosMemoria = datos;
-        SS.set('gastos', JSON.stringify(datos));
-      }
-    }
-    else if(lsKey){
-      LS.set(lsKey, JSON.stringify(datos));
-    }
-
-    setTimeout(function(){ _skipUpload = false; }, 500);
-  }
-
-  // ==========================================
-  // INTERCEPTAR localStorage.setItem
-  // ==========================================
-  localStorage.setItem = function(key, value){
-    LS.set(key, value);
-    if(_skipUpload) return;
-
-    // Tablas mapeadas
-    if(MAP[key]){
-      try { subir(MAP[key], JSON.parse(value)); } catch(e){}
-    }
-    // Recaudo dinámico
-    if(key.indexOf('recaudo_')===0 && key.length>10){
-      try { subirFecha('recaudo_diario', key.slice(8), JSON.parse(value)); } catch(e){}
-    }
-    // Monedas dinámico
-    if(key.indexOf('monedas_')===0 && key.length>10){
-      try { subirFecha('monedas_diario', key.slice(8), JSON.parse(value)); } catch(e){}
-    }
-  };
-
-  // Interceptar sessionStorage
-  sessionStorage.setItem = function(key, value){
-    SS.set(key, value);
-    if(_skipUpload) return;
-    if(key === 'gastos'){
-      try { subir('gastos_manuales', JSON.parse(value)); } catch(e){}
-    }
-  };
-
-  // ==========================================
-  // SYNC PERIÓDICO DE VARIABLES GLOBALES
-  // (estas no pasan por localStorage.setItem)
-  // ==========================================
-  var _lastMovLen = 0, _lastGasLen = 0;
-
-  setInterval(function(){
-    if(_skipUpload) return;
-    // movimientosContables
-    var mc = window.movimientosContables;
-    if(Array.isArray(mc) && mc.length > 0 && mc.length !== _lastMovLen){
-      _lastMovLen = mc.length;
-      subir('movimientos_contables', mc);
-    }
-    // gastosMemoria
-    var gm = window.gastosMemoria;
-    if(!Array.isArray(gm)){
-      try { gm = JSON.parse(SS.get('gastos')||'[]'); } catch(e){ gm = []; }
-    }
-    if(gm.length > 0 && gm.length !== _lastGasLen){
-      _lastGasLen = gm.length;
-      subir('gastos_manuales', gm);
-    }
-  }, 3000);
-
-  // ==========================================
-  // REALTIME: ESCUCHAR CAMBIOS EN VIVO
-  // ==========================================
-  function iniciarRealtime(){
-    try {
-      // Escuchar TODAS las tablas singleton (id=1)
-      var tablasRT = [
-        'clientes_config','clientes_datos','cuentas_bancarias',
-        'transferencias','movimientos_contables','gastos_manuales',
-        'nomina_config','cartera_deudas','cartera_pagos',
-        'cuotas_obligaciones','categorias_contables',
-        'cuentas_por_pagar','observaciones_marquee'
-      ];
-
-      tablasRT.forEach(function(tabla){
-        db.channel('rt-'+tabla)
-          .on('postgres_changes',
-            { event: '*', schema: 'public', table: tabla, filter: 'id=eq.1' },
-            function(payload){
-              if(payload.new && payload.new.datos !== undefined){
-                console.log('📡 Realtime: '+tabla+' actualizado');
-                aplicar(tabla, payload.new.datos);
-                // Refrescar UI
-                _refrescarUI(tabla);
-              }
-            }
-          )
-          .subscribe(function(status){
-            if(status === 'SUBSCRIBED'){
-              console.log('📡 RT: '+tabla+' ✓');
-            }
-          });
-      });
-
-      // Recaudo diario
-      db.channel('rt-recaudo')
-        .on('postgres_changes',
-          { event: '*', schema: 'public', table: 'recaudo_diario' },
-          function(payload){
-            if(payload.new && payload.new.fecha && payload.new.datos){
-              var hoy = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
-              if(payload.new.fecha === hoy){
-                console.log('📡 Realtime: recaudo_'+hoy+' actualizado');
-                _skipUpload = true;
-                LS.set('recaudo_'+hoy, JSON.stringify(payload.new.datos));
-                setTimeout(function(){ _skipUpload = false; }, 500);
-              }
-            }
-          }
-        )
-        .subscribe();
-
-      console.log('📡 Realtime: escuchando cambios en vivo');
-    } catch(e){
-      console.error('📡 Realtime error:', e);
-    }
-  }
-
-  function _refrescarUI(tabla){
-    setTimeout(function(){
-      try {
-        if(tabla === 'clientes_config' && typeof cargar === 'function') cargar();
-        if(tabla === 'observaciones_marquee' && typeof actualizarMarquee === 'function') actualizarMarquee();
-        // Para las demás tablas, refrescar el panel si está abierto
-        var contaBody = document.getElementById('contaBody');
-        if(contaBody && contaBody.innerHTML.length > 0){
-          if(tabla === 'cuentas_bancarias' || tabla === 'movimientos_contables' || tabla === 'gastos_manuales'){
-            // Si contabilidad está abierta, no forzar refresh automático para no interrumpir
-          }
-        }
-      } catch(e){}
-    }, 300);
-  }
-
-  // ==========================================
-  // CARGA INICIAL DESDE SUPABASE
-  // ==========================================
-  async function cargaInicial(){
-    console.log('☁️ Sincronizando con Supabase...');
-    var descargados = 0, subidos = 0;
-
-    // 1. Tablas mapeadas
-    for(var lsKey in MAP){
-      var tabla = MAP[lsKey];
-      var datos = await bajar(tabla);
-
-      if(datos !== null){
-        var tiene = Array.isArray(datos) ? datos.length > 0 : (datos && typeof datos === 'object' && Object.keys(datos).length > 0);
-        if(tiene){
-          aplicar(tabla, datos);
-          descargados++;
-          continue;
-        }
-      }
-
-      // Supabase vacío → subir local
-      var localRaw = LS.get(lsKey);
-      if(localRaw){
-        try {
-          var localD = JSON.parse(localRaw);
-          var localTiene = Array.isArray(localD) ? localD.length > 0 : (localD && typeof localD === 'object' && Object.keys(localD).length > 0);
-          if(localTiene){
-            var ok = await subir(tabla, localD);
-            if(ok){ subidos++; console.log('  ⬆ '+lsKey+' → '+tabla); }
-          }
-        } catch(e){}
-      }
-    }
-
-    // 2. Variables globales
-    var mcD = await bajar('movimientos_contables');
-    if(mcD && Array.isArray(mcD) && mcD.length > 0){
-      window.movimientosContables = mcD;
-      _lastMovLen = mcD.length;
-      descargados++;
-    } else if(Array.isArray(window.movimientosContables) && window.movimientosContables.length > 0){
-      await subir('movimientos_contables', window.movimientosContables);
-      _lastMovLen = window.movimientosContables.length;
-      subidos++;
-    }
-
-    var gmD = await bajar('gastos_manuales');
-    if(gmD && Array.isArray(gmD) && gmD.length > 0){
-      window.gastosMemoria = gmD;
-      SS.set('gastos', JSON.stringify(gmD));
-      _lastGasLen = gmD.length;
-      descargados++;
-    } else {
-      var gLocal = window.gastosMemoria || [];
-      if(!gLocal.length) try { gLocal = JSON.parse(SS.get('gastos')||'[]'); } catch(e){}
-      if(gLocal.length > 0){
-        await subir('gastos_manuales', gLocal);
-        _lastGasLen = gLocal.length;
-        subidos++;
-      }
-    }
-
-    // 3. Recaudo + Monedas del día
-    var hoy = (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().split('T')[0];
-
-    var recD = await bajarFecha('recaudo_diario', hoy);
-    if(recD && Object.keys(recD).length > 0){
-      _skipUpload = true;
-      LS.set('recaudo_'+hoy, JSON.stringify(recD));
-      setTimeout(function(){ _skipUpload = false; }, 300);
-      descargados++;
-    } else {
-      var recLocal = LS.get('recaudo_'+hoy);
-      if(recLocal){
-        try {
-          var rl = JSON.parse(recLocal);
-          if(Object.keys(rl).length > 0) await subirFecha('recaudo_diario', hoy, rl);
-        } catch(e){}
-      }
-    }
-
-    var monD = await bajarFecha('monedas_diario', hoy);
-    if(monD && Array.isArray(monD) && monD.length > 0){
-      _skipUpload = true;
-      LS.set('monedas_'+hoy, JSON.stringify(monD));
-      setTimeout(function(){ _skipUpload = false; }, 300);
-    }
-
-    console.log('✅ Sync: '+descargados+' descargados, '+subidos+' subidos');
-
-    // Refrescar UI
-    try { if(typeof cargar === 'function') await cargar(); } catch(e){}
-    try { if(typeof actualizarMarquee === 'function') actualizarMarquee(); } catch(e){}
-
-    // AHORA activar Realtime
-    iniciarRealtime();
-  }
-
-  // ==========================================
-  // BADGE VISUAL
-  // ==========================================
-  function crearBadge(){
-    if(document.getElementById('vnSyncBadge')) return;
-    var s = document.createElement('style');
-    s.textContent = '@keyframes vnP{0%,100%{opacity:1;}50%{opacity:0.4;}}';
-    document.head.appendChild(s);
-    var d = document.createElement('div');
-    d.id = 'vnSyncBadge';
-    d.style.cssText = 'position:fixed;bottom:12px;right:12px;background:rgba(16,185,129,0.92);color:white;padding:7px 14px;border-radius:20px;font-size:11px;font-weight:600;z-index:99998;display:flex;align-items:center;gap:6px;box-shadow:0 4px 14px rgba(0,0,0,0.25);font-family:Inter,sans-serif;cursor:pointer;backdrop-filter:blur(8px);';
-    d.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:white;animation:vnP 2s infinite;"></span> En vivo · Supabase';
-    d.title = 'Click para forzar sincronización';
-    d.onclick = function(){
-      d.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:#fbbf24;"></span> Sincronizando...';
-      d.style.background = 'rgba(245,158,11,0.9)';
-      cargaInicial().then(function(){
-        d.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:white;animation:vnP 2s infinite;"></span> En vivo · Supabase ✓';
-        d.style.background = 'rgba(16,185,129,0.92)';
-      });
-    };
-    document.body.appendChild(d);
-  }
-
-  // ==========================================
-  // INICIAR
-  // ==========================================
-  function iniciar(){
-    setTimeout(function(){
-      cargaInicial().catch(function(e){
-        console.error('❌ Sync error:', e);
-      });
-      crearBadge();
-    }, 1200);
-  }
-
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', iniciar);
-  } else {
-    iniciar();
-  }
-
-  console.log('☁️ Supabase Realtime Sync V12 iniciado');
-})();
-// =====================================================
-// 2. EFECTIVO REAL: DESCONTAR DEUDAS DEL DÍA
-// Override de renderRecaudo para recalcular el efectivo total
-// =====================================================
-var _origRenderRecaudo_v13 = window.renderRecaudo;
-window.renderRecaudo = async function(){
-  if(typeof _origRenderRecaudo_v13 === 'function') await _origRenderRecaudo_v13();
- 
-  // Después del render, recalcular el EFECTIVO TOTAL descontando deudas
-  setTimeout(function(){
-    var body = document.getElementById('recaudoBody');
-    if(!body) return;
- 
-    // Recalcular desde el cache
-    var cache = window._recaudoCache;
-    if(!cache || !cache.rows) return;
- 
-    var efectivoReal = 0;
-    var totalDeudaCliente = 0;
-    var totalDeudaMia = 0;
- 
-    cache.rows.forEach(function(r){
-      efectivoReal += r.efectivoNeto || 0;
-      totalDeudaCliente += r.deudaCliente || 0;
-      totalDeudaMia += r.deudaMia || 0;
-    });
- 
-    // Actualizar la tarjeta EFECTIVO en el header
-    var cards = body.querySelectorAll('div');
-    cards.forEach(function(d){
-      // Buscar la tarjeta que dice "EFECTIVO" y tiene el monto
-      var spans = d.querySelectorAll('span');
-      spans.forEach(function(s){
-        if(s.textContent.trim() === 'Efectivo' && s.style.color === 'rgb(74, 222, 128)'){
-          // Encontrada la etiqueta "Efectivo"
-          var parent = s.closest('div[style*="background"]');
-          if(parent){
-            var valDiv = parent.querySelector('div[style*="font-weight:800"]');
-            if(valDiv){
-              valDiv.textContent = '$' + efectivoReal.toLocaleString('es-CO');
-            }
-          }
-        }
-      });
-    });
- 
-    // Actualizar la barra de totales abajo
-    var miniDivs = body.querySelectorAll('.recaudo-mini');
-    miniDivs.forEach(function(mini){
-      var lab = mini.querySelector('.lab');
-      var val = mini.querySelector('.val');
-      if(lab && val){
-        if(lab.textContent.indexOf('Efectivo') > -1 && lab.textContent.indexOf('💵') > -1){
-          val.textContent = '$' + efectivoReal.toLocaleString('es-CO');
-        }
-      }
-    });
- 
-    // Actualizar el cache con el valor real
-    if(cache.resumen){
-      cache.resumen.netoEfectivo = efectivoReal;
-      if(cache.resumen.desglose){
-        cache.resumen.desglose.efectivoVentas = efectivoReal;
-        cache.resumen.desglose.efectivoTotal = efectivoReal;
-      }
-    }
- 
-    // =============================================
-    // INYECTAR BOTÓN RESET al lado de Actualizar
-    // =============================================
-    if(!document.getElementById('btnResetRecaudo')){
-      var actualizarBtn = body.querySelector('.btn-transferir[onclick*="renderRecaudo"]');
-      if(actualizarBtn && actualizarBtn.parentNode){
-        var resetBtn = document.createElement('button');
-        resetBtn.id = 'btnResetRecaudo';
-        resetBtn.className = 'btn-transferir';
-        resetBtn.style.cssText = 'background:rgba(239,68,68,0.2)!important;border:1px solid rgba(239,68,68,0.4)!important;color:#fca5a5!important;';
-        resetBtn.textContent = '🔄 Reset Checks';
-        resetBtn.title = 'Limpiar todos los checkboxes de Recaudo Domi y Recibido';
-        resetBtn.onclick = function(){
-          if(!confirm('¿Limpiar TODOS los checkboxes de Recaudo Domi y Recibido del día?')) return;
-          var fk = 'recaudo_' + cajaFechaHoy();
-          var est = {};
-          try { est = JSON.parse(localStorage.getItem(fk) || '{}'); } catch(e){}
-          Object.keys(est).forEach(function(nombre){
-            if(nombre.startsWith('__')) return;
-            if(est[nombre]){
-              est[nombre].recaudoDomi = 0;
-              est[nombre].recibido = false;
-            }
-          });
-          localStorage.setItem(fk, JSON.stringify(est));
-          renderRecaudo();
-        };
-        actualizarBtn.parentNode.insertBefore(resetBtn, actualizarBtn.nextSibling);
-      }
-    }
- 
-    // =============================================
-    // Resaltar $0 en amarillo
-    // =============================================
-    var tds = body.querySelectorAll('td');
-    tds.forEach(function(td){
-      if(td.textContent.trim() === '$0' && td.style.fontWeight === '800'){
-        td.style.background = 'rgba(251,191,36,0.15)';
-        td.style.color = '#fbbf24';
-      }
-    });
- 
-  }, 300);
-};
- 
-console.log('✅ Parche V13: Deudas solo hoy + Efectivo real + Reset');
-
-
-/* ======================================================================
-   PARCHE V14 - AUDITORIA INTEGRAL (Deudas + Boton invisible + Historial)
-   Autor: auditoria Cascade
-   NO modifica funciones originales; las envuelve de forma aditiva.
-   Objetivos:
-     1) Modal "Editar deuda" con input inicial = 0 y ACUMULATIVO.
-     2) Boton invisible ($10.000) registrado en ledger + invalida cache
-        de recaudo para que el total del dia se recalcule.
-     3) Historial (movimientosContables) persistente en localStorage y
-        alimentado por TODOS los flujos (abonos, aumentos, descuento
-        invisible, eliminaciones) con saldoAntes/saldoDespues.
-     4) Proteccion contra doble abono y saldos negativos.
-   ====================================================================== */
-(function(){
-  'use strict';
-  var LEDGER_KEY = 'movimientos_contables_v1';
-
-  function _loadLedger(){
-    try { return JSON.parse(localStorage.getItem(LEDGER_KEY) || '[]'); }
-    catch(e){ return []; }
-  }
-  function _saveLedger(){
-    try {
-      var arr = Array.isArray(window.movimientosContables) ? window.movimientosContables : [];
-      localStorage.setItem(LEDGER_KEY, JSON.stringify(arr.slice(-5000)));
-    } catch(e){ console.warn('ledger save fail', e); }
-  }
-
-  if(!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
-  if(window.movimientosContables.length === 0){
-    var prev = _loadLedger();
-    if(prev.length){ window.movimientosContables = prev; }
-  }
-
-  window.ledgerLog = function(evt){
-    if(!evt || typeof evt !== 'object') return;
-    var row = {
-      id: 'L'+Date.now()+'-'+Math.floor(Math.random()*1e6),
-      tipo: String(evt.tipo || 'movimiento'),
-      monto: Number(evt.monto) || 0,
-      cuenta: evt.cuenta || '',
-      cliente: evt.cliente || '',
-      origen: evt.origen || '',
-      descripcion: evt.descripcion || '',
-      saldoAntes: (evt.saldoAntes != null ? Number(evt.saldoAntes) : null),
-      saldoDespues: (evt.saldoDespues != null ? Number(evt.saldoDespues) : null),
-      usuario: (window.cajaUsuarioActual ? (function(){try{return cajaUsuarioActual();}catch(e){return 'sistema';}})() : 'sistema'),
-      fecha: new Date().toISOString(),
-      meta: evt.meta || null
-    };
-    if(!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
-    window.movimientosContables.push(row);
-    _saveLedger();
-    return row;
-  };
-
-  setInterval(_saveLedger, 15000);
-
-  // ---------- 2. CARTERA: editar deuda con input en 0 y acumulativo ----------
-  window.carteraEditarDeuda = function(nombre){
-    var info = (typeof recaudoGetDeudaHistorica === 'function')
-      ? recaudoGetDeudaHistorica(nombre)
-      : {deudaCliente:0, deudaMia:0, deudasPagadas:0};
-    var deudaActual = Number(info.deudaCliente)||0;
-    var deudaMia    = Number(info.deudaMia)||0;
-    var pagado      = Number(info.deudasPagadas)||0;
-    var saldoCli = Math.max(deudaActual - pagado, 0);
-    var nombreEsc = String(nombre).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-
-    mostrarMC(
-      '<h3>Ajustar deuda - '+nombre+'</h3>'+
-      '<div style="padding:10px 14px;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);border-radius:8px;margin-bottom:10px;font-size:13px;color:#fca5a5;">'+
-        'Saldo actual <strong style="color:#fff;">Me debe:</strong> $'+saldoCli.toLocaleString('es-CO')+
-        ' - <strong style="color:#fff;">Le debo:</strong> $'+deudaMia.toLocaleString('es-CO')+
-      '</div>'+
-      '<div class="mc-field"><label>SUMAR a "Me debe" (cliente)</label>'+
-        '<input id="cartAddDeudaC" type="number" value="0" min="0" style="font-size:18px;font-weight:800;color:#f87171;">'+
-        '<small style="color:#94a3b8;">Se acumula al saldo, no lo reemplaza.</small>'+
-      '</div>'+
-      '<div class="mc-field"><label>SUMAR a "Le debo" (yo al cliente)</label>'+
-        '<input id="cartAddDeudaM" type="number" value="0" min="0" style="font-size:18px;font-weight:800;color:#60a5fa;">'+
-      '</div>'+
-      '<div class="mc-btns">'+
-        '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
-        '<button class="mc-btn-ok" style="background:#d97706;" onclick="carteraGuardarDeuda(\''+nombreEsc+'\')">Guardar</button>'+
-      '</div>'
-    );
-  };
-
-  window.carteraGuardarDeuda = function(nombre){
-    var addC = Number(document.getElementById('cartAddDeudaC') && document.getElementById('cartAddDeudaC').value) || 0;
-    var addM = Number(document.getElementById('cartAddDeudaM') && document.getElementById('cartAddDeudaM').value) || 0;
-    if(addC < 0 || addM < 0){ alert('Los valores no pueden ser negativos.'); return; }
-    if(addC === 0 && addM === 0){ cerrarMC(); return; }
-
-    var info = (typeof recaudoGetDeudaHistorica === 'function')
-      ? recaudoGetDeudaHistorica(nombre)
-      : {deudaCliente:0, deudaMia:0, deudasPagadas:0};
-    var antesC = Number(info.deudaCliente)||0;
-    var antesM = Number(info.deudaMia)||0;
-
-    var estado = (typeof recaudoLeerEstado === 'function') ? recaudoLeerEstado() : {};
-    if(!estado[nombre]) estado[nombre] = {};
-    estado[nombre].deudaCliente = (Number(estado[nombre].deudaCliente)||0) + addC;
-    estado[nombre].deudaMia     = (Number(estado[nombre].deudaMia)||0)     + addM;
-    if(typeof recaudoGuardarEstado === 'function') recaudoGuardarEstado(estado);
-
-    if(addC > 0){
-      window.ledgerLog({
-        tipo:'deuda_aumento_cliente', origen:'cartera', cliente: nombre,
-        monto: addC, saldoAntes: antesC, saldoDespues: antesC + addC,
-        descripcion:'Aumento deuda (me debe) '+nombre
-      });
-    }
-    if(addM > 0){
-      window.ledgerLog({
-        tipo:'deuda_aumento_mia', origen:'cartera', cliente: nombre,
-        monto: addM, saldoAntes: antesM, saldoDespues: antesM + addM,
-        descripcion:'Aumento deuda (le debo) '+nombre
-      });
-    }
-
-    cerrarMC();
-    if(typeof renderCartera === 'function') renderCartera();
-    if(typeof renderRecaudo === 'function') renderRecaudo();
-  };
-
-  // ---------- 3. Boton invisible - log + invalidar cache recaudo ----------
-  var _origRcamo = window.rcamoClick;
-  window.rcamoClick = function(){
-    var MONTO = 10000;
-    var saldoAntes = 0, saldoDespues = 0, cuentaNombre = 'Efectivo';
-    try {
-      if(Array.isArray(window.cuentasMemoria)){
-        var idx = cuentasMemoria.findIndex(function(c){ return c.tipo === 'EFECTIVO'; });
-        if(idx >= 0){
-          saldoAntes = Number(cuentasMemoria[idx].saldo)||0;
-          cuentaNombre = cuentasMemoria[idx].nombre || 'Efectivo';
-        }
-      }
-    } catch(e){}
-
-    if(typeof _origRcamo === 'function') _origRcamo.apply(this, arguments);
-
-    try {
-      if(Array.isArray(window.cuentasMemoria)){
-        var idx2 = cuentasMemoria.findIndex(function(c){ return c.tipo === 'EFECTIVO'; });
-        if(idx2 >= 0) saldoDespues = Number(cuentasMemoria[idx2].saldo)||0;
-      }
-    } catch(e){}
-
-    window.ledgerLog({
-      tipo:'descuento_invisible', origen:'recaudo', cuenta: cuentaNombre,
-      monto: MONTO, saldoAntes: saldoAntes, saldoDespues: saldoDespues,
-      descripcion:'Descuento automatico $10.000 (boton invisible)'
-    });
-
-    window._recaudoCache = null;
-    window._cajaCache    = window._cajaCache || {};
-    window._cajaCache.resumen = null;
-
-    setTimeout(function(){
-      try { if(typeof cargar === 'function') cargar(); } catch(e){}
-      try { if(typeof renderRecaudo === 'function') renderRecaudo(); } catch(e){}
-      try { if(typeof cajaCargarResumenDia === 'function') cajaCargarResumenDia(); } catch(e){}
-    }, 400);
-  };
-
-  // ---------- 4. Abonos: log con saldoAntes/Despues + anti-negativo ----------
-  function _saldoDeuda(nombre){
-    try {
-      if(typeof recaudoGetDeudaHistorica !== 'function') return 0;
-      var h = recaudoGetDeudaHistorica(nombre) || {};
-      return Math.max((Number(h.deudaCliente)||0) - (Number(h.deudasPagadas)||0), 0);
-    } catch(e){ return 0; }
-  }
-
-  var _origRecPago = window.recaudoConfirmarPago;
-  if(typeof _origRecPago === 'function'){
-    window.recaudoConfirmarPago = function(nombre, monto){
-      var m = Number(monto)||0;
-      var saldo = _saldoDeuda(nombre);
-      if(m <= 0){ alert('Monto invalido.'); return; }
-      if(m > saldo && saldo > 0){
-        if(!confirm('El abono ($'+m.toLocaleString('es-CO')+') supera el saldo ($'+saldo.toLocaleString('es-CO')+'). Continuar?')) return;
-      }
-      var antes = saldo;
-      var r = _origRecPago.apply(this, arguments);
-      var despues = _saldoDeuda(nombre);
-      window.ledgerLog({
-        tipo:'abono_deuda', origen:'recaudo', cliente: nombre, monto: m,
-        saldoAntes: antes, saldoDespues: despues,
-        descripcion:'Abono deuda '+nombre
-      });
-      return r;
-    };
-  }
-
-  var _origRegTib = window.carteraRegistrarPagoTiberio;
-  if(typeof _origRegTib === 'function'){
-    window.carteraRegistrarPagoTiberio = function(){
-      var nombre = 'MARKET DEL RIO - TIBERIO';
-      var montoEl = document.getElementById('carteraPagoMonto');
-      var m = Number(montoEl ? montoEl.value : 0) || 0;
-      var antes = _saldoDeuda(nombre);
-      if(m > 0 && m > antes && antes > 0){
-        if(!confirm('El abono supera el saldo pendiente. Continuar?')) return;
-      }
-      var r = _origRegTib.apply(this, arguments);
-      var despues = _saldoDeuda(nombre);
-      window.ledgerLog({
-        tipo:'abono_deuda', origen:'cartera', cliente: nombre, monto: m,
-        saldoAntes: antes, saldoDespues: despues,
-        descripcion:'Abono deuda (cartera) '+nombre
-      });
-      return r;
-    };
-  }
-
-  var _origElimPago = window.carteraEliminarPago;
-  if(typeof _origElimPago === 'function'){
-    window.carteraEliminarPago = function(idx){
-      var nombre = 'MARKET DEL RIO - TIBERIO';
-      var hist = [];
-      try { hist = JSON.parse(localStorage.getItem('cartera_pagos_historial')||'[]'); } catch(e){}
-      var locales = hist.filter(function(p){ return p.cliente === nombre; });
-      var pago = locales[idx] || null;
-      var antes = _saldoDeuda(nombre);
-      var r = _origElimPago.apply(this, arguments);
-      var despues = _saldoDeuda(nombre);
-      if(pago){
-        window.ledgerLog({
-          tipo:'abono_eliminado', origen:'cartera', cliente: nombre,
-          monto: Number(pago.monto)||0, saldoAntes: antes, saldoDespues: despues,
-          descripcion:'Reversa de abono '+nombre,
-          meta: { metodo: pago.metodo, banco: pago.banco }
-        });
-      }
-      return r;
-    };
-  }
-
-  var _fnName = 'r3nP5oFahNL86vESFrkKjmuupsQa1mPzN7';
-  if(typeof window[_fnName] === 'function'){
-    var _origChk = window[_fnName];
-    window[_fnName] = function(nombre, deudaMia){
-      var antes = _saldoDeuda(nombre);
-      var r = _origChk.apply(this, arguments);
-      var despues = _saldoDeuda(nombre);
-      window.ledgerLog({
-        tipo:'abono_deuda_mia', origen:'recaudo-checkbox', cliente: nombre,
-        monto: Number(deudaMia)||0, saldoAntes: antes, saldoDespues: despues,
-        descripcion:'Descuento por "le debo" aplicado a factura del dia - '+nombre
-      });
-      return r;
-    };
-  }
-
-  // ---------- 5. V15.1: Ajustar deuda sin negativos (revertido).
-  //             Solo SUMA; el modal Cartera vuelve a inputs en 0 min. ----------
-  // (Se deja la implementacion del paso 2 tal cual. No se redefine aqui.)
-
-  // ---------- 8. V15.1: Vaciar INPUTS rec_dc_/rec_dm_ cuando el dia activo
-  //             no tiene valor guardado. El checkbox/saldo acumulado sigue
-  //             apareciendo porque se dibuja con la deuda historica. ----------
-  (function limpiarInputsDelDia(){
-    function barrer(){
-      try {
-        var estado = (typeof recaudoLeerEstado === 'function') ? recaudoLeerEstado() : {};
-        // DEUDA CLIENTE
-        document.querySelectorAll('input[id^="rec_dc_"]').forEach(function(inp){
-          var nombre = inp.id.substring('rec_dc_'.length);
-          var saved = estado[nombre] || {};
-          var v = Number(saved.deudaCliente) || 0;
-          if(v <= 0){
-            inp.value = '';
-            inp.dataset.raw = '';
-          }
-        });
-        // YO LE DEBO (mismo criterio)
-        document.querySelectorAll('input[id^="rec_dm_"]').forEach(function(inp){
-          var nombre = inp.id.substring('rec_dm_'.length);
-          var saved = estado[nombre] || {};
-          var v = Number(saved.deudaMia) || 0;
-          if(v <= 0){
-            inp.value = '';
-            inp.dataset.raw = '';
-          }
-        });
-      } catch(e){ console.warn('V15.1 limpiar inputs:', e); }
-    }
-    // Envolver renderRecaudo para correr DESPUES de cada render.
-    var tries = 0;
-    function hook(){
-      if(typeof window.renderRecaudo !== 'function'){
-        if(++tries < 30) return setTimeout(hook, 200);
-        return;
-      }
-      if(window.renderRecaudo.__v151) return;
-      var _prev = window.renderRecaudo;
-      window.renderRecaudo = async function(){
-        var r = await _prev.apply(this, arguments);
-        setTimeout(barrer, 350); // dejar que V13 y otros wrappers terminen
-        return r;
-      };
-      window.renderRecaudo.__v151 = true;
-      // Barrido inicial por si ya renderizo
-      setTimeout(barrer, 400);
-      console.log('Parche V15.1: inputs rec_dc_/rec_dm_ respetan solo el dia activo.');
-    }
-    hook();
-  })();
-
-  // ---------- 6. V16.2: SOLO fijar fecha a hoy al cargar inicial.
-  //             El usuario PUEDE navegar a fechas pasadas libremente. ----------
-  (function fijarFechaInicial(){
-    function hoy(){
-      try { return (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10); }
-      catch(e){ return new Date().toISOString().slice(0,10); }
-    }
-    function aplicarUnaVez(){
-      var inputs = document.querySelectorAll('input[type="date"]');
-      inputs.forEach(function(inp){
-        if(inp.dataset._v16Init) return;
-        inp.dataset._v16Init = '1';
-        if(!inp.value) inp.value = hoy(); // solo si viene vacio
-      });
-    }
-    setTimeout(aplicarUnaVez, 600);
-    // No interval, no forzamos revertir: el usuario decide la fecha.
-  })();
-
-  // ---------- 7. V15: refrescar historial de TIBERIO tras eliminar pago ----------
-  // La "X" original (linea 3926) llama carteraEliminarPago(idx), que termina
-  // invocando renderCartera(). El modal de TIBERIO no siempre se re-dibuja.
-  // Forzamos re-render si el modal esta abierto.
-  (function fixXTiberio(){
-    var _prevElim = window.carteraEliminarPago;
-    if(typeof _prevElim !== 'function' || _prevElim.__v15) return;
-    window.carteraEliminarPago = function(idx){
-      var r = _prevElim.apply(this, arguments);
-      setTimeout(function(){
-        try { if(typeof renderCartera === 'function') renderCartera(); } catch(e){}
-        // Si el overlay de historial Tiberio sigue abierto, lo reconstruimos
-        var overlay = document.getElementById('carteraModalOverlay');
-        if(overlay){ overlay.remove(); }
-      }, 50);
-      return r;
-    };
-    window.carteraEliminarPago.__v15 = true;
-  })();
-
-  // ---------- 9. V15.2: checkbox IZQUIERDO suma la deuda REAL al Recaudo Domi
-  //             Usa saldo historico pendiente (no el input del dia). ----------
-  window.recaudoToggleDeudaDomi = function(nombre){
-    var cb = document.getElementById('rec_deuda_domi_' + nombre);
-    var estado = (typeof recaudoLeerEstado === 'function') ? recaudoLeerEstado() : {};
-    if(!estado[nombre]) estado[nombre] = {};
-
-    // 1. Saldo pendiente REAL (historico - pagos)
-    var deudaReal = 0;
-    try {
-      var h = (typeof recaudoGetDeudaHistorica === 'function')
-        ? recaudoGetDeudaHistorica(nombre) : null;
-      if(h) deudaReal = Number(h.deudaCliente) || 0;
-    } catch(e){}
-
-    // 2. Si el input del dia tiene valor escrito, manda ese (usuario decidio)
-    try {
-      var inp = document.getElementById('rec_dc_' + nombre);
-      if(inp){
-        var raw = (inp.dataset.raw || inp.value || '').toString();
-        var v = Number(raw.replace(/\./g,'').replace(/,/g,'').replace(/[^0-9]/g,'')) || 0;
-        if(v > 0) deudaReal = v;
-      }
-    } catch(e){}
-
-    var domiActual = Number(estado[nombre].recaudoDomi) || 0;
-    if(cb && cb.checked){
-      estado[nombre].deudaEnDomi    = true;
-      estado[nombre].deudaDomiMonto = deudaReal; // guardar monto exacto para poder revertir
-      estado[nombre].recaudoDomi    = domiActual + deudaReal;
-    } else {
-      estado[nombre].deudaEnDomi = false;
-      var revert = Number(estado[nombre].deudaDomiMonto) || deudaReal;
-      estado[nombre].recaudoDomi = Math.max(domiActual - revert, 0);
-      estado[nombre].deudaDomiMonto = 0;
-    }
-    if(typeof recaudoGuardarEstado === 'function') recaudoGuardarEstado(estado);
-    if(typeof renderRecaudo === 'function') renderRecaudo();
-  };
-
-  // Refrescar el onchange de los checkboxes ya inyectados (el wrapper FIX4
-  // los crea con un monto fijo; forzamos que llamen a nuestra version sin arg)
-  (function resyncCheckboxDomi(){
-    function reatar(){
-      document.querySelectorAll('[id^="rec_deuda_domi_"]').forEach(function(cb){
-        var nombre = cb.id.replace('rec_deuda_domi_','');
-        cb.setAttribute('onchange',
-          "recaudoToggleDeudaDomi('"+String(nombre).replace(/'/g,"\\'")+"')"
-        );
-      });
-    }
-    setTimeout(reatar, 900);
-    setInterval(reatar, 3000);
-  })();
-
-  // ---------- 10. V15.2: X del historial v3 con reversa REAL del pago ----------
-  (function xHistorialReal(){
-    if(typeof window.carteraHistEliminar !== 'function') return;
-    if(window.carteraHistEliminar.__v152) return;
-    var _prev = window.carteraHistEliminar;
-    window.carteraHistEliminar = function(nombre, id){
-      try {
-        var hist = (typeof carteraHistLeer === 'function') ? carteraHistLeer(nombre) : [];
-        var entry = hist.find(function(x){ return x && x.id === id; });
-        if(!entry) return _prev(nombre, id);
-
-        var esPago = entry.tipo === 'pago';
-        var monto  = Number(entry.pagado || 0);
-        var msg = esPago
-          ? ('Eliminar este PAGO de $'+monto.toLocaleString('es-CO')+' ?\n\n'+
-             'Se revertira en TODO el sistema: cartera, recaudo, saldo de cuenta y ledger.')
-          : ('Eliminar esta linea del historial?\n\n'+
-             'Solo se borra la fila visual. La deuda real del dia NO se modifica.');
-        if(!confirm(msg)) return;
-
-        var antes = 0;
-        try {
-          var info = (typeof recaudoGetDeudaHistorica === 'function')
-            ? recaudoGetDeudaHistorica(nombre) : {deudaCliente:0};
-          antes = Number(info.deudaCliente)||0;
-        } catch(e){}
-
-        // Si es pago, revertir en cartera_pagos_historial via carteraEliminarPago
-        if(esPago && monto > 0){
-          if(nombre === 'MARKET DEL RIO - TIBERIO' && typeof carteraEliminarPago === 'function'){
-            // carteraEliminarPago usa indices en la lista filtrada por cliente
-            var pagos = [];
-            try { pagos = JSON.parse(localStorage.getItem('cartera_pagos_historial')||'[]'); } catch(e){}
-            var filtrados = [];
-            pagos.forEach(function(p){ if(p.cliente === nombre) filtrados.push(p); });
-            var targetIdx = -1;
-            for(var i = filtrados.length - 1; i >= 0; i--){
-              if(Number(filtrados[i].monto) === monto){ targetIdx = i; break; }
-            }
-            if(targetIdx >= 0){
-              // Silenciar el confirm interno
-              var _cf = window.confirm;
-              window.confirm = function(){ return true; };
-              try { carteraEliminarPago(targetIdx); } catch(e){ console.warn('reversa:', e); }
-              window.confirm = _cf;
-            }
-          } else {
-            // Reversa manual para clientes no-Tiberio
-            try {
-              var pagos2 = JSON.parse(localStorage.getItem('cartera_pagos_historial')||'[]');
-              var ix = -1;
-              for(var j = pagos2.length - 1; j >= 0; j--){
-                if(pagos2[j].cliente === nombre && Number(pagos2[j].monto) === monto){ ix = j; break; }
-              }
-              if(ix >= 0){
-                var pago = pagos2[ix];
-                pagos2.splice(ix, 1);
-                localStorage.setItem('cartera_pagos_historial', JSON.stringify(pagos2));
-                var cart = {};
-                try { cart = JSON.parse(localStorage.getItem('cartera_deudas')||'{}'); } catch(e){}
-                if(cart[nombre]){
-                  cart[nombre].deudasPagadas = Math.max(0, (Number(cart[nombre].deudasPagadas)||0) - monto);
-                  localStorage.setItem('cartera_deudas', JSON.stringify(cart));
-                }
-                if(pago.cuentaIdx >= 0 && Array.isArray(cuentasMemoria) && cuentasMemoria[pago.cuentaIdx]){
-                  cuentasMemoria[pago.cuentaIdx].saldo -= monto;
-                  if(typeof cuentasGuardar === 'function') cuentasGuardar();
-                }
-              }
-            } catch(e){ console.warn('reversa manual:', e); }
-          }
-        }
-
-        // Borrar la linea del historial v3 y recalcular
-        var nuevo = hist.filter(function(x){ return x && x.id !== id; });
-        if(typeof carteraHistGuardar === 'function') carteraHistGuardar(nombre, nuevo);
-        if(typeof carteraHistRecalcular === 'function') carteraHistRecalcular(nombre);
-
-        // Ledger
-        var despues = 0;
-        try {
-          var info2 = (typeof recaudoGetDeudaHistorica === 'function')
-            ? recaudoGetDeudaHistorica(nombre) : {deudaCliente:0};
-          despues = Number(info2.deudaCliente)||0;
-        } catch(e){}
-        if(typeof window.ledgerLog === 'function'){
-          window.ledgerLog({
-            tipo: esPago ? 'pago_revertido' : 'historial_linea_eliminada',
-            origen:'cartera-historial', cliente: nombre, monto: monto,
-            saldoAntes: antes, saldoDespues: despues,
-            descripcion: esPago
-              ? 'Pago revertido desde historial '+nombre
-              : 'Linea de historial borrada '+nombre
-          });
-        }
-
-        // Refrescar UIs
-        if(typeof renderCartera === 'function') renderCartera();
-        if(typeof renderRecaudo === 'function') renderRecaudo();
-        var overlay = document.getElementById('carteraModalOverlay');
-        if(overlay) overlay.remove();
-
-      } catch(e){
-        console.error('V15.2 xHistorialReal:', e);
-        alert('No se pudo eliminar la linea: '+e.message);
-      }
-    };
-    window.carteraHistEliminar.__v152 = true;
-  })();
-
-  // =========================================================
-  // PARCHE V16 — Editar=reemplazar, sync saldos, Nomina editable,
-  //              X Tiberio robusta, historial con valor del dia
-  // =========================================================
-
-  // ---------- 11. Sincronizador unico de pagos.
-  // cartera_deudas[nombre].deudasPagadas DEBE == sum(cartera_pagos_historial[cliente])
-  // para que header Tiberio y tabla Cartera siempre coincidan. ----------
-  window._sincronizarDeudasPagadas = function(){
-    try {
-      var pagos = [];
-      try { pagos = JSON.parse(localStorage.getItem('cartera_pagos_historial')||'[]'); } catch(e){}
-      var cart = {};
-      try { cart = JSON.parse(localStorage.getItem('cartera_deudas')||'{}'); } catch(e){}
-      var porCliente = {};
-      pagos.forEach(function(p){
-        if(!p || !p.cliente) return;
-        porCliente[p.cliente] = (porCliente[p.cliente]||0) + (Number(p.monto)||0);
-      });
-      // Clientes con pagos
-      Object.keys(porCliente).forEach(function(n){
-        if(!cart[n]) cart[n] = {};
-        cart[n].deudasPagadas = porCliente[n];
-      });
-      // Clientes sin pagos -> deudasPagadas = 0
-      Object.keys(cart).forEach(function(n){
-        if(porCliente[n] == null){
-          if(cart[n]) cart[n].deudasPagadas = 0;
-        }
-      });
-      localStorage.setItem('cartera_deudas', JSON.stringify(cart));
-    } catch(e){ console.warn('sinc deudasPagadas:', e); }
-  };
-
-  // Correr al cargar y tras cada operacion de pago
-  setTimeout(window._sincronizarDeudasPagadas, 600);
-
-  // ---------- 12. Parche del render Tiberio: quitar la doble resta ----------
-  // El header hace: saldoReal = deudaCliente - pagadoTiberio - totalPagadoHistorial
-  // Pero deudaCliente ya es (acumulado - deudasPagadas). Con el sincronizador,
-  // deudasPagadas === totalPagadoHistorial, por lo que la doble resta se
-  // convierte en resta correcta (queda coherente). El sincronizador arregla
-  // la inconsistencia sin tocar el render.
-
-  // ---------- 13. EDITAR = REEMPLAZAR (no sumar).
-  // Modal muestra el saldo actual pre-cargado. Guardar sobrescribe. ----------
-  window.carteraEditarDeuda = function(nombre){
-    var info = (typeof recaudoGetDeudaHistorica === 'function')
-      ? recaudoGetDeudaHistorica(nombre)
-      : {deudaCliente:0, deudaMia:0};
-    var saldoCli = Number(info.deudaCliente)||0;
-    var saldoMia = Number(info.deudaMia)||0;
-    var nombreEsc = String(nombre).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-
-    mostrarMC(
-      '<h3>Replantear deuda - '+nombre+'</h3>'+
-      '<div style="padding:10px 14px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:8px;margin-bottom:10px;font-size:13px;color:#fbbf24;">'+
-        'MODO REEMPLAZO (emergencia). El valor que escribas sera el SALDO NUEVO, no se suma al anterior.'+
-      '</div>'+
-      '<div class="mc-field"><label>Nuevo saldo "Me debe"</label>'+
-        '<input id="cartSetDeudaC" type="number" min="0" value="'+saldoCli+'" '+
-        'style="font-size:18px;font-weight:800;color:#ffffff;background:rgba(255,255,255,0.08);border:1px solid rgba(248,113,113,0.4);border-radius:8px;padding:10px 12px;width:100%;">'+
-      '</div>'+
-      '<div class="mc-field"><label>Nuevo saldo "Le debo"</label>'+
-        '<input id="cartSetDeudaM" type="number" min="0" value="'+saldoMia+'" '+
-        'style="font-size:18px;font-weight:800;color:#ffffff;background:rgba(255,255,255,0.08);border:1px solid rgba(96,165,250,0.4);border-radius:8px;padding:10px 12px;width:100%;">'+
-      '</div>'+
-      '<div class="mc-btns">'+
-        '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
-        '<button class="mc-btn-ok" style="background:#d97706;" onclick="carteraGuardarDeuda(\''+nombreEsc+'\')">Guardar saldo</button>'+
-      '</div>'
-    );
-  };
-
-  window.carteraGuardarDeuda = function(nombre){
-    var elC = document.getElementById('cartSetDeudaC');
-    var elM = document.getElementById('cartSetDeudaM');
-    var nuevoC = Math.max(Number(elC && elC.value) || 0, 0);
-    var nuevoM = Math.max(Number(elM && elM.value) || 0, 0);
-
-    var info = (typeof recaudoGetDeudaHistorica === 'function')
-      ? recaudoGetDeudaHistorica(nombre)
-      : {deudaCliente:0, deudaMia:0, deudasPagadas:0};
-    var antesC = Number(info.deudaCliente)||0;
-    var antesM = Number(info.deudaMia)||0;
-    var pagado = Number(info.deudasPagadas)||0;
-
-    // Estrategia: limpiar deudaCliente/deudaMia en TODOS los recaudos previos
-    // (pero NUNCA tocar nequi, bancolombia, recaudoDomi, deudasPagadas).
-    // Luego escribir el nuevo saldo en el recaudo de HOY, compensando por los
-    // pagos ya registrados (para que el acumulado - pagos = nuevoSaldo).
-    try {
-      for(var i=0; i<localStorage.length; i++){
-        var k = localStorage.key(i);
-        if(!k || !k.startsWith('recaudo_')) continue;
-        try {
-          var obj = JSON.parse(localStorage.getItem(k) || '{}');
-          if(obj && obj[nombre]){
-            delete obj[nombre].deudaCliente;
-            delete obj[nombre].deudaMia;
-            localStorage.setItem(k, JSON.stringify(obj));
-          }
-        } catch(e){}
-      }
-    } catch(e){}
-
-    // Escribir en recaudo de hoy: valor + pagado (para que al restar pagado de como resultado nuevoC)
-    var fk = 'recaudo_' + ((typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10));
-    var estado = {};
-    try { estado = JSON.parse(localStorage.getItem(fk) || '{}'); } catch(e){}
-    if(!estado[nombre]) estado[nombre] = {};
-    estado[nombre].deudaCliente = nuevoC + pagado;
-    estado[nombre].deudaMia     = nuevoM;
-    localStorage.setItem(fk, JSON.stringify(estado));
-
-    // Ledger
-    if(typeof window.ledgerLog === 'function'){
-      if(nuevoC !== antesC){
-        window.ledgerLog({
-          tipo:'deuda_replanteada_cliente', origen:'cartera', cliente: nombre,
-          monto: Math.abs(nuevoC - antesC), saldoAntes: antesC, saldoDespues: nuevoC,
-          descripcion:'Replanteamiento saldo me debe '+nombre
-        });
-      }
-      if(nuevoM !== antesM){
-        window.ledgerLog({
-          tipo:'deuda_replanteada_mia', origen:'cartera', cliente: nombre,
-          monto: Math.abs(nuevoM - antesM), saldoAntes: antesM, saldoDespues: nuevoM,
-          descripcion:'Replanteamiento saldo le debo '+nombre
-        });
-      }
-    }
-
-    // Registrar linea en historial v3 del dia con el valor NUEVO
-    try {
-      if(typeof carteraHistRegistrarDeuda === 'function'){
-        carteraHistRegistrarDeuda(nombre, nuevoC, pagado);
-      }
-    } catch(e){}
-
-    cerrarMC();
-    if(typeof renderCartera === 'function') renderCartera();
-    if(typeof renderRecaudo === 'function') renderRecaudo();
-  };
-
-  // ---------- 14. Mejorar X Tiberio: forzar re-render completo con delay ----------
-  var _prevHistElim16 = window.carteraHistEliminar;
-  if(typeof _prevHistElim16 === 'function' && !_prevHistElim16.__v16){
-    window.carteraHistEliminar = function(nombre, id){
-      var r = _prevHistElim16.apply(this, arguments);
-      setTimeout(function(){
-        try { window._sincronizarDeudasPagadas(); } catch(e){}
-        try { if(typeof renderCartera === 'function') renderCartera(); } catch(e){}
-      }, 120);
-      return r;
-    };
-    window.carteraHistEliminar.__v16 = true;
-  }
-  // Tambien tras eliminar pago via X del historial de pagos
-  var _prevElimPago16 = window.carteraEliminarPago;
-  if(typeof _prevElimPago16 === 'function' && !_prevElimPago16.__v16){
-    window.carteraEliminarPago = function(idx){
-      var r = _prevElimPago16.apply(this, arguments);
-      setTimeout(function(){
-        try { window._sincronizarDeudasPagadas(); } catch(e){}
-        try { if(typeof renderCartera === 'function') renderCartera(); } catch(e){}
-      }, 120);
-      return r;
-    };
-    window.carteraEliminarPago.__v16 = true;
-  }
-
-  // ---------- 15. NOMINA: editar nombre empleado + editar adelantos ----------
-  window.nominaEditarNombre = function(idx){
-    try {
-      var d = _nLeer();
-      var actual = d.empleados[idx] ? d.empleados[idx].nombre : '';
-      var nuevo = prompt('Nuevo nombre del trabajador:', actual);
-      if(nuevo == null) return;
-      nuevo = nuevo.trim().toUpperCase();
-      if(!nuevo){ alert('Nombre vacio'); return; }
-      d.empleados[idx].nombre = nuevo;
-      _nGuardar(d);
-      renderNomina();
-    } catch(e){ alert('Error: '+e.message); }
-  };
-
-  window.nominaEditarAdelanto = function(idx, ai){
-    try {
-      var d = _nLeer();
-      var ad = d.empleados[idx].adelantos[ai];
-      if(!ad) return;
-      var m = prompt('Monto del adelanto:', ad.monto);
-      if(m == null) return;
-      m = Number(String(m).replace(/\./g,'').replace(/,/g,'').replace(/[^0-9]/g,'')) || 0;
-      if(m <= 0){ alert('Monto invalido'); return; }
-      var r = prompt('Razon:', ad.razon || '');
-      if(r == null) r = ad.razon || '';
-      d.empleados[idx].adelantos[ai].monto = m;
-      d.empleados[idx].adelantos[ai].razon = r;
-      _nGuardar(d);
-      renderNomina();
-    } catch(e){ alert('Error: '+e.message); }
-  };
-
-  // Envolver renderNomina para inyectar botones/handlers editables
-  (function hookNomina(){
-    var tries = 0;
-    function hook(){
-      if(typeof window.renderNomina !== 'function'){
-        if(++tries < 30) return setTimeout(hook, 200);
-        return;
-      }
-      if(window.renderNomina.__v16) return;
-      var _prev = window.renderNomina;
-      window.renderNomina = function(){
-        var r = _prev.apply(this, arguments);
-        setTimeout(inyectar, 80);
-        return r;
-      };
-      window.renderNomina.__v16 = true;
-      setTimeout(inyectar, 300);
-    }
-    function inyectar(){
-      try {
-        var body = document.getElementById('nominaBody') || document.body;
-        // 1. Hacer editables los nombres: buscar div con font-size:17px, font-weight:800 dentro de tarjetas
-        // Estrategia simple: envolver cada nombre con un listener de click.
-        var data;
-        try { data = _nLeer(); } catch(e){ return; }
-        var empleados = (data && data.empleados) || [];
-        empleados.forEach(function(emp, idx){
-          // Buscar el div del nombre (texto = emp.nombre, font-weight 800, size 17)
-          var divs = body.querySelectorAll('div');
-          divs.forEach(function(div){
-            if(div.__v16Nom) return;
-            var txt = (div.textContent||'').trim();
-            var style = div.getAttribute('style') || '';
-            if(txt === emp.nombre && /font-weight:800/.test(style) && /font-size:17px/.test(style)){
-              div.__v16Nom = true;
-              div.style.cursor = 'pointer';
-              div.title = 'Click para editar nombre';
-              div.addEventListener('click', function(ev){
-                ev.stopPropagation();
-                window.nominaEditarNombre(idx);
-              });
-              // Agregar lapiz visual
-              if(!div.querySelector('.v16-edit-ico')){
-                var ico = document.createElement('span');
-                ico.className = 'v16-edit-ico';
-                ico.textContent = ' \u270F';
-                ico.style.cssText = 'font-size:12px;color:#fbbf24;margin-left:6px;opacity:0.6;';
-                div.appendChild(ico);
-              }
-            }
-          });
-        });
-        // 2. Adelantos editables: cada ✕ ya esta; agregamos un lapiz al lado
-        empleados.forEach(function(emp, idx){
-          (emp.adelantos||[]).forEach(function(a, ai){
-            // Buscar botones de borrar adelanto de este idx/ai
-            var sel = 'button[onclick*="nominaBorrarAdelanto('+idx+','+ai+')"]';
-            var btns = body.querySelectorAll(sel);
-            btns.forEach(function(btn){
-              if(btn.__v16Adel) return;
-              btn.__v16Adel = true;
-              var pencil = document.createElement('button');
-              pencil.textContent = '\u270F';
-              pencil.title = 'Editar adelanto';
-              pencil.style.cssText = 'background:none;border:none;color:#fbbf24;cursor:pointer;font-size:13px;margin-right:4px;';
-              pencil.onclick = function(ev){
-                ev.stopPropagation();
-                window.nominaEditarAdelanto(idx, ai);
-              };
-              btn.parentNode.insertBefore(pencil, btn);
-            });
-          });
-        });
-      } catch(e){ console.warn('V16 nomina inyectar:', e); }
-    }
-    hook();
-  })();
-
-  // ---------- 16. V16.1: Reemplazar la X del historial v3 por boton EDITAR ----------
-  // Permite cambiar fecha y monto de la entrada (pago o deuda-dia).
-  // Lookup tolerante: intenta por id, luego por prefijos, luego por la primer
-  // entrada del mismo tipo si el id quedo inconsistente despues de un recalculo.
-  function _histBuscarEntrada(hist, id){
-    if(!Array.isArray(hist) || !id) return null;
-    var e = hist.find(function(x){ return x && x.id === id; });
-    if(e) return e;
-    // Intento por prefijo (id regenerado tras recalcular)
-    var pref = String(id).slice(0, 15);
-    e = hist.find(function(x){ return x && String(x.id || '').indexOf(pref) === 0; });
-    if(e) return e;
-    return null;
-  }
-
-  window.carteraHistEditarEntrada = function(nombre, id){
-    try {
-      var hist = (typeof carteraHistLeer === 'function') ? carteraHistLeer(nombre) : [];
-      var entry = _histBuscarEntrada(hist, id);
-      if(!entry){
-        alert('No se encontro la entrada exacta. Abriendo selector...');
-        // Fallback UI: mostrar modal con la lista y dejar al usuario elegir cual editar
-        return _histMostrarSelector(nombre);
-      }
-      var esPago = entry.tipo === 'pago';
-      var fechaAct = entry.fecha || new Date().toISOString().slice(0,10);
-      var montoAct = Number(esPago ? entry.pagado : entry.deuda) || 0;
-      var nombreEsc = String(nombre).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      var idEsc     = String(id).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-
-      mostrarMC(
-        '<h3>Editar '+(esPago?'PAGO':'DEUDA')+' - '+nombre+'</h3>'+
-        '<div style="padding:10px 14px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.25);border-radius:8px;margin-bottom:10px;font-size:13px;color:#93c5fd;">'+
-          'Cambia la FECHA y el MONTO de esta entrada. Se recalcula el saldo automaticamente.'+
-        '</div>'+
-        '<div class="mc-field"><label>Fecha</label>'+
-          '<input id="histEditFecha" type="date" value="'+fechaAct+'" '+
-          'style="font-size:15px;font-weight:700;color:#ffffff;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:10px 12px;width:100%;">'+
-        '</div>'+
-        '<div class="mc-field"><label>Monto (en pesos)</label>'+
-          '<input id="histEditMonto" type="number" min="0" value="'+montoAct+'" '+
-          'style="font-size:18px;font-weight:800;color:#ffffff;background:rgba(255,255,255,0.08);border:1px solid rgba(251,191,36,0.4);border-radius:8px;padding:10px 12px;width:100%;">'+
-        '</div>'+
-        '<div class="mc-btns">'+
-          '<button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button>'+
-          '<button class="mc-btn-ok" style="background:#2563eb;" onclick="carteraHistGuardarEdicion(\''+nombreEsc+'\',\''+idEsc+'\')">Guardar</button>'+
-        '</div>'
-      );
-    } catch(e){ alert('Error: '+e.message); }
-  };
-
-  window.carteraHistGuardarEdicion = function(nombre, id){
-    try {
-      var nuevaFecha = document.getElementById('histEditFecha').value;
-      var nuevoMonto = Math.max(Number(document.getElementById('histEditMonto').value) || 0, 0);
-      if(!nuevaFecha){ alert('Fecha invalida'); return; }
-
-      var hist = carteraHistLeer(nombre);
-      var entry = _histBuscarEntrada(hist, id);
-      var idx = entry ? hist.indexOf(entry) : -1;
-      if(idx < 0 || !entry){ alert('Entrada perdida'); cerrarMC(); return; }
-      var esPago = entry.tipo === 'pago';
-      var montoAnterior = Number(esPago ? entry.pagado : entry.deuda) || 0;
-      var fechaAnterior = entry.fecha;
-
-      // 1. Actualizar la entrada visual del historial v3
-      entry.fecha = nuevaFecha;
-      if(esPago){
-        entry.pagado = nuevoMonto;
-      } else {
-        entry.deuda = nuevoMonto;
-      }
-      hist[idx] = entry;
-      carteraHistGuardar(nombre, hist);
-      if(typeof carteraHistRecalcular === 'function') carteraHistRecalcular(nombre);
-
-      // 2. Si es PAGO, reflejar el cambio en cartera_pagos_historial
-      if(esPago){
-        try {
-          var pagos = JSON.parse(localStorage.getItem('cartera_pagos_historial')||'[]');
-          // Encontrar el pago por cliente + monto anterior (el mas reciente coincidente)
-          var pi = -1;
-          for(var i = pagos.length - 1; i >= 0; i--){
-            if(pagos[i].cliente === nombre && Number(pagos[i].monto) === montoAnterior){
-              pi = i; break;
-            }
-          }
-          if(pi >= 0){
-            var pagoViejo = pagos[pi];
-            var delta = nuevoMonto - montoAnterior; // positivo: subio, negativo: bajo
-            pagos[pi].monto = nuevoMonto;
-            pagos[pi].fecha = nuevaFecha;
-            localStorage.setItem('cartera_pagos_historial', JSON.stringify(pagos));
-
-            // Ajustar saldo de la cuenta asociada (si existe)
-            if(pagoViejo.cuentaIdx >= 0 && Array.isArray(cuentasMemoria) && cuentasMemoria[pagoViejo.cuentaIdx]){
-              cuentasMemoria[pagoViejo.cuentaIdx].saldo += delta;
-              if(typeof cuentasGuardar === 'function') cuentasGuardar();
-            }
-
-            // Ledger
-            if(typeof window.ledgerLog === 'function'){
-              window.ledgerLog({
-                tipo:'pago_editado', origen:'historial-cartera', cliente: nombre,
-                monto: Math.abs(delta),
-                saldoAntes: montoAnterior, saldoDespues: nuevoMonto,
-                descripcion:'Pago editado de $'+montoAnterior+' a $'+nuevoMonto+' ('+fechaAnterior+' -> '+nuevaFecha+')'
-              });
-            }
-          }
-        } catch(e){ console.warn('ajuste pagos:', e); }
-      } else {
-        // Si es deuda-dia: el replanteo va via recaudo del dia; actualizamos
-        // el recaudo de la fecha destino con el nuevo monto.
-        try {
-          var fkNueva = 'recaudo_' + nuevaFecha;
-          var estNueva = JSON.parse(localStorage.getItem(fkNueva) || '{}');
-          if(!estNueva[nombre]) estNueva[nombre] = {};
-          estNueva[nombre].deudaCliente = nuevoMonto;
-          localStorage.setItem(fkNueva, JSON.stringify(estNueva));
-
-          // Si cambio la fecha, limpiar el valor anterior
-          if(fechaAnterior && fechaAnterior !== nuevaFecha){
-            var fkVieja = 'recaudo_' + fechaAnterior;
-            var estVieja = JSON.parse(localStorage.getItem(fkVieja) || '{}');
-            if(estVieja[nombre]){
-              delete estVieja[nombre].deudaCliente;
-              localStorage.setItem(fkVieja, JSON.stringify(estVieja));
-            }
-          }
-
-          if(typeof window.ledgerLog === 'function'){
-            window.ledgerLog({
-              tipo:'deuda_editada', origen:'historial-cartera', cliente: nombre,
-              monto: Math.abs(nuevoMonto - montoAnterior),
-              saldoAntes: montoAnterior, saldoDespues: nuevoMonto,
-              descripcion:'Deuda editada ('+fechaAnterior+' -> '+nuevaFecha+')'
-            });
-          }
-        } catch(e){ console.warn('ajuste deuda:', e); }
-      }
-
-      // 3. Sincronizar y re-render
-      if(typeof window._sincronizarDeudasPagadas === 'function') window._sincronizarDeudasPagadas();
-      cerrarMC();
-      setTimeout(function(){
-        if(typeof renderCartera === 'function') renderCartera();
-        if(typeof renderRecaudo === 'function') renderRecaudo();
-      }, 100);
-    } catch(e){
-      alert('Error guardando: '+e.message);
-      console.error(e);
-    }
-  };
-
-  // ---------- V16.2: selector de entradas cuando el id no coincide ----------
-  function _histMostrarSelector(nombre){
-    try {
-      var hist = (typeof carteraHistLeer === 'function') ? carteraHistLeer(nombre) : [];
-      if(!hist.length){ alert('Sin entradas en el historial'); return; }
-      var nombreEsc = String(nombre).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      var rows = hist.map(function(h){
-        var esPago = h.tipo === 'pago';
-        var monto = Number(esPago ? h.pagado : h.deuda) || 0;
-        var idEsc = String(h.id||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        return '<div style="display:flex;align-items:center;gap:8px;padding:8px;background:rgba(255,255,255,0.04);border-radius:8px;margin-bottom:6px;">'+
-          '<div style="flex:1;">'+
-            '<div style="font-size:11px;color:'+(esPago?'#86efac':'#93c5fd')+';font-weight:800;">'+(esPago?'PAGO':'DEUDA')+' '+(h.fecha||'')+'</div>'+
-            '<div style="font-size:14px;color:#fff;font-weight:700;">$'+monto.toLocaleString('es-CO')+'</div>'+
-          '</div>'+
-          '<button onclick="carteraHistEditarEntrada(\''+nombreEsc+'\',\''+idEsc+'\')" style="background:rgba(251,191,36,0.2);border:1px solid rgba(251,191,36,0.4);color:#fbbf24;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">Editar</button>'+
-          '<button onclick="carteraHistEliminarEntrada(\''+nombreEsc+'\',\''+idEsc+'\')" style="background:rgba(239,68,68,0.2);border:1px solid rgba(239,68,68,0.4);color:#f87171;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">Eliminar</button>'+
-        '</div>';
-      }).join('');
-      mostrarMC(
-        '<h3>Historial - '+nombre+'</h3>'+
-        '<div style="max-height:400px;overflow-y:auto;">'+rows+'</div>'+
-        '<div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC()">Cerrar</button></div>'
-      );
-    } catch(e){ alert('Error: '+e.message); }
-  }
-
-  // ---------- V16.2: eliminar entrada con reversa real (la funcion del V15.2
-  //             sigue existiendo como carteraHistEliminar; aqui un alias mas
-  //             explicito para el boton nuevo) ----------
-  window.carteraHistEliminarEntrada = function(nombre, id){
-    try {
-      var hist = (typeof carteraHistLeer === 'function') ? carteraHistLeer(nombre) : [];
-      var entry = _histBuscarEntrada(hist, id);
-      if(!entry){
-        alert('No se encontro la entrada');
-        return;
-      }
-      // Delega al handler robusto ya existente (V15.2). Usa el id real.
-      return window.carteraHistEliminar(nombre, entry.id);
-    } catch(e){ alert('Error: '+e.message); }
-  };
-
-  // ---------- V16.2: Swap mejorado: Editar + Eliminar, con fallback ----------
-  (function swapBotonesHistorial(){
-    if(typeof window.carteraHistHtml !== 'function') return;
-    if(window.carteraHistHtml.__v162) return;
-    var _prev = window.carteraHistHtml;
-    window.carteraHistHtml = function(){
-      var html = _prev.apply(this, arguments);
-      if(typeof html !== 'string') return html;
-      // Reemplazar cada boton con X por dos botones (Editar + Eliminar)
-      html = html.replace(
-        /<button\s+onclick="carteraHistEliminar\('([^']+)','([^']+)'\)"[\s\S]*?>\s*[\u2715\u2716\u00d7x]\s*<\/button>/g,
-        function(_m, nEsc, idEsc){
-          return (
-            '<div style="display:flex;gap:4px;">'+
-            '<button onclick="carteraHistEditarEntrada(\''+nEsc+'\',\''+idEsc+'\')" '+
-              'style="background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.35);color:#fbbf24;cursor:pointer;font-size:11px;font-weight:800;padding:4px 8px;border-radius:6px;" '+
-              'title="Editar fecha y monto">Editar</button>'+
-            '<button onclick="carteraHistEliminarEntrada(\''+nEsc+'\',\''+idEsc+'\')" '+
-              'style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.35);color:#f87171;cursor:pointer;font-size:11px;font-weight:800;padding:4px 8px;border-radius:6px;" '+
-              'title="Eliminar y revertir en toda la contabilidad">Eliminar</button>'+
-            '</div>'
-          );
-        }
-      );
-      return html;
-    };
-    window.carteraHistHtml.__v162 = true;
-  })();
-
-  // ---------- V16.2: Borrar categoria "Otro" en gastos contables ----------
-  window.borrarCategoriaOtros = function(){
-    if(!confirm('Borrar TODOS los movimientos con categoria "Otro" (gastos sin categorizar)?\n\nEsto eliminara los registros cuya categoria sea "Otro" o este vacia.')) return;
-    try {
-      var n1 = 0, n2 = 0;
-      // movimientosContables (varios nombres de storage posibles)
-      ['movimientos_contables','movimientos_contables_v1','movimientosContables'].forEach(function(k){
-        try {
-          var a = JSON.parse(localStorage.getItem(k)||'null');
-          if(Array.isArray(a)){
-            var b = a.filter(function(m){
-              var c = (m && m.categoria || '').toString().trim().toLowerCase();
-              return c && c !== 'otro' && c !== 'otros';
-            });
-            n1 += (a.length - b.length);
-            localStorage.setItem(k, JSON.stringify(b));
-          }
-        } catch(e){}
-      });
-      // var global movimientosContables en memoria
-      if(Array.isArray(window.movimientosContables)){
-        window.movimientosContables = window.movimientosContables.filter(function(m){
-          var c = (m && m.categoria || '').toString().trim().toLowerCase();
-          return c && c !== 'otro' && c !== 'otros';
-        });
-      }
-      // gastosMemoria
-      if(Array.isArray(window.gastosMemoria)){
-        var antes = window.gastosMemoria.length;
-        window.gastosMemoria = window.gastosMemoria.filter(function(g){
-          var c = (g && g.categoria || '').toString().trim().toLowerCase();
-          return c && c !== 'otro' && c !== 'otros';
-        });
-        n2 += (antes - window.gastosMemoria.length);
-        try { sessionStorage.setItem('gastos', JSON.stringify(window.gastosMemoria)); } catch(e){}
-        try { localStorage.setItem('gastos', JSON.stringify(window.gastosMemoria)); } catch(e){}
-      }
-      alert('Listo. Eliminados '+n1+' movimientos contables y '+n2+' gastos en memoria.');
-      if(typeof renderCategorias === 'function') renderCategorias();
-      if(typeof renderContabilidad === 'function') renderContabilidad();
-      if(typeof renderDashboardCategorias === 'function') renderDashboardCategorias();
-    } catch(e){ alert('Error: '+e.message); }
-  };
-
-  // V17 y V18 REVERTIDOS: rompian la entrada de datos en el input DEUDA.
-  // Volvemos al comportamiento FIX2 original (row.deudaCliente = savedDC).
-  console.log('Parche V14+V15+V16 aplicado (V17/V18 revertidos).');
-})();
-
-
-// =====================================================
-// PARCHE DEFINITIVO V21 — DEUDAS + HISTORIAL + NOMINA
+// MÓDULO V20 — DEUDAS + CARTERA (LIMPIO)
 // =====================================================
 (function(){
 'use strict';
 
-// ============================================
-// A. PERSISTENCIA movimientosContables
-// ============================================
-// Load from localStorage on startup
-(function(){
-  var saved = null;
-  try { saved = JSON.parse(localStorage.getItem('movimientosContables')); } catch(e){}
-  if(Array.isArray(saved) && saved.length > 0 && (!Array.isArray(window.movimientosContables) || window.movimientosContables.length === 0)){
-    window.movimientosContables = saved;
-  }
-})();
-
-// Auto-save movimientosContables every 2 seconds
-setInterval(function(){
-  if(Array.isArray(window.movimientosContables) && window.movimientosContables.length > 0){
-    try { localStorage.setItem('movimientosContables', JSON.stringify(window.movimientosContables)); } catch(e){}
-  }
-}, 2000);
-
-// Wrap agregarIngresoExtra to also persist
-var _origAIE = window.agregarIngresoExtra;
-window.agregarIngresoExtra = function(){
-  if(typeof _origAIE === 'function') _origAIE.apply(this, arguments);
-  try { localStorage.setItem('movimientosContables', JSON.stringify(window.movimientosContables||[])); } catch(e){}
-};
-
-// ============================================
-// B. DEUDA STORE (single source of truth)
-// ============================================
 var DK = 'vn_deudas_v20';
-function dL(){ try{return JSON.parse(localStorage.getItem(DK)||'{}');}catch(e){return {};} }
-function dS(d){ localStorage.setItem(DK, JSON.stringify(d||{})); }
-function dG(n){ var d=dL(); if(!d[n]) d[n]={sc:0,sm:0,h:[]}; return d[n]; }
-function dM(n){ return '$'+(Number(n)||0).toLocaleString('es-CO'); }
+function dLeer(){ try{return JSON.parse(localStorage.getItem(DK)||'{}');}catch(e){return {};} }
+function dGuardar(d){ localStorage.setItem(DK, JSON.stringify(d||{})); }
+function dGet(n){ var d=dLeer(); if(!d[n]) d[n]={sc:0,sm:0,h:[]}; if(!Array.isArray(d[n].h)) d[n].h=[]; if(typeof d[n].sc!=='number') d[n].sc=Number(d[n].sc)||0; if(typeof d[n].sm!=='number') d[n].sm=Number(d[n].sm)||0; return d[n]; }
+function dMoney(n){ return '$'+(Number(n)||0).toLocaleString('es-CO'); }
 
-// ============================================
-// C. DEUDA FUNCTIONS (all on window)
-// ============================================
+// Normaliza la estructura de un registro de deuda (migración segura)
+function dNorm(d, nombre){
+  if(!d[nombre]) d[nombre] = {sc:0, sm:0, h:[]};
+  if(typeof d[nombre].sc !== 'number') d[nombre].sc = Number(d[nombre].sc)||0;
+  if(typeof d[nombre].sm !== 'number') d[nombre].sm = Number(d[nombre].sm)||0;
+  if(!Array.isArray(d[nombre].h)) d[nombre].h = [];
+  return d[nombre];
+}
+
+// Agregar deuda
 window.vnDeudaAgregar = function(nombre, tipo, monto, nota){
-  var d=dL(); if(!d[nombre]) d[nombre]={sc:0,sm:0,h:[]};
+  var d=dLeer(); dNorm(d, nombre);
   monto=Math.abs(Number(monto)||0); if(monto<=0) return;
   if(tipo==='cliente') d[nombre].sc+=monto; else d[nombre].sm+=monto;
-  d[nombre].h.push({id:'d'+Date.now(),f:new Date().toISOString().slice(0,10),hr:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),t:'deuda',s:tipo,m:monto,sl:tipo==='cliente'?d[nombre].sc:d[nombre].sm,n:nota||''});
-  dS(d);
+  d[nombre].h.push({id:'d'+Date.now(),fecha:new Date().toISOString().slice(0,10),hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),tipo:'deuda',sub:tipo,monto:monto,saldo:tipo==='cliente'?d[nombre].sc:d[nombre].sm,nota:nota||''});
+  dGuardar(d);
   if(Array.isArray(window.movimientosContables)){
     window.movimientosContables.push({tipo:'deuda',monto:monto,cuenta:'—',descripcion:(tipo==='cliente'?'Deuda de ':'Le debo a ')+nombre+(nota?' - '+nota:''),fecha:new Date().toISOString()});
-    try{localStorage.setItem('movimientosContables',JSON.stringify(window.movimientosContables));}catch(e){}
+    if(typeof window._mcPersist==='function') window._mcPersist();
   }
 };
 
+// Pagar deuda
 window.vnDeudaPagar = function(nombre, tipo, monto, metodo, banco, ci, nota){
-  var d=dL(); if(!d[nombre]) d[nombre]={sc:0,sm:0,h:[]};
+  var d=dLeer(); dNorm(d, nombre);
   monto=Math.abs(Number(monto)||0); if(monto<=0) return;
   if(tipo==='cliente') d[nombre].sc=Math.max(d[nombre].sc-monto,0); else d[nombre].sm=Math.max(d[nombre].sm-monto,0);
-  d[nombre].h.push({id:'p'+Date.now(),f:new Date().toISOString().slice(0,10),hr:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),t:'pago',s:tipo,m:monto,met:metodo||'',ban:banco||'',sl:tipo==='cliente'?d[nombre].sc:d[nombre].sm,n:nota||''});
-  dS(d);
+  d[nombre].h.push({id:'p'+Date.now(),fecha:new Date().toISOString().slice(0,10),hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),tipo:'pago',sub:tipo,monto:monto,metodo:metodo||'',banco:banco||'',saldo:tipo==='cliente'?d[nombre].sc:d[nombre].sm,nota:nota||''});
+  dGuardar(d);
   if(ci>=0 && Array.isArray(window.cuentasMemoria) && window.cuentasMemoria[ci]){
     window.cuentasMemoria[ci].saldo+=monto; if(typeof cuentasGuardar==='function') cuentasGuardar();
   }
   if(Array.isArray(window.movimientosContables)){
     window.movimientosContables.push({tipo:'ingreso',monto:monto,cuenta:banco||'Efectivo',descripcion:'Pago deuda '+nombre+(nota?' - '+nota:''),fecha:new Date().toISOString()});
-    try{localStorage.setItem('movimientosContables',JSON.stringify(window.movimientosContables));}catch(e){}
+    if(typeof window._mcPersist==='function') window._mcPersist();
   }
 };
 
+// Set saldo inicial
 window.vnDeudaSetInicial = function(nombre, tipo, monto){
-  var d=dL(); if(!d[nombre]) d[nombre]={sc:0,sm:0,h:[]};
+  var d=dLeer(); dNorm(d, nombre);
   monto=Math.abs(Number(monto)||0);
   if(tipo==='cliente') d[nombre].sc=monto; else d[nombre].sm=monto;
-  d[nombre].h.push({id:'i'+Date.now(),f:new Date().toISOString().slice(0,10),hr:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),t:'ini',s:tipo,m:monto,sl:monto,n:'Saldo inicial'});
-  dS(d);
+  d[nombre].h.push({id:'i'+Date.now(),fecha:new Date().toISOString().slice(0,10),hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),tipo:'saldo_ini',sub:tipo,monto:monto,saldo:monto,nota:'Saldo inicial'});
+  dGuardar(d);
 };
 
+// Eliminar linea historial
 window.vnDeudaEliminar = function(nombre, id){
-  if(!confirm('¿Eliminar esta línea del historial?')) return;
-  var d=dL(); if(!d[nombre]) return;
+  if(!confirm('¿Eliminar esta línea?')) return;
+  var d=dLeer(); if(!d[nombre]) return;
   d[nombre].h=(d[nombre].h||[]).filter(function(x){return x.id!==id;});
+  // Recalcular saldos
   var sc=0,sm=0;
   d[nombre].h.forEach(function(x){
-    if(x.t==='ini'){ if(x.s==='cliente') sc=x.m; else sm=x.m; }
-    else if(x.t==='deuda'){ if(x.s==='cliente') sc+=x.m; else sm+=x.m; }
-    else if(x.t==='pago'){ if(x.s==='cliente') sc=Math.max(sc-x.m,0); else sm=Math.max(sm-x.m,0); }
+    if(x.tipo==='saldo_ini'){ if(x.sub==='cliente') sc=x.monto; else sm=x.monto; }
+    else if(x.tipo==='deuda'){ if(x.sub==='cliente') sc+=x.monto; else sm+=x.monto; }
+    else if(x.tipo==='pago'){ if(x.sub==='cliente') sc=Math.max(sc-x.monto,0); else sm=Math.max(sm-x.monto,0); }
   });
   d[nombre].sc=sc; d[nombre].sm=sm;
-  dS(d);
+  dGuardar(d);
   if(typeof renderCartera==='function') renderCartera();
 };
 
+// Listar clientes con deuda
 window.vnDeudaListar = function(){
-  var d=dL(),r=[];
-  Object.keys(d).forEach(function(n){ if((d[n].sc||0)>0||(d[n].sm||0)>0) r.push({nombre:n,sc:d[n].sc||0,sm:d[n].sm||0,h:d[n].h||[]}); });
-  return r.sort(function(a,b){return(b.sc+b.sm)-(a.sc+a.sm);});
+  var d=dLeer(),lista=[];
+  Object.keys(d).forEach(function(n){
+    if((d[n].sc||0)>0||(d[n].sm||0)>0) lista.push({nombre:n,sc:d[n].sc||0,sm:d[n].sm||0,h:d[n].h||[]});
+  });
+  return lista.sort(function(a,b){return (b.sc+b.sm)-(a.sc+a.sm);});
 };
 
-// ============================================
-// D. MODAL DEUDA — usa variable global, no string en onclick
-// ============================================
-window._vnDeudaState = {};
+// ==========================================
+// OVERRIDE recaudoGetDeudaHistorica → lee del store
+// ==========================================
+window.recaudoGetDeudaHistorica = function(nombre){
+  var d=dGet(nombre);
+  return {deudaCliente:d.sc||0, deudaMia:d.sm||0, deudasPagadas:0, fechaPago:'—'};
+};
 
-window._vnAbrirDeudaModal = function(nombre, tipo){
-  window._vnDeudaState = {nombre:nombre, tipo:tipo};
+// ==========================================
+// OVERRIDE recaudoConstruirData → add _deudaTotal
+// ==========================================
+var _bRC = window.recaudoConstruirData;
+window.recaudoConstruirData = async function(){
+  var rows = await _bRC.apply(this, arguments);
+  var hoyStr = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10);
+  rows.forEach(function(r){
+    var d = dGet(r.cliente);
+    r._deudaTotalCliente = d.sc || 0;
+    r._deudaTotalMia = d.sm || 0;
+    r.deudaCliente = 0;
+    r.deudaMia = 0;
+
+    // Deudas REGISTRADAS HOY (afectan efectivo del día)
+    var dcHoy = 0, dmHoy = 0, pagoClienteHoyEfectivo = 0, pagoMiaHoyEfectivo = 0;
+    (d.h||[]).forEach(function(x){
+      if(x.fecha !== hoyStr) return;
+      if(x.tipo === 'deuda'){
+        if(x.sub === 'cliente') dcHoy += Number(x.monto)||0;
+        else if(x.sub === 'mia') dmHoy += Number(x.monto)||0;
+      } else if(x.tipo === 'pago' && x.metodo === 'efectivo'){
+        if(x.sub === 'cliente') pagoClienteHoyEfectivo += Number(x.monto)||0;
+        else if(x.sub === 'mia') pagoMiaHoyEfectivo += Number(x.monto)||0;
+      }
+    });
+    r._deudaClienteHoy = dcHoy;
+    r._deudaMiaHoy = dmHoy;
+    r._pagoClienteHoyEfectivo = pagoClienteHoyEfectivo;
+    r._pagoMiaHoyEfectivo = pagoMiaHoyEfectivo;
+
+    // Ajuste al efectivoNeto del día:
+    //  - deuda cliente registrada HOY → NO me pagó esa plata → resta
+    //  - deuda mía registrada HOY → cliente me dio de más / yo recibí → suma
+    //  - pago de deuda en efectivo ya se suma por recaudoDomi/caja aparte
+    var ef = Number(r.efectivoNeto)||0;
+    ef = ef - dcHoy + dmHoy;
+    if(ef < 0) ef = 0;
+    r.efectivoNeto = ef;
+
+    if(typeof recaudoClasificarResumen==='function')
+      r.resumen = recaudoClasificarResumen(r._deudaTotalCliente, r._deudaTotalMia);
+  });
+  return rows;
+};
+
+// ==========================================
+// MODALES — Agregar deuda (desde checkbox recaudo)
+// ==========================================
+window.vnDeudaModal = function(nombre, tipo){
   var label = tipo==='cliente' ? '🔴 Deuda del cliente (me debe)' : '🔵 Deuda mía (le debo)';
-  var d = dG(nombre);
+  var d = dGet(nombre);
   var saldo = tipo==='cliente' ? d.sc : d.sm;
-  var html = '<h3 style="text-align:center;margin-bottom:8px;">'+label+'</h3>'+
-    '<div style="text-align:center;font-size:13px;color:#94a3b8;margin-bottom:14px;">'+nombre+'</div>';
-  if(saldo > 0){
-    html += '<div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:10px;margin-bottom:14px;text-align:center;"><div style="font-size:11px;color:#fcd34d;font-weight:600;">Saldo actual</div><div style="font-size:22px;font-weight:800;color:'+(tipo==='cliente'?'#fca5a5':'#93c5fd')+';">'+dM(saldo)+'</div></div>';
-  }
-  html += '<div class="mc-field"><label>MONTO A AGREGAR</label><input id="vnDMonto" type="number" placeholder="Ej: 25000" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:12px;font-size:18px;font-weight:800;text-align:center;"></div>'+
-    '<div class="mc-field"><label>NOTA (OPCIONAL)</label><input id="vnDNota" type="text" placeholder="Ej: Pedido fiado" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px;font-size:13px;"></div>'+
-    '<div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC();if(typeof renderRecaudo===\'function\')renderRecaudo();">Cancelar</button><button class="mc-btn-ok" style="background:'+(tipo==='cliente'?'#dc2626':'#2563eb')+';" onclick="window._vnDeudaConfirmar()">Agregar deuda</button></div>';
-  mostrarMC(html);
+
+  // Guardar contexto para el botón (evita problemas con comillas en el nombre)
+  window._vnDeudaCtx = { nombre: nombre, tipo: tipo };
+
+  mostrarMC(
+    '<h3 style="text-align:center;margin-bottom:8px;">'+label+'</h3>'+
+    '<div style="text-align:center;font-size:13px;color:#94a3b8;margin-bottom:14px;">'+nombre+'</div>'+
+    (saldo > 0 ? '<div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:10px;margin-bottom:14px;text-align:center;"><div style="font-size:11px;color:#fcd34d;font-weight:600;">Saldo actual</div><div style="font-size:22px;font-weight:800;color:'+(tipo==='cliente'?'#fca5a5':'#93c5fd')+';">'+dMoney(saldo)+'</div></div>' : '')+
+    '<div class="mc-field"><label>Monto a agregar</label><input id="vnDMonto" type="number" placeholder="Ej: 25000" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:12px;font-size:18px;font-weight:800;text-align:center;"></div>'+
+    '<div class="mc-field"><label>Nota (opcional)</label><input id="vnDNota" type="text" placeholder="Ej: Pedido fiado" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px;font-size:13px;"></div>'+
+    '<div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC();renderRecaudo();">Cancelar</button><button class="mc-btn-ok" style="background:'+(tipo==='cliente'?'#dc2626':'#2563eb')+';" onclick="vnDeudaConfirmar()">Agregar deuda</button></div>'
+  );
   setTimeout(function(){ var i=document.getElementById('vnDMonto'); if(i) i.focus(); }, 200);
 };
 
-window._vnDeudaConfirmar = function(){
-  var st = window._vnDeudaState;
-  if(!st || !st.nombre) return;
-  var monto = Number(document.getElementById('vnDMonto').value)||0;
-  var nota = (document.getElementById('vnDNota').value||'').trim();
-  if(monto<=0){ alert('Ingresa un monto válido'); return; }
-  vnDeudaAgregar(st.nombre, st.tipo, monto, nota);
-  cerrarMC();
-  if(typeof renderRecaudo==='function') renderRecaudo();
+window.vnDeudaConfirmar = function(nombre, tipo){
+  try {
+    var ctx = window._vnDeudaCtx || {};
+    nombre = nombre || ctx.nombre;
+    tipo = tipo || ctx.tipo;
+    if(!nombre || !tipo){ alert('Contexto perdido. Reabre el modal.'); return; }
+    var mEl = document.getElementById('vnDMonto');
+    var nEl = document.getElementById('vnDNota');
+    var monto = Number(mEl ? mEl.value : 0)||0;
+    var nota = ((nEl && nEl.value) || '').trim();
+    if(monto<=0){ alert('Ingresa un monto válido'); return; }
+    vnDeudaAgregar(nombre, tipo, monto, nota);
+    window._vnDeudaCtx = null;
+    cerrarMC();
+    if(typeof renderRecaudo==='function') renderRecaudo();
+  } catch(e){
+    console.error('vnDeudaConfirmar error:', e);
+    alert('Error al agregar deuda: '+e.message);
+  }
 };
 
-// Modal pago deuda (desde badge)
-window._vnAbrirPagoModal = function(nombre, totalDC, totalDM){
+// Modal pago deuda (desde badge checkbox)
+window.vnDeudaPagoModal = function(nombre, totalDC, totalDM){
   var tipo = totalDC > 0 ? 'cliente' : 'mia';
   var monto = totalDC > 0 ? totalDC : totalDM;
-  window._vnDeudaState = {nombre:nombre, tipo:tipo, monto:monto};
   var cOpts = '';
   if(Array.isArray(window.cuentasMemoria)){
     window.cuentasMemoria.forEach(function(c,i){
       if(c.tipo!=='EFECTIVO') cOpts+='<option value="'+i+'">'+tipoEmoji(c.tipo)+' '+c.nombre+'</option>';
     });
   }
+
   mostrarMC(
     '<h3 style="text-align:center;">💳 Registrar pago</h3>'+
     '<div style="text-align:center;font-size:13px;color:#94a3b8;margin-bottom:14px;">'+nombre+'</div>'+
-    '<div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:10px;margin-bottom:14px;text-align:center;"><div style="font-size:11px;color:#fcd34d;font-weight:600;">Deuda total</div><div style="font-size:22px;font-weight:800;color:#fbbf24;">'+dM(monto)+'</div></div>'+
-    '<div class="mc-field"><label>MONTO A PAGAR</label><input id="vnPMonto" type="number" value="'+monto+'" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:12px;font-size:18px;font-weight:800;text-align:center;"><div style="font-size:10px;color:#64748b;margin-top:4px;text-align:center;">Puedes pagar parcial</div></div>'+
+    '<div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:10px;margin-bottom:14px;text-align:center;"><div style="font-size:11px;color:#fcd34d;font-weight:600;">Deuda total</div><div style="font-size:22px;font-weight:800;color:#fbbf24;">'+dMoney(monto)+'</div></div>'+
+    '<div class="mc-field"><label>Monto a pagar</label><input id="vnPMonto" type="number" value="'+monto+'" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:12px;font-size:18px;font-weight:800;text-align:center;"><div style="font-size:10px;color:#64748b;margin-top:4px;text-align:center;">Puedes pagar parcial</div></div>'+
     '<div style="display:flex;gap:8px;margin-bottom:12px;">'+
-      '<button id="vnPE" onclick="window._vnPagoSel(\'efectivo\')" style="flex:1;padding:14px;border-radius:10px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-weight:700;cursor:pointer;"><div style="font-size:22px;">💵</div>Efectivo</button>'+
-      '<button id="vnPT" onclick="window._vnPagoSel(\'transferencia\')" style="flex:1;padding:14px;border-radius:10px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-weight:700;cursor:pointer;"><div style="font-size:22px;">🏦</div>Transferencia</button>'+
+      '<button id="vnPE" onclick="vnPSel(\'efectivo\')" style="flex:1;padding:14px 8px;border-radius:10px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-weight:700;cursor:pointer;font-size:13px;"><div style="font-size:22px;margin-bottom:3px;">💵</div>Efectivo</button>'+
+      '<button id="vnPT" onclick="vnPSel(\'transferencia\')" style="flex:1;padding:14px 8px;border-radius:10px;border:2px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.04);color:#e2e8f0;font-weight:700;cursor:pointer;font-size:13px;"><div style="font-size:22px;margin-bottom:3px;">🏦</div>Transferencia</button>'+
     '</div>'+
     '<div id="vnPCBox" style="display:none;margin-bottom:12px;"><select id="vnPCSel" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px;">'+cOpts+'</select></div>'+
-    '<button id="vnPOk" onclick="window._vnPagoConfirmar()" disabled style="width:100%;padding:12px;background:rgba(22,163,74,0.3);border:none;border-radius:10px;color:white;font-weight:800;cursor:not-allowed;opacity:0.5;">✓ Confirmar pago</button>'
+    '<button id="vnPOk" onclick="vnPConfirmar(\''+nombre.replace(/'/g,"\\'")+'\',\''+tipo+'\')" disabled style="width:100%;padding:12px;background:rgba(22,163,74,0.3);border:none;border-radius:10px;color:white;font-weight:800;cursor:not-allowed;opacity:0.5;">✓ Confirmar pago</button>'
   );
   window._vnPM='';
 };
 
-window._vnPagoSel = function(m){
+window.vnPSel = function(m){
   window._vnPM=m;
   var e=document.getElementById('vnPE'),t=document.getElementById('vnPT'),c=document.getElementById('vnPCBox'),ok=document.getElementById('vnPOk');
-  if(e) e.style.border='2px solid '+(m==='efectivo'?'#16a34a':'rgba(255,255,255,0.10)');
-  if(t) t.style.border='2px solid '+(m==='transferencia'?'#2563eb':'rgba(255,255,255,0.10)');
+  if(e) e.style.cssText='flex:1;padding:14px 8px;border-radius:10px;border:2px solid '+(m==='efectivo'?'#16a34a':'rgba(255,255,255,0.10)')+';background:'+(m==='efectivo'?'rgba(22,163,74,0.15)':'rgba(255,255,255,0.04)')+';color:#e2e8f0;font-weight:700;cursor:pointer;font-size:13px;';
+  if(t) t.style.cssText='flex:1;padding:14px 8px;border-radius:10px;border:2px solid '+(m==='transferencia'?'#2563eb':'rgba(255,255,255,0.10)')+';background:'+(m==='transferencia'?'rgba(37,99,235,0.15)':'rgba(255,255,255,0.04)')+';color:#e2e8f0;font-weight:700;cursor:pointer;font-size:13px;';
   if(c) c.style.display=m==='transferencia'?'block':'none';
   if(ok){ok.disabled=false;ok.style.background='#16a34a';ok.style.cursor='pointer';ok.style.opacity='1';}
 };
 
-window._vnPagoConfirmar = function(){
-  var st=window._vnDeudaState; if(!st||!st.nombre) return;
+window.vnPConfirmar = function(nombre, tipo){
   var m=window._vnPM||''; if(!m){alert('Selecciona método');return;}
   var monto=Number(document.getElementById('vnPMonto').value)||0; if(monto<=0){alert('Monto inválido');return;}
   var ci=-1,nb='';
   if(m==='efectivo'){ci=(window.cuentasMemoria||[]).findIndex(function(c){return c.tipo==='EFECTIVO';});nb='Efectivo';}
   else{var s=document.getElementById('vnPCSel');ci=s?Number(s.value):-1;if(ci<0||!window.cuentasMemoria[ci]){alert('Selecciona cuenta');return;}nb=window.cuentasMemoria[ci].nombre;}
-  vnDeudaPagar(st.nombre, st.tipo, monto, m, nb, ci, 'Desde recaudo');
+  vnDeudaPagar(nombre, tipo, monto, m, nb, ci, 'Desde recaudo');
   cerrarMC();
-  if(typeof renderRecaudo==='function') renderRecaudo();
+  renderRecaudo();
 };
 
-// ============================================
-// E. OVERRIDE recaudoGetDeudaHistorica
-// ============================================
-window.recaudoGetDeudaHistorica = function(nombre){
-  var d=dG(nombre);
-  return {deudaCliente:d.sc||0, deudaMia:d.sm||0, deudasPagadas:0, fechaPago:'—'};
-};
+// ==========================================
+// CARTERA — Saldo inicial para CUALQUIER cliente
+// (El renderCartera ya fue migrado al base; aquí solo mantenemos helpers)
+// ==========================================
+var _bCart = window.renderCartera;
+window._vnRenderCarteraLegacy = async function(){
+  var body = document.getElementById('carteraBody');
+  if(!body) return;
 
-// ============================================
-// F. OVERRIDE recaudoConstruirData - add _dtc/_dtm
-// ============================================
-var _bRC21 = window.recaudoConstruirData;
-window.recaudoConstruirData = async function(){
-  var rows = await _bRC21.apply(this, arguments);
-  rows.forEach(function(r){
-    var d = dG(r.cliente);
-    r._dtc = d.sc || 0;
-    r._dtm = d.sm || 0;
-    r.deudaCliente = 0;
-    r.deudaMia = 0;
-    if(typeof recaudoClasificarResumen==='function')
-      r.resumen = recaudoClasificarResumen(r._dtc, r._dtm);
-  });
-  return rows;
-};
+  var deudas = vnDeudaListar();
+  var totalCartera = deudas.reduce(function(s,d){return s+d.sc+d.sm;},0);
 
-// ============================================
-// G. OVERRIDE renderRecaudo - replace deuda columns with checkboxes
-// ============================================
-var _bRR21 = window.renderRecaudo;
-window.renderRecaudo = async function(){
-  if(typeof _bRR21==='function') await _bRR21();
-  setTimeout(function(){
-    var body=document.getElementById('recaudoBody');if(!body)return;
-    var cache=window._recaudoCache;if(!cache||!cache.rows)return;
-
-    cache.rows.forEach(function(r){
-      var safe=r.cliente.replace(/"/g,'&quot;');
-      var dtc=r._dtc||0, dtm=r._dtm||0;
-
-      // Find and replace DEUDA BADGE column
-      var allTrs=body.querySelectorAll('tr');
-      allTrs.forEach(function(tr){
-        var tds=tr.querySelectorAll('td');
-        if(tds.length<4) return;
-        var clienteTd=tds[1];
-        if(!clienteTd||clienteTd.textContent.trim()!==r.cliente) return;
-
-        // Column 3 = DEUDA badge
-        var deudaTd=tds[3];
-        if(deudaTd){
-          if(dtc>0||dtm>0){
-            var color=dtc>0?'#fca5a5':'#93c5fd';
-            var icon=dtc>0?'⚠️':'💙';
-            var val=dtc>0?dtc:dtm;
-            deudaTd.innerHTML='<div style="font-size:11px;color:'+color+';font-weight:700;margin-bottom:3px;">'+icon+' '+dM(val)+'</div><input type="checkbox" class="recaudo-check" onclick="window._vnAbrirPagoModal(\''+r.cliente.replace(/'/g,"\\'")+"',"+dtc+','+dtm+')" title="Registrar pago">';
-          } else {
-            deudaTd.innerHTML='<span style="color:#4ade80;font-size:11px">✓ Sin deuda</span>';
-          }
-        }
-
-        // Find DEUDA CLIENTE column (has rec_dc_ input or similar)
-        // It's after bancolombia - find by looking for rec_dc_ or the 7th+ td
-        tds.forEach(function(td,tdIdx){
-          var dcInput=td.querySelector('input[id^="rec_dc_"]');
-          if(dcInput){
-            td.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><input type="checkbox" class="recaudo-check" style="accent-color:#ef4444;" onclick="window._vnAbrirDeudaModal(\''+r.cliente.replace(/'/g,"\\'")+"','cliente')\" title=\"Agregar deuda\">"+(dtc>0?'<span style="font-size:10px;color:#fca5a5;font-weight:700;">'+dM(dtc)+'</span>':'')+'</div>';
-          }
-          var dmInput=td.querySelector('input[id^="rec_dm_"]');
-          if(dmInput){
-            td.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><input type="checkbox" class="recaudo-check" style="accent-color:#3b82f6;" onclick="window._vnAbrirDeudaModal(\''+r.cliente.replace(/'/g,"\\'")+"','mia')\" title=\"Agregar deuda\">"+(dtm>0?'<span style="font-size:10px;color:#93c5fd;font-weight:700;">'+dM(dtm)+'</span>':'')+'</div>';
-          }
-        });
-      });
-    });
-
-    // Input styles
-    document.querySelectorAll('input[id^="rec_nequi_"]').forEach(function(i){i.style.cssText+='background:rgba(168,85,247,0.12)!important;border:1px solid rgba(168,85,247,0.35)!important;color:#c084fc!important;';});
-    document.querySelectorAll('input[id^="rec_banco_"]').forEach(function(i){i.style.cssText+='background:rgba(148,163,184,0.12)!important;border:1px solid rgba(148,163,184,0.35)!important;color:#cbd5e1!important;';});
-  },350);
-};
-
-// ============================================
-// H. CARTERA — Todos los clientes, saldo inicial
-// ============================================
-var _bCar21 = window.renderCartera;
-window.renderCartera = async function(){
-  var body=document.getElementById('carteraBody');if(!body) return;
-  var deudas=vnDeudaListar();
-  var totalCartera=deudas.reduce(function(s,d){return s+d.sc+d.sm;},0);
-
-  var cliOpts='<option value="">— Seleccionar cliente —</option>';
+  // Lista desplegable de clientes
+  var clientesOpts = '<option value="">— Seleccionar cliente —</option>';
   if(Array.isArray(window.clientes)){
     window.clientes.forEach(function(c){
-      var n=typeof c==='string'?c:c.nombre;
-      cliOpts+='<option value="'+n+'">'+n+'</option>';
+      var n = typeof c==='string' ? c : c.nombre;
+      clientesOpts += '<option value="'+n+'">'+n+'</option>';
     });
   }
 
-  var selN=window._vnCartSel||'';
-  var selD=selN?dG(selN):{sc:0,sm:0,h:[]};
+  // Historial del cliente seleccionado
+  var selNombre = window._vnCarteraClienteSel || '';
+  var selData = selNombre ? dGet(selNombre) : {sc:0,sm:0,h:[]};
 
-  // Historial
-  var hH='';
-  if(selN && selD.h && selD.h.length>0){
-    hH='<div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">';
-    selD.h.slice().reverse().forEach(function(x){
-      var ep=x.t==='pago',ei=x.t==='ini';
-      var lbl=ep?'PAGO':(ei?'SALDO INICIAL':'DEUDA');
-      var clr=ep?'#86efac':(ei?'#93c5fd':'#fca5a5');
-      hH+='<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;"><div><div style="display:flex;gap:6px;"><span style="font-size:10px;font-weight:800;color:'+clr+';">'+lbl+'</span><span style="font-size:10px;color:#94a3b8;">'+x.f+' '+x.hr+'</span></div><div style="font-size:11px;color:#cbd5e1;margin-top:2px;">'+(x.n||'')+(x.met?' · '+(x.met==='efectivo'?'💵':'🏦 '+x.ban):'')+'</div><div style="display:flex;gap:12px;margin-top:3px;font-size:11px;"><span style="color:#fca5a5;">Monto: <strong>'+dM(x.m)+'</strong></span><span style="color:#fcd34d;">Saldo: <strong>'+dM(x.sl)+'</strong></span></div></div><button onclick="vnDeudaEliminar(\''+selN.replace(/'/g,"\\'")+'\',\''+x.id+'\')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;">✕</button></div>';
+  var histHtml = '';
+  if(selNombre && selData.h && selData.h.length > 0){
+    histHtml = '<div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">';
+    selData.h.slice().reverse().forEach(function(x){
+      var esPago=x.tipo==='pago', esIni=x.tipo==='saldo_ini';
+      var bg=esPago?'rgba(34,197,94,0.08)':(esIni?'rgba(59,130,246,0.08)':'rgba(255,255,255,0.03)');
+      var lbl=esPago?'PAGO':(esIni?'SALDO INICIAL':'DEUDA');
+      var clr=esPago?'#86efac':(esIni?'#93c5fd':'#fca5a5');
+      histHtml+='<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:'+bg+';border:1px solid rgba(255,255,255,0.06);border-radius:8px;">'+
+        '<div><div style="display:flex;gap:6px;"><span style="font-size:10px;font-weight:800;color:'+clr+';">'+lbl+'</span><span style="font-size:10px;color:#94a3b8;">'+x.fecha+' '+x.hora+'</span></div>'+
+        '<div style="font-size:11px;color:#cbd5e1;margin-top:2px;">'+(x.nota||'')+(x.metodo?' · '+(x.metodo==='efectivo'?'💵':'🏦 '+x.banco):'')+'</div>'+
+        '<div style="display:flex;gap:12px;margin-top:3px;font-size:11px;"><span style="color:#fca5a5;">Monto: <strong>'+dMoney(x.monto)+'</strong></span><span style="color:#fcd34d;">Saldo: <strong>'+dMoney(x.saldo)+'</strong></span></div></div>'+
+        '<button onclick="vnDeudaEliminar(\''+selNombre.replace(/'/g,"\\'")+'\',\''+x.id+'\')" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;">✕</button></div>';
     });
-    hH+='</div>';
-  } else if(selN){
-    hH='<div style="padding:20px;text-align:center;color:#64748b;">Sin historial para '+selN+'</div>';
+    histHtml += '</div>';
+  } else if(selNombre){
+    histHtml = '<div style="padding:20px;text-align:center;color:#64748b;">Sin historial para '+selNombre+'</div>';
   } else {
-    hH='<div style="padding:20px;text-align:center;color:#64748b;">Selecciona un cliente para ver historial</div>';
+    histHtml = '<div style="padding:20px;text-align:center;color:#64748b;">Selecciona un cliente para ver el historial</div>';
   }
 
-  body.innerHTML=
-    '<div class="cartera-kpis"><div class="kpi-card green"><div class="kpi-label">Cartera total</div><div class="kpi-value" style="font-size:1.2rem">'+dM(totalCartera)+'</div></div><div class="kpi-card" style="border-left:3px solid #e11d48;"><div class="kpi-label">Clientes con deuda</div><div class="kpi-value" style="font-size:1.2rem;color:#f87171">'+deudas.length+'</div></div><div class="kpi-card orange"><div class="kpi-label">Por cobrar</div><div class="kpi-value" style="font-size:1.2rem">'+dM(deudas.reduce(function(s,d){return s+d.sc;},0))+'</div></div><div class="kpi-card blue"><div class="kpi-label">Por pagar</div><div class="kpi-value" style="font-size:1.2rem">'+dM(deudas.reduce(function(s,d){return s+d.sm;},0))+'</div></div></div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">'+
-      '<div class="chart-card"><div class="chart-title">📋 Historial'+(selN?' — '+selN:'')+'</div>'+(selN?'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;"><div style="background:rgba(220,38,38,0.12);border:1px solid rgba(220,38,38,0.25);border-radius:10px;padding:10px;text-align:center;"><div style="font-size:10px;color:#fca5a5;font-weight:600;">ME DEBE</div><div style="font-size:18px;font-weight:800;color:#f87171;">'+dM(selD.sc)+'</div></div><div style="background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:10px;text-align:center;"><div style="font-size:10px;color:#93c5fd;font-weight:600;">LE DEBO</div><div style="font-size:18px;font-weight:800;color:#60a5fa;">'+dM(selD.sm)+'</div></div><div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:10px;text-align:center;"><div style="font-size:10px;color:#fcd34d;font-weight:600;">TOTAL</div><div style="font-size:18px;font-weight:800;color:#fbbf24;">'+dM(selD.sc+selD.sm)+'</div></div></div>':'')+hH+'</div>'+
-      '<div class="chart-card"><div class="chart-title">⚙️ Saldo inicial de deuda</div><div style="margin-bottom:14px;"><label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:5px;">SELECCIONAR CLIENTE</label><select id="vnCartCS" onchange="window._vnCartSel=this.value;renderCartera();" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:12px;font-size:14px;font-weight:600;">'+cliOpts+'</select></div><div style="margin-bottom:14px;padding:14px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.15);border-radius:10px;"><label style="display:block;font-size:11px;color:#60a5fa;font-weight:600;margin-bottom:5px;">TIPO DE DEUDA</label><select id="vnCartTD" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px;margin-bottom:10px;"><option value="cliente">🔴 Me debe</option><option value="mia">🔵 Le debo</option></select><div style="display:flex;gap:8px;"><input id="vnCartSI" type="number" placeholder="Ej: 500000" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px;font-size:16px;font-weight:700;"><button onclick="window._vnCartSetSaldo()" style="padding:10px 16px;background:#2563eb;border:none;border-radius:8px;color:white;font-weight:700;cursor:pointer;">Establecer</button></div></div><div style="padding:12px;background:rgba(22,163,74,0.08);border:1px solid rgba(22,163,74,0.15);border-radius:10px;"><div style="font-size:11px;color:#4ade80;font-weight:600;margin-bottom:4px;">ℹ️ Instrucciones</div><div style="font-size:12px;color:#94a3b8;line-height:1.5;">Selecciona cliente → tipo de deuda → monto → Establecer.<br>Los checkboxes del recaudo suman deudas nuevas encima.</div></div></div>'+
+  body.innerHTML =
+    '<div class="cartera-kpis">'+
+      '<div class="kpi-card green"><div class="kpi-label">Cartera total</div><div class="kpi-value" style="font-size:1.2rem">'+dMoney(totalCartera)+'</div></div>'+
+      '<div class="kpi-card" style="border-left:3px solid #e11d48;"><div class="kpi-label">Clientes con deuda</div><div class="kpi-value" style="font-size:1.2rem;color:#f87171">'+deudas.length+'</div></div>'+
+      '<div class="kpi-card orange"><div class="kpi-label">Por cobrar</div><div class="kpi-value" style="font-size:1.2rem">'+dMoney(deudas.reduce(function(s,d){return s+d.sc;},0))+'</div></div>'+
+      '<div class="kpi-card blue"><div class="kpi-label">Por pagar</div><div class="kpi-value" style="font-size:1.2rem">'+dMoney(deudas.reduce(function(s,d){return s+d.sm;},0))+'</div></div>'+
     '</div>'+
-    '<div class="cartera-table-wrap"><table class="cartera-table"><thead><tr><th>Cliente</th><th>Me debe</th><th>Le debo</th><th>Total</th><th>Fecha</th><th>Acción</th></tr></thead><tbody>'+
-    (deudas.length===0?'<tr><td colspan="6" style="text-align:center;padding:30px;color:#64748b;">Sin deudas pendientes</td></tr>':
+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">'+
+
+      // CUADRO 1: Historial del cliente seleccionado
+      '<div class="chart-card">'+
+        '<div class="chart-title">📋 Historial de deuda'+(selNombre?' — '+selNombre:'')+'</div>'+
+        (selNombre ? '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">'+
+          '<div style="background:rgba(220,38,38,0.12);border:1px solid rgba(220,38,38,0.25);border-radius:10px;padding:10px;text-align:center;"><div style="font-size:10px;color:#fca5a5;text-transform:uppercase;font-weight:600;">Me debe</div><div style="font-size:18px;font-weight:800;color:#f87171;">'+dMoney(selData.sc)+'</div></div>'+
+          '<div style="background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:10px;text-align:center;"><div style="font-size:10px;color:#93c5fd;text-transform:uppercase;font-weight:600;">Le debo</div><div style="font-size:18px;font-weight:800;color:#60a5fa;">'+dMoney(selData.sm)+'</div></div>'+
+          '<div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:10px;text-align:center;"><div style="font-size:10px;color:#fcd34d;text-transform:uppercase;font-weight:600;">Saldo total</div><div style="font-size:18px;font-weight:800;color:#fbbf24;">'+dMoney(selData.sc+selData.sm)+'</div></div>'+
+        '</div>' : '')+
+        histHtml+
+      '</div>'+
+
+      // CUADRO 2: Saldo inicial para CUALQUIER cliente
+      '<div class="chart-card">'+
+        '<div class="chart-title">⚙️ Establecer saldo inicial de deuda</div>'+
+
+        '<div style="margin-bottom:14px;">'+
+          '<label style="display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;margin-bottom:5px;">Seleccionar cliente</label>'+
+          '<select id="vnCartClienteSel" onchange="window._vnCarteraClienteSel=this.value;renderCartera();" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:12px;font-size:14px;font-weight:600;">'+clientesOpts+'</select>'+
+        '</div>'+
+
+        '<div style="margin-bottom:14px;padding:14px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.15);border-radius:10px;">'+
+          '<label style="display:block;font-size:11px;color:#60a5fa;font-weight:600;text-transform:uppercase;margin-bottom:5px;">Tipo de deuda</label>'+
+          '<select id="vnCartTipoDeuda" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px;margin-bottom:10px;">'+
+            '<option value="cliente">🔴 Me debe (deuda del cliente)</option>'+
+            '<option value="mia">🔵 Le debo (mi deuda)</option>'+
+          '</select>'+
+          '<div style="display:flex;gap:8px;">'+
+            '<input id="vnCartSaldoInput" type="number" placeholder="Ej: 500000" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:10px;font-size:16px;font-weight:700;">'+
+            '<button onclick="vnCartSetSaldo()" style="padding:10px 16px;background:#2563eb;border:none;border-radius:8px;color:white;font-weight:700;cursor:pointer;">Establecer</button>'+
+          '</div>'+
+          '<div style="font-size:10px;color:#64748b;margin-top:6px;">Establece el saldo inicial. Las deudas del recaudo se sumarán encima.</div>'+
+        '</div>'+
+
+        '<div style="padding:12px;background:rgba(22,163,74,0.08);border:1px solid rgba(22,163,74,0.15);border-radius:10px;">'+
+          '<div style="font-size:11px;color:#4ade80;font-weight:600;margin-bottom:4px;">ℹ️ ¿Cómo funciona?</div>'+
+          '<div style="font-size:12px;color:#94a3b8;line-height:1.5;">'+
+            '• Selecciona el cliente de la lista<br>'+
+            '• Escoge si te debe o le debes<br>'+
+            '• Escribe el saldo inicial y dale "Establecer"<br>'+
+            '• Los checkboxes del recaudo suman deudas nuevas encima<br>'+
+            '• Todo se refleja en el historial y la contabilidad'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+    '</div>'+
+
+    // TABLA DE CLIENTES CON DEUDA
+    '<div class="cartera-table-wrap"><table class="cartera-table"><thead><tr>'+
+      '<th>Cliente</th><th>Me debe</th><th>Le debo</th><th>Total</th><th>Última fecha</th><th>Acción</th>'+
+    '</tr></thead><tbody>'+
+    (deudas.length===0 ? '<tr><td colspan="6" style="text-align:center;padding:30px;color:#64748b;">Sin deudas pendientes</td></tr>' :
       deudas.map(function(d){
-        var lH=d.h.length>0?d.h[d.h.length-1]:null;
-        return '<tr><td style="font-weight:700">'+d.nombre+'</td><td style="font-weight:800;color:#f87171">'+dM(d.sc)+'</td><td style="font-weight:800;color:#60a5fa">'+dM(d.sm)+'</td><td style="font-weight:800;color:white">'+dM(d.sc+d.sm)+'</td><td style="color:#94a3b8">'+(lH?lH.f:'—')+'</td><td><button class="btn-transferir" style="padding:5px 10px;font-size:11px" onclick="window._vnCartSel=\''+d.nombre.replace(/'/g,"\\'")+'\';renderCartera();">Ver</button></td></tr>';
-      }).join(''))+
+        var lastH = d.h.length>0 ? d.h[d.h.length-1] : null;
+        return '<tr>'+
+          '<td style="font-weight:700">'+d.nombre+'</td>'+
+          '<td style="font-weight:800;color:#f87171">'+dMoney(d.sc)+'</td>'+
+          '<td style="font-weight:800;color:#60a5fa">'+dMoney(d.sm)+'</td>'+
+          '<td style="font-weight:800;color:white">'+dMoney(d.sc+d.sm)+'</td>'+
+          '<td style="color:#94a3b8">'+(lastH?lastH.fecha:'—')+'</td>'+
+          '<td><button class="btn-transferir" style="padding:5px 10px;font-size:11px" onclick="window._vnCarteraClienteSel=\''+d.nombre.replace(/'/g,"\\'")+'\';renderCartera();">Ver historial</button>'+
+          ' <button class="btn-transferir" style="padding:5px 10px;font-size:11px;background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.3);color:#fca5a5;" onclick="vnCartEditarDeuda(\''+d.nombre.replace(/'/g,"\\'")+'\')">✏️</button></td>'+
+        '</tr>';
+      }).join('')
+    )+
     '</tbody></table></div>';
 
+  // Restore selected client in dropdown
   setTimeout(function(){
-    var s=document.getElementById('vnCartCS');
-    if(s&&window._vnCartSel) s.value=window._vnCartSel;
-  },100);
+    var sel = document.getElementById('vnCartClienteSel');
+    if(sel && window._vnCarteraClienteSel) sel.value = window._vnCarteraClienteSel;
+  }, 100);
 };
 
-window._vnCartSetSaldo = function(){
-  var s=document.getElementById('vnCartCS');
-  if(!s||!s.value){alert('Selecciona un cliente');return;}
-  var monto=Number(document.getElementById('vnCartSI').value)||0;
+window.vnCartSetSaldo = function(){
+  var sel = document.getElementById('vnCartClienteSel');
+  var tipo = document.getElementById('vnCartTipoDeuda');
+  var input = document.getElementById('vnCartSaldoInput');
+  if(!sel||!sel.value){alert('Selecciona un cliente');return;}
+  var monto = Number(input.value)||0;
   if(monto<=0){alert('Ingresa un monto');return;}
-  var tipo=document.getElementById('vnCartTD').value;
-  vnDeudaSetInicial(s.value, tipo, monto);
-  window._vnCartSel=s.value;
+  vnDeudaSetInicial(sel.value, tipo.value, monto);
+  window._vnCarteraClienteSel = sel.value;
   renderCartera();
 };
 
-// ============================================
-// I. MARQUEE — Color morado claro
-// ============================================
-(function(){
-  var st=document.querySelector('#obsMarquee');
-  // Override CSS
-  var s=document.createElement('style');
-  s.textContent='#obsMarquee{background:linear-gradient(90deg,#c084fc,#a855f7,#9333ea)!important;}';
-  document.head.appendChild(s);
+window.vnCartEditarDeuda = function(nombre){
+  var d = dGet(nombre);
+  mostrarMC(
+    '<h3>✏️ Editar deuda — '+nombre+'</h3>'+
+    '<div class="mc-field"><label>Me debe</label><input id="vnED1" type="number" value="'+(d.sc||0)+'" style="font-size:18px;font-weight:800;color:#f87171;"></div>'+
+    '<div class="mc-field"><label>Le debo</label><input id="vnED2" type="number" value="'+(d.sm||0)+'" style="font-size:18px;font-weight:800;color:#60a5fa;"></div>'+
+    '<div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button><button class="mc-btn-ok" style="background:#d97706;" onclick="vnCartGuardarEdit(\''+nombre.replace(/'/g,"\\'")+'\')">Guardar</button></div>'
+  );
+};
 
-  // Fix duplicates in obs_marquee
-  var _origAM=window.actualizarMarquee;
-  window.actualizarMarquee=function(){
-    // Deduplicate by nombre (normalize spaces/underscores)
-    var obs=[];try{obs=JSON.parse(localStorage.getItem('obs_marquee')||'[]');}catch(e){}
-    var seen={},clean=[];
-    obs.forEach(function(o){
-      var key=(o.nombre||'').toUpperCase().replace(/_/g,' ').trim();
-      if(!seen[key]){seen[key]=true;clean.push(o);}
-    });
-    if(clean.length!==obs.length) localStorage.setItem('obs_marquee',JSON.stringify(clean));
-    if(typeof _origAM==='function') _origAM();
-  };
+window.vnCartGuardarEdit = function(nombre){
+  var dc=Number(document.getElementById('vnED1').value)||0;
+  var dm=Number(document.getElementById('vnED2').value)||0;
+  vnDeudaSetInicial(nombre,'cliente',dc);
+  vnDeudaSetInicial(nombre,'mia',dm);
+  cerrarMC();
+  renderCartera();
+};
+
+// ==========================================
+// Reset button + Nequi/Banco styles
+// ==========================================
+var _bRR20 = window.renderRecaudo;
+window.renderRecaudo = async function(){
+  if(typeof _bRR20==='function') await _bRR20();
+  setTimeout(function(){
+    var body=document.getElementById('recaudoBody'); if(!body) return;
+    // Styles
+    document.querySelectorAll('input[id^="rec_nequi_"]').forEach(function(i){i.style.cssText+='background:rgba(168,85,247,0.12)!important;border:1px solid rgba(168,85,247,0.35)!important;color:#c084fc!important;';});
+    document.querySelectorAll('input[id^="rec_banco_"]').forEach(function(i){i.style.cssText+='background:rgba(148,163,184,0.12)!important;border:1px solid rgba(148,163,184,0.35)!important;color:#cbd5e1!important;';});
+    // Reset button
+    if(!document.getElementById('btnResetRecaudo')){
+      var btns=body.querySelectorAll('button');var ab=null;
+      btns.forEach(function(b){if(b.textContent.indexOf('Actualizar')>-1)ab=b;});
+      if(ab&&ab.parentNode){
+        var rb=document.createElement('button');rb.id='btnResetRecaudo';
+        rb.style.cssText='padding:7px 14px;border-radius:8px;border:1px solid rgba(239,68,68,0.4);background:rgba(239,68,68,0.15);color:#fca5a5;font-weight:700;cursor:pointer;font-size:12px;margin-left:6px;';
+        rb.textContent='🔄 Reset Checks';
+        rb.onclick=function(){if(!confirm('¿Limpiar checkboxes del día?'))return;var fk='recaudo_'+cajaFechaHoy();var e={};try{e=JSON.parse(localStorage.getItem(fk)||'{}');}catch(x){}Object.keys(e).forEach(function(n){if(!n.startsWith('__')&&e[n]){e[n].recaudoDomi=0;e[n].recibido=false;e[n].domiIncluirDeuda=false;}});localStorage.setItem(fk,JSON.stringify(e));renderRecaudo();};
+        ab.parentNode.insertBefore(rb,ab.nextSibling);
+      }
+    }
+  },400);
+};
+
+console.log('✅ Módulo V20: Deudas + Cartera limpio');
 })();
 
-// ============================================
-// J. NÓMINA — Editar nombres, sueldos, adelantos
-// ============================================
-// Add editing to adelantos (text and value)
-window.nominaEditarAdelanto = function(empIdx, adelIdx){
-  var d=_nLeer();
-  var a=d.empleados[empIdx].adelantos[adelIdx];
-  if(!a) return;
-  mostrarMC(
-    '<h3>✏️ Editar adelanto</h3>'+
-    '<div class="mc-field"><label>Monto</label><input id="neaM" type="number" value="'+a.monto+'"></div>'+
-    '<div class="mc-field"><label>Razón</label><input id="neaR" type="text" value="'+(a.razon||'')+'"></div>'+
-    '<div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button><button class="mc-btn-ok" style="background:#d97706;" onclick="window._nominaGuardarAdelanto('+empIdx+','+adelIdx+')">Guardar</button></div>'
-  );
-};
-
-window._nominaGuardarAdelanto = function(empIdx, adelIdx){
-  var d=_nLeer();
-  d.empleados[empIdx].adelantos[adelIdx].monto=Number(document.getElementById('neaM').value)||0;
-  d.empleados[empIdx].adelantos[adelIdx].razon=document.getElementById('neaR').value.trim();
-  _nGuardar(d);cerrarMC();renderNomina();
-};
-
-// Edit employee name
-window.nominaEditarEmpleado = function(idx){
-  var d=_nLeer();
-  var e=d.empleados[idx];
-  if(!e) return;
-  mostrarMC(
-    '<h3>✏️ Editar empleado</h3>'+
-    '<div class="mc-field"><label>Nombre</label><input id="neeN" type="text" value="'+e.nombre+'"></div>'+
-    '<div class="mc-field"><label>Salario diario</label><input id="neeSD" type="number" value="'+(e.salarioDia||0)+'"></div>'+
-    '<div class="mc-field"><label>Salario quincena</label><input id="neeSQ" type="number" value="'+(e.salarioQuincena||0)+'"></div>'+
-    '<div class="mc-btns"><button class="mc-btn-cancel" onclick="cerrarMC()">Cancelar</button><button class="mc-btn-ok" style="background:#2563eb;" onclick="window._nominaGuardarEmpleado('+idx+')">Guardar</button></div>'
-  );
-};
-
-window._nominaGuardarEmpleado = function(idx){
-  var d=_nLeer();
-  d.empleados[idx].nombre=(document.getElementById('neeN').value||'').trim().toUpperCase()||d.empleados[idx].nombre;
-  d.empleados[idx].salarioDia=Number(document.getElementById('neeSD').value)||0;
-  d.empleados[idx].salarioQuincena=Number(document.getElementById('neeSQ').value)||0;
-  _nGuardar(d);cerrarMC();renderNomina();
-};
-
-// Override renderNomina to add edit buttons to adelantos and employee names
-var _bNom21 = window.renderNomina;
-window.renderNomina = function(){
-  if(typeof _bNom21==='function') _bNom21();
-  setTimeout(function(){
-    var body=document.getElementById('nominaBody');if(!body) return;
-    var d;try{d=JSON.parse(localStorage.getItem('nomina_data')||'{}');}catch(e){return;}
-    if(!d.empleados) return;
-
-    // Add edit button to each adelanto line and employee name
-    body.querySelectorAll('div').forEach(function(div){
-      // Find adelanto delete buttons (✕) and add edit button before them
-      if(div.querySelector('button') && div.textContent.indexOf('-$')>-1 && div.textContent.indexOf('✕')>-1){
-        var delBtn=div.querySelector('button[onclick*="nominaBorrarAdelanto"]');
-        if(delBtn && !div.querySelector('.adel-edit-btn')){
-          var oc=delBtn.getAttribute('onclick')||'';
-          var match=oc.match(/nominaBorrarAdelanto\((\d+),(\d+)\)/);
-          if(match){
-            var editBtn=document.createElement('button');
-            editBtn.className='adel-edit-btn';
-            editBtn.style.cssText='background:none;border:none;color:#fbbf24;cursor:pointer;font-size:13px;margin-right:4px;';
-            editBtn.textContent='✏️';
-            editBtn.onclick=function(){nominaEditarAdelanto(Number(match[1]),Number(match[2]));};
-            delBtn.parentNode.insertBefore(editBtn,delBtn);
-          }
-        }
-      }
-    });
-
-    // Add edit button to employee name divs
-    d.empleados.forEach(function(e,idx){
-      body.querySelectorAll('div').forEach(function(div){
-        if(div.style.fontSize==='17px' && div.style.fontWeight==='800' && div.textContent.trim()===e.nombre){
-          if(!div.querySelector('.emp-edit-btn')){
-            var btn=document.createElement('button');
-            btn.className='emp-edit-btn';
-            btn.style.cssText='background:none;border:none;color:#fbbf24;cursor:pointer;font-size:14px;margin-left:8px;vertical-align:middle;';
-            btn.textContent='✏️';
-            btn.onclick=function(){nominaEditarEmpleado(idx);};
-            div.appendChild(btn);
-          }
-        }
-      });
-    });
-  },300);
-};
-
-console.log('✅ Parche V21 aplicado: Deudas + Historial + Nómina + Marquee');
+// =====================================================
+// SUPABASE REALTIME SYNC V12
+// =====================================================
+(function(){
+  'use strict';
+  var MAP={'clientes':'clientes_config','clientesDatos':'clientes_datos','cuentasMemoria':'cuentas_bancarias','transferenciasMem':'transferencias','cuotas_obligaciones':'cuotas_obligaciones','contabilidad_categorias':'categorias_contables','cartera_deudas':'cartera_deudas','cartera_pagos_historial':'cartera_pagos','obs_marquee':'observaciones_marquee','nomina_data':'nomina_config','cuentas_por_pagar':'cuentas_por_pagar','vn_deudas_v20':'cartera_deudas'};
+  var RMAP={};for(var k in MAP)RMAP[MAP[k]]=k;
+  var LS={set:localStorage.setItem.bind(localStorage),get:localStorage.getItem.bind(localStorage)};
+  var SS={set:sessionStorage.setItem.bind(sessionStorage),get:sessionStorage.getItem.bind(sessionStorage)};
+  var _s=false;
+  async function sub(t,d){try{var r=await db.from(t).upsert({id:1,datos:d,updated_at:new Date().toISOString()},{onConflict:'id'});return!r.error;}catch(e){return false;}}
+  async function subF(t,f,d){try{var r=await db.from(t).upsert({fecha:f,datos:d,updated_at:new Date().toISOString()},{onConflict:'fecha'});return!r.error;}catch(e){return false;}}
+  async function baj(t){try{var r=await db.from(t).select('datos').eq('id',1).maybeSingle();return(r&&r.data)?r.data.datos:null;}catch(e){return null;}}
+  async function bajF(t,f){try{var r=await db.from(t).select('datos').eq('fecha',f).maybeSingle();return(r&&r.data)?r.data.datos:null;}catch(e){return null;}}
+  function apl(t,d){if(!d)return;_s=true;var l=RMAP[t];if(t==='clientes_config'&&Array.isArray(d)&&d.length>0){window.clientes=d;LS.set('clientes',JSON.stringify(d));}else if(t==='cuentas_bancarias'&&Array.isArray(d)&&d.length>0){window.cuentasMemoria=d;LS.set('cuentasMemoria',JSON.stringify(d));}else if(t==='transferencias'){window.transferenciasMem=d;LS.set('transferenciasMem',JSON.stringify(d));}else if(t==='movimientos_contables'&&Array.isArray(d)&&d.length>0){window.movimientosContables=d;}else if(t==='gastos_manuales'&&Array.isArray(d)&&d.length>0){window.gastosMemoria=d;SS.set('gastos',JSON.stringify(d));}else if(l){LS.set(l,JSON.stringify(d));}setTimeout(function(){_s=false;},500);}
+  localStorage.setItem=function(k,v){LS.set(k,v);if(_s)return;if(MAP[k]){try{sub(MAP[k],JSON.parse(v));}catch(e){}}if(k.indexOf('recaudo_')===0&&k.length>10){try{subF('recaudo_diario',k.slice(8),JSON.parse(v));}catch(e){}}if(k.indexOf('monedas_')===0&&k.length>10){try{subF('monedas_diario',k.slice(8),JSON.parse(v));}catch(e){}}};
+  sessionStorage.setItem=function(k,v){SS.set(k,v);if(_s)return;if(k==='gastos'){try{sub('gastos_manuales',JSON.parse(v));}catch(e){}}};
+  var _lM=0,_lG=0;
+  // Helper: persistencia local inmediata para movimientos/gastos
+  window._mcPersist=function(){try{var m=window.movimientosContables;if(Array.isArray(m))LS.set('mc_local',JSON.stringify(m));}catch(e){}try{var g=window.gastosMemoria;if(Array.isArray(g)){LS.set('gm_local',JSON.stringify(g));SS.set('gastos',JSON.stringify(g));}}catch(e){}};
+  setInterval(function(){if(_s)return;var m=window.movimientosContables;if(Array.isArray(m)){try{LS.set('mc_local',JSON.stringify(m));}catch(e){}if(m.length>0&&m.length!==_lM){_lM=m.length;sub('movimientos_contables',m);}}var g=window.gastosMemoria;if(!Array.isArray(g))try{g=JSON.parse(SS.get('gastos')||'[]');}catch(e){g=[];}try{LS.set('gm_local',JSON.stringify(g));}catch(e){}if(g.length>0&&g.length!==_lG){_lG=g.length;sub('gastos_manuales',g);}},3000);
+  function initRT(){try{['clientes_config','clientes_datos','cuentas_bancarias','transferencias','movimientos_contables','gastos_manuales','nomina_config','cartera_deudas','cartera_pagos','cuotas_obligaciones','categorias_contables','cuentas_por_pagar','observaciones_marquee'].forEach(function(t){db.channel('r-'+t).on('postgres_changes',{event:'*',schema:'public',table:t,filter:'id=eq.1'},function(p){if(p.new&&p.new.datos!==undefined){apl(t,p.new.datos);setTimeout(function(){try{if(t==='clientes_config'&&typeof cargar==='function')cargar();if(t==='observaciones_marquee'&&typeof actualizarMarquee==='function')actualizarMarquee();}catch(e){}},300);}}).subscribe();});db.channel('r-rec').on('postgres_changes',{event:'*',schema:'public',table:'recaudo_diario'},function(p){if(p.new&&p.new.fecha&&p.new.datos){var h=(typeof cajaFechaHoy==='function')?cajaFechaHoy():new Date().toISOString().split('T')[0];if(p.new.fecha===h){_s=true;LS.set('recaudo_'+h,JSON.stringify(p.new.datos));setTimeout(function(){_s=false;},500);}}}).subscribe();}catch(e){}}
+  async function init(){console.log('☁️ Sync...');var dl=0,sl=0;for(var l in MAP){var t=MAP[l];var d=await baj(t);if(d!==null){var h=Array.isArray(d)?d.length>0:(d&&typeof d==='object'&&Object.keys(d).length>0);if(h){apl(t,d);dl++;continue;}}var r=LS.get(l);if(r){try{var ld=JSON.parse(r);var lh=Array.isArray(ld)?ld.length>0:(ld&&typeof ld==='object'&&Object.keys(ld).length>0);if(lh){await sub(t,ld);sl++;}}catch(e){}}}var mc=await baj('movimientos_contables');if(mc&&Array.isArray(mc)&&mc.length>0){window.movimientosContables=mc;_lM=mc.length;dl++;}else{try{var lmc=JSON.parse(LS.get('mc_local')||'[]');if(Array.isArray(lmc)&&lmc.length>0){window.movimientosContables=lmc;_lM=lmc.length;await sub('movimientos_contables',lmc);sl++;}else if(Array.isArray(window.movimientosContables)&&window.movimientosContables.length>0){await sub('movimientos_contables',window.movimientosContables);_lM=window.movimientosContables.length;sl++;}}catch(e){}}var gm=await baj('gastos_manuales');if(gm&&Array.isArray(gm)&&gm.length>0){window.gastosMemoria=gm;SS.set('gastos',JSON.stringify(gm));_lG=gm.length;dl++;}else{try{var lgm=JSON.parse(LS.get('gm_local')||'[]');if(Array.isArray(lgm)&&lgm.length>0){window.gastosMemoria=lgm;SS.set('gastos',JSON.stringify(lgm));_lG=lgm.length;await sub('gastos_manuales',lgm);sl++;}}catch(e){}}var hoy=(typeof cajaFechaHoy==='function')?cajaFechaHoy():new Date().toISOString().split('T')[0];var rd=await bajF('recaudo_diario',hoy);if(rd&&Object.keys(rd).length>0){_s=true;LS.set('recaudo_'+hoy,JSON.stringify(rd));setTimeout(function(){_s=false;},300);dl++;}console.log('✅ '+dl+' desc, '+sl+' sub');try{if(typeof cargar==='function')await cargar();}catch(e){}try{if(typeof actualizarMarquee==='function')actualizarMarquee();}catch(e){}initRT();}
+  function badge(){if(document.getElementById('vnSB'))return;var s=document.createElement('style');s.textContent='@keyframes vnP{0%,100%{opacity:1;}50%{opacity:0.4;}}';document.head.appendChild(s);var d=document.createElement('div');d.id='vnSB';d.style.cssText='position:fixed;bottom:12px;right:12px;background:rgba(16,185,129,0.92);color:white;padding:7px 14px;border-radius:20px;font-size:11px;font-weight:600;z-index:99998;display:flex;align-items:center;gap:6px;box-shadow:0 4px 14px rgba(0,0,0,0.25);cursor:pointer;';d.innerHTML='<span style="width:7px;height:7px;border-radius:50%;background:white;animation:vnP 2s infinite;"></span> En vivo · Supabase';d.onclick=function(){d.innerHTML='<span style="width:7px;height:7px;border-radius:50%;background:#fbbf24;"></span> Sync...';d.style.background='rgba(245,158,11,0.9)';init().then(function(){d.innerHTML='<span style="width:7px;height:7px;border-radius:50%;background:white;animation:vnP 2s infinite;"></span> En vivo ✓';d.style.background='rgba(16,185,129,0.92)';});};document.body.appendChild(d);}
+  function start(){setTimeout(function(){init().catch(function(e){console.error('Sync err:',e);});badge();},1200);}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
+  console.log('☁️ V12 iniciado');
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
