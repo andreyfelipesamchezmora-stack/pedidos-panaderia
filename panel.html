@@ -3383,11 +3383,21 @@ async function renderRecaudo(){
       }
     });
  
-    // Efectivo TOTAL del día = efectivo de ventas + pagos de deuda en efectivo
-    let efectivoTotal = efectivoVentasTotal + pagoDeudaEfectivo;
+    // Monedas físicas registradas hoy (control físico — son efectivo pero NO billetes)
+    let monedasDia = 0;
+    try {
+      let _ma = JSON.parse(localStorage.getItem('monedas_' + cajaFechaHoy()) || '[]');
+      if(Array.isArray(_ma)) monedasDia = _ma.reduce(function(s,m){return s + (Number(m)||0);}, 0);
+    } catch(e){}
+
+    // EFECTIVO (billetes) del día = SOLO ventas del día (con ajuste de deudas nuevas registradas hoy) menos monedas.
+    // Los pagos de deuda hechos vía checkbox NO afectan este total (se muestran aparte en "Pagos deuda").
+    let efectivoBilletes = Math.max(efectivoVentasTotal - monedasDia, 0);
+    let efectivoTotal = efectivoBilletes;
     let transferenciasVentas = nequiVentas + bancolombiaVentas;
     let pagosDeudaTransf = pagoDeudaNequi + pagoDeudaBancolombia;
-    let totalRecaudado = efectivoTotal + transferenciasVentas + pagosDeudaTransf;
+    // Total recaudado preserva TODO lo recibido (ventas full + pagos de deuda + monedas físicas)
+    let totalRecaudado = efectivoVentasTotal + transferenciasVentas + pagoDeudaEfectivo + pagosDeudaTransf;
  
     window._recaudoCache = {
       fecha: cajaFechaHoy(),
@@ -3397,8 +3407,11 @@ async function renderRecaudo(){
         netoEfectivo: efectivoTotal,
         transferencias: transferenciasVentas,
         pagosDeudaTransf: pagosDeudaTransf,
+        monedas: monedasDia,
         desglose: {
           efectivoVentas: efectivoVentasTotal,
+          efectivoBilletes: efectivoBilletes,
+          monedas: monedasDia,
           efectivoDeudas: pagoDeudaEfectivo,
           efectivoTotal: efectivoTotal,
           nequi: nequiVentas,
@@ -3445,7 +3458,7 @@ async function renderRecaudo(){
             <span style="font-size:14px;">🏦</span>
             <span style="font-size:10px;font-weight:700;color:#fbbf24;text-transform:uppercase;letter-spacing:0.03em;">Pagos deuda</span>
           </div>
-          <div style="font-size:16px;font-weight:800;color:white;font-variant-numeric:tabular-nums;">${recaudoMoney(pagosDeudaTransf)}</div>
+          <div style="font-size:16px;font-weight:800;color:white;font-variant-numeric:tabular-nums;">${recaudoMoney(pagoDeudaEfectivo + pagosDeudaTransf)}</div>
         </div>
  
         <div style="background:linear-gradient(135deg,rgba(22,163,74,0.2),rgba(22,163,74,0.05));border:1px solid rgba(22,163,74,0.35);border-radius:10px;padding:10px 12px;">
@@ -3607,8 +3620,12 @@ async function renderRecaudo(){
             <div class="val">${recaudoMoney(bruto)}</div>
           </div>
           <div class="recaudo-mini">
-            <div class="lab">💵 Efectivo</div>
+            <div class="lab">💵 Efectivo (billetes)</div>
             <div class="val" style="color:#4ade80;">${recaudoMoney(efectivoTotal)}</div>
+          </div>
+          <div class="recaudo-mini">
+            <div class="lab">🪙 Monedas</div>
+            <div class="val" style="color:#fbbf24;">${recaudoMoney(monedasDia)}</div>
           </div>
           <div class="recaudo-mini">
             <div class="lab">📱 Nequi</div>
@@ -6513,12 +6530,29 @@ window.recaudoToggleDomi = function(nombre, subtotal){
   if(!estado[nombre]) estado[nombre] = {};
 
   if(cb && cb.checked){
-    // Calcular el efectivo neto (subtotal - nequi - bancolombia)
-    var nequiInput = document.getElementById('rec_nequi_' + nombre);
-    var bancoInput = document.getElementById('rec_banco_' + nombre);
-    var nequi = nequiInput ? (Number((nequiInput.dataset.raw || nequiInput.value || '0').replace(/\./g,'')) || 0) : 0;
-    var banco = bancoInput ? (Number((bancoInput.dataset.raw || bancoInput.value || '0').replace(/\./g,'')) || 0) : 0;
-    var efectivoNeto = Math.max(subtotal - nequi - banco, 0);
+    // CALIBRADO: usa la misma fórmula del efectivoNeto de la fila para máxima precisión:
+    //   subtotal - nequi - bancolombia - faltantes - salidas - deudaMiaPagada
+    //   ajustado por deudas registradas HOY: - deudaClienteHoy + deudaMiaHoy
+    var rd = (window._recaudoCache && Array.isArray(window._recaudoCache.rows))
+      ? window._recaudoCache.rows.find(function(r){ return r.cliente === nombre; })
+      : null;
+
+    var lerDom = function(id){
+      var el = document.getElementById(id);
+      if(!el) return 0;
+      return Number((el.dataset.raw || el.value || '0').replace(/\./g,'')) || 0;
+    };
+
+    var nequi      = lerDom('rec_nequi_' + nombre);
+    var banco      = lerDom('rec_banco_' + nombre);
+    var faltantes  = lerDom('rec_fal_'   + nombre);
+    var salidas    = lerDom('rec_sal_'   + nombre);
+    var deudaMiaPag = rd ? (Number(rd.deudaMiaPagada)||0) : 0;
+    var dcHoy      = rd ? (Number(rd._deudaClienteHoy)||0) : 0;
+    var dmHoy      = rd ? (Number(rd._deudaMiaHoy)||0)     : 0;
+
+    var efectivoNeto = (Number(subtotal)||0) - nequi - banco - faltantes - salidas - deudaMiaPag - dcHoy + dmHoy;
+    if(efectivoNeto < 0) efectivoNeto = 0;
     estado[nombre].recaudoDomi = efectivoNeto;
   } else {
     estado[nombre].recaudoDomi = 0;
@@ -10797,6 +10831,83 @@ window.renderRecaudo = async function(){
 };
 
 console.log('✅ Módulo V20: Deudas + Cartera limpio');
+})();
+
+// =====================================================
+// PARCHE V21 — EFECTIVO BILLETES + DEUDAS DEL DÍA + CAJA SINCRONIZADA
+// 1. Caja: efectivo = ventas en efectivo - monedas (solo billetes)
+// 2. Caja: pagos de deuda en efectivo (checkbox) NO suman al esperado
+// 3. Deudas nuevas registradas hoy ya ajustan efectivo (+- según tipo)
+//    y persisten día a día (mismo cálculo aplica a la fecha actual de cada día)
+// =====================================================
+(function(){
+  function _getMonedasDia(){
+    try {
+      var fk = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10);
+      var arr = JSON.parse(localStorage.getItem('monedas_' + fk) || '[]');
+      if(Array.isArray(arr)) return arr.reduce(function(s,m){return s + (Number(m)||0);}, 0);
+    } catch(e){}
+    return 0;
+  }
+
+  // Wrap cajaCalcularResumen ya overrideado por V7
+  var _prevCajaCalcRes = window.cajaCalcularResumen;
+  if(typeof _prevCajaCalcRes === 'function'){
+    window.cajaCalcularResumen = function(ventas, movimientos, sesion){
+      var res = _prevCajaCalcRes.apply(this, arguments) || {};
+
+      // Monedas físicas del día (no son billetes)
+      var monedas = _getMonedasDia();
+
+      // Pago de deuda en efectivo NO afecta el efectivo del día (checkbox aparte)
+      var pagoDeudaEf = Number(res._pagoDeudaEfec)||0;
+
+      // Ajustar esperado/saldoFinal: quitar pagoDeudaEf y restar monedas
+      var apertura = Number(sesion && sesion.apertura_monto || 0);
+      // Reconstruir esperado limpio = apertura + (efectivo de ventas - monedas) + ingresosExtra - egresos
+      var efectivoBilletes = Math.max((Number(res.efectivo)||0) - monedas, 0);
+      var ingresosExtra = Number(res.ingresosExtra)||0;
+      var egresos = Number(res.egresos)||0;
+      var esperado = apertura + efectivoBilletes + ingresosExtra - egresos;
+
+      res.efectivo = efectivoBilletes;
+      res.esperado = esperado;
+      res.saldoFinal = esperado;
+      res._monedas = monedas;
+      res._pagoDeudaEfec = pagoDeudaEf;     // info: ya NO sumado al esperado
+      res._billetesOnly = true;
+
+      // Recalcular diferencia
+      if(res.contado) res.diferencia = res.contado - esperado;
+      else res.diferencia = 0;
+
+      return res;
+    };
+  }
+
+  // Re-precargar recaudo cuando cambian monedas o deudas (para que caja se sincronice)
+  var _origGuardarMonedas = window.guardarMonedasSimple;
+  if(typeof _origGuardarMonedas === 'function'){
+    window.guardarMonedasSimple = function(){
+      var r = _origGuardarMonedas.apply(this, arguments);
+      try { if(typeof vnPrecargarRecaudo==='function') vnPrecargarRecaudo(); } catch(e){}
+      return r;
+    };
+  }
+
+  // Hook después de agregar/eliminar deudas para refrescar el caché de recaudo
+  ['vnDeudaAgregar','vnDeudaEliminar','vnDeudaConfirmar'].forEach(function(fn){
+    var orig = window[fn];
+    if(typeof orig === 'function'){
+      window[fn] = function(){
+        var r = orig.apply(this, arguments);
+        try { if(typeof vnPrecargarRecaudo==='function') setTimeout(vnPrecargarRecaudo, 250); } catch(e){}
+        return r;
+      };
+    }
+  });
+
+  console.log('✅ Parche V21: Efectivo billetes + monedas + deudas del día sincronizadas con Caja');
 })();
 
 // =====================================================
