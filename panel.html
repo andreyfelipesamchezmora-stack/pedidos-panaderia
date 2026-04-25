@@ -10523,20 +10523,25 @@ window.recaudoConstruirData = async function(){
     r.deudaCliente = 0;
     r.deudaMia = 0;
 
-    // Deudas REGISTRADAS HOY (afectan efectivo del día)
-    // IMPORTANTE: las entradas RECONSTRUIDAS desde recaudos históricos NO cuentan
-    // aquí (ya están reflejadas en saldos sc/sm; añadirlas a dcHoy/dmHoy haría
-    // que el efectivo del día se reduzca artificialmente cada vez que se cargue).
+    // REGLA ESTRICTA: solo afectan el efectivo del día las entradas creadas HOY
+    // mediante el checkbox de "Agregar deuda" (vnDeudaAgregar → id 'd...') o
+    // mediante el checkbox de "Pagar deuda" en efectivo (vnDeudaPagar → id 'p...').
+    // CUALQUIER otra entrada (reconstruidas 'r', saldos iniciales 'i',
+    // ediciones manuales 'e', sin id, _reconstruido:true) queda EXCLUIDA.
     var dcHoy = 0, dmHoy = 0, pagoClienteHoyEfectivo = 0, pagoMiaHoyEfectivo = 0;
     (d.h||[]).forEach(function(x){
-      if(x.fecha !== hoyStr) return;
-      // Saltar entradas reconstruidas
+      if(!x || x.fecha !== hoyStr) return;
       if(x._reconstruido === true) return;
-      if(typeof x.id === 'string' && x.id.charAt(0) === 'r') return;
-      if(x.tipo === 'deuda'){
+      var id = (typeof x.id === 'string') ? x.id : '';
+      var prefijo = id.charAt(0);
+
+      // Solo entradas con prefijo 'd' (creadas hoy vía checkbox vnDeudaAgregar)
+      if(x.tipo === 'deuda' && prefijo === 'd'){
         if(x.sub === 'cliente') dcHoy += Number(x.monto)||0;
         else if(x.sub === 'mia') dmHoy += Number(x.monto)||0;
-      } else if(x.tipo === 'pago' && x.metodo === 'efectivo'){
+      }
+      // Solo pagos creados hoy vía checkbox vnDeudaPagar (id 'p...')
+      else if(x.tipo === 'pago' && prefijo === 'p' && x.metodo === 'efectivo'){
         if(x.sub === 'cliente') pagoClienteHoyEfectivo += Number(x.monto)||0;
         else if(x.sub === 'mia') pagoMiaHoyEfectivo += Number(x.monto)||0;
       }
