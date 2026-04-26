@@ -11709,86 +11709,57 @@ window.vnDiagVentas = function(){
     return m && (m._autoBruto || (m.descripcion||'').indexOf('Bruto ventas del ') === 0);
   }
 
-  // ---------- 1. _uHistRecolectar: añadir ventas ----------
-  if(typeof window._uHistRecolectar === 'function'){
-    var _origUHR = window._uHistRecolectar;
-    window._uHistRecolectar = function(){
-      var movs = _origUHR.apply(this, arguments) || [];
-      // Quitar auto-brutos residuales (los reemplazaremos por la fuente real)
-      movs = movs.filter(function(m){ return !_esAutoBrutoResidual(m); });
-      // Añadir ventas reales desde pedidos
+  // ---------- ESTRATEGIA V25: wrappear renderConta directamente ----------
+  // Inyectamos las ventas como entradas REALES en movimientosContables justo
+  // antes de cualquier render y las quitamos después. Como _uFlujo, _uHistRecolectar
+  // y _uCategorias/v9RenderCategorias todos leen movimientosContables sincrónicamente
+  // dentro de la llamada a renderConta, este wrap funciona sin importar si los
+  // wraps por nombre se propagan o no.
+  if(typeof window.renderConta === 'function' && !window._vnRenderContaWrappedV25){
+    window._vnRenderContaWrappedV25 = true;
+    var _origRenderV25 = window.renderConta;
+
+    window.renderConta = function(tab){
+      var arr = window.movimientosContables;
+      if(!Array.isArray(arr)){
+        window.movimientosContables = [];
+        arr = window.movimientosContables;
+      }
+
+      // 1) Quitar auto-brutos residuales del array para evitar doble conteo
+      var residuales = arr.filter(_esAutoBrutoResidual);
+      if(residuales.length > 0){
+        var limpio = arr.filter(function(m){ return !_esAutoBrutoResidual(m); });
+        arr.length = 0;
+        Array.prototype.push.apply(arr, limpio);
+      }
+
+      // 2) Inyectar ventas virtuales como entradas reales
+      var startLen = arr.length;
+      var virtuales = [];
       _ventasComoMovs().forEach(function(v){
-        movs.push({
-          fecha: v.fecha,
+        virtuales.push({
           tipo: 'ingreso',
-          categoria: v.categoria,
-          descripcion: v.descripcion,
-          cuenta: v.cuenta,
           monto: v.monto,
-          origen: '_autoVenta',
-          origenIdx: v.fecha
+          cuenta: v.cuenta,
+          descripcion: v.descripcion,
+          categoria: v.categoria,
+          fecha: v.fechaISO,
+          _vnVirtualVenta: true
         });
       });
-      return movs;
+      Array.prototype.push.apply(arr, virtuales);
+
+      try {
+        return _origRenderV25.apply(this, arguments);
+      } finally {
+        // 3) Quitar las virtuales (vuelve al estado original)
+        if(arr.length >= startLen){
+          arr.length = startLen;
+        }
+      }
     };
-  }
-
-  // ---------- 2. _uFlujo: inyectar ventas temporalmente ----------
-  function _conInyeccionVentas(origFn, ctx, args){
-    var arr = window.movimientosContables;
-    if(!Array.isArray(arr)){ window.movimientosContables = []; arr = window.movimientosContables; }
-
-    // Filtrar auto-brutos residuales para evitar doble conteo
-    var residuales = [];
-    var limpio = arr.filter(function(m){
-      if(_esAutoBrutoResidual(m)){ residuales.push(m); return false; }
-      return true;
-    });
-    if(residuales.length > 0){
-      window.movimientosContables = limpio;
-      arr = limpio;
-    }
-
-    // Inyectar ventas como entradas virtuales
-    var temp = [];
-    _ventasComoMovs().forEach(function(v){
-      temp.push({
-        tipo: 'ingreso',
-        monto: v.monto,
-        cuenta: v.cuenta,
-        descripcion: v.descripcion,
-        categoria: v.categoria,
-        fecha: v.fechaISO,
-        _vnVirtualVenta: true
-      });
-    });
-    var startLen = arr.length;
-    Array.prototype.push.apply(arr, temp);
-
-    try { return origFn.apply(ctx, args); }
-    finally {
-      // Quitar las virtuales (length-based para no afectar cualquier otro push concurrente)
-      arr.length = startLen;
-    }
-  }
-
-  if(typeof window._uFlujo === 'function'){
-    var _origUFlujo = window._uFlujo;
-    window._uFlujo = function(){
-      return _conInyeccionVentas(_origUFlujo, this, arguments);
-    };
-  }
-  if(typeof window._uCategorias === 'function'){
-    var _origUCat = window._uCategorias;
-    window._uCategorias = function(){
-      return _conInyeccionVentas(_origUCat, this, arguments);
-    };
-  }
-  if(typeof window._v9RenderCategorias === 'function'){
-    var _origV9Cat = window._v9RenderCategorias;
-    window._v9RenderCategorias = function(){
-      return _conInyeccionVentas(_origV9Cat, this, arguments);
-    };
+    console.log('🔧 V25: renderConta wrappeado para inyectar ventas virtuales');
   }
 
   // ---------- 3. Limpiar auto-brutos residuales en cada renderConta ----------
