@@ -11563,24 +11563,65 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
 //  · No duplicación: las virtuales solo viven durante el render.
 //  · No toca cartera, deudas, ni datos existentes.
 // =====================================================
+// Cache + diagnóstico SIEMPRE disponibles, aunque db tarde
+window._vnVentasPorFecha = (function(){
+  try { return JSON.parse(localStorage.getItem('_vnVentasPorFecha')||'{}') || {}; }
+  catch(e){ return {}; }
+})();
+
+window.vnDiagVentas = function(){
+  console.log('=========== DIAGNÓSTICO V24 ===========');
+  console.log('typeof db:', typeof db);
+  try { console.log('db.from existe?', !!(db && db.from)); } catch(e){ console.log('db NO accesible:', e.message); }
+  var c = window._vnVentasPorFecha || {};
+  var keys = Object.keys(c);
+  console.log('Cache _vnVentasPorFecha:', keys.length, 'fechas');
+  keys.sort().forEach(function(f){ console.log('  ', f, '→ $'+(c[f]||0).toLocaleString('es-CO')); });
+  console.log('_uHistRecolectar wrapped (V24 indicador)?', !!(window._uHistRecolectar && window._uHistRecolectar.toString().indexOf('_autoVenta') > -1));
+  console.log('_uFlujo wrapped (V24 indicador)?', !!(window._uFlujo && window._uFlujo.toString().indexOf('_conInyeccionVentas') > -1));
+  if(typeof window._vnVentasCargar === 'function'){
+    console.log('Forzando recarga de pedidos…');
+    return window._vnVentasCargar();
+  } else {
+    console.warn('_vnVentasCargar NO está definido → V24 IIFE no completó setup. Reintentando…');
+    if(typeof window._vnSetupV24 === 'function') window._vnSetupV24();
+  }
+};
+
 (function(){
   'use strict';
 
-  if(typeof db === 'undefined' || !db || !db.from){
-    console.warn('V24: db no disponible'); return;
+  // Setup deferido: reintentar hasta que db esté disponible
+  var _setupHecho = false;
+  function _setup(){
+    if(_setupHecho) return;
+    if(typeof db === 'undefined' || !db || !db.from) return false;
+    _setupHecho = true;
+    _doSetup();
+    return true;
   }
+  window._vnSetupV24 = _setup;
 
-  // Cache: { 'YYYY-MM-DD': totalBruto }
-  window._vnVentasPorFecha = (function(){
-    try { return JSON.parse(localStorage.getItem('_vnVentasPorFecha')||'{}') || {}; }
-    catch(e){ return {}; }
-  })();
+  // Reintentar varias veces
+  var _intentos = 0;
+  var _retryId = setInterval(function(){
+    _intentos++;
+    if(_setup() || _intentos > 30){ clearInterval(_retryId); }
+  }, 400);
+  // Intento inmediato
+  _setup();
+
+  function _doSetup(){
+    console.log('🔧 V24 setup iniciado');
 
   // Carga ventas de Supabase y actualiza el cache
   window._vnVentasCargar = async function(){
     try {
       var res = await db.from('pedidos').select('fecha,total,id,cliente').limit(20000);
-      if(!res || res.error || !Array.isArray(res.data)) return;
+      if(!res){ console.warn('[V24] pedidos: sin respuesta'); return; }
+      if(res.error){ console.warn('[V24] pedidos error:', res.error.message||res.error); return; }
+      if(!Array.isArray(res.data)){ console.warn('[V24] pedidos: data no es array', res.data); return; }
+      console.log('[V24] pedidos descargados:', res.data.length);
       var lista = (typeof depurarPedidosUnicos === 'function')
         ? depurarPedidosUnicos(res.data)
         : res.data;
@@ -11594,6 +11635,9 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
       });
       window._vnVentasPorFecha = byFecha;
       try { localStorage.setItem('_vnVentasPorFecha', JSON.stringify(byFecha)); } catch(e){}
+      var fechas = Object.keys(byFecha);
+      console.log('[V24] ventas por fecha ('+fechas.length+' días):',
+        fechas.slice(-5).map(function(f){ return f+'=$'+byFecha[f].toLocaleString('es-CO'); }).join(' | '));
       // Re-render si Contabilidad está abierta
       try {
         if(document.getElementById('contaBody') && typeof renderConta === 'function'){
@@ -11620,6 +11664,38 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
   // Cargar al inicio y refrescar cada 30s
   setTimeout(window._vnVentasCargar, 800);
   setInterval(window._vnVentasCargar, 30000);
+
+  // Hookear renderConta para forzar carga al abrir cualquier tab
+  setTimeout(function(){
+    if(typeof window.renderConta === 'function'){
+      var _origRC24 = window.renderConta;
+      window.renderConta = function(tab){
+        try { window._vnVentasCargar(); } catch(e){}
+        return _origRC24.apply(this, arguments);
+      };
+    }
+  }, 1500);
+
+  // Función de diagnóstico ejecutable desde consola
+  window.vnDiagVentas = function(){
+    var c = window._vnVentasPorFecha || {};
+    var keys = Object.keys(c);
+    console.log('=========== DIAGNÓSTICO V24 ===========');
+    console.log('Cache _vnVentasPorFecha:', keys.length, 'fechas');
+    keys.sort().forEach(function(f){
+      console.log('  ', f, '→ $'+(c[f]||0).toLocaleString('es-CO'));
+    });
+    console.log('_uHistRecolectar wrapped?', typeof window._uHistRecolectar);
+    console.log('_uFlujo wrapped?', typeof window._uFlujo);
+    var test = (typeof window._uHistRecolectar === 'function') ? window._uHistRecolectar() : null;
+    if(test){
+      var ventas = test.filter(function(m){ return m.origen === '_autoVenta'; });
+      console.log('Ventas en histRecolectar():', ventas.length);
+      ventas.forEach(function(v){ console.log('  ', v.fecha, '→ $'+v.monto.toLocaleString('es-CO')); });
+    }
+    console.log('Forzando recarga de pedidos…');
+    return window._vnVentasCargar();
+  };
 
   // Helpers ---
   function _ventasComoMovs(){
@@ -11758,6 +11834,8 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
   }
 
   console.log('✅ Parche V24: ventas desde pedidos como ingresos virtuales (fuente real)');
+
+  } // fin _doSetup
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
