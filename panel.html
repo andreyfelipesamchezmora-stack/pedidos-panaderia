@@ -11548,6 +11548,217 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
 
   console.log('✅ Parche V23.2: sync robusto + merge anti-wipe en movimientosContables');
 })();
+
+// =====================================================
+// PARCHE V24 — VENTAS DESDE PEDIDOS (FUENTE REAL)
+// =====================================================
+// Estrategia simplificada: en lugar de competir con el sync para guardar el
+// bruto en movimientosContables, leemos las ventas directamente de la tabla
+// pedidos (persistente para siempre en Supabase) e inyectamos entradas
+// virtuales SOLO al renderizar Historial/Flujo/Categorías.
+//
+// Ventajas:
+//  · Sin conflicto con sync V12 ni con En Vivo.
+//  · Las ventas SIEMPRE aparecen porque pedidos NUNCA se borra.
+//  · No duplicación: las virtuales solo viven durante el render.
+//  · No toca cartera, deudas, ni datos existentes.
+// =====================================================
+(function(){
+  'use strict';
+
+  if(typeof db === 'undefined' || !db || !db.from){
+    console.warn('V24: db no disponible'); return;
+  }
+
+  // Cache: { 'YYYY-MM-DD': totalBruto }
+  window._vnVentasPorFecha = (function(){
+    try { return JSON.parse(localStorage.getItem('_vnVentasPorFecha')||'{}') || {}; }
+    catch(e){ return {}; }
+  })();
+
+  // Carga ventas de Supabase y actualiza el cache
+  window._vnVentasCargar = async function(){
+    try {
+      var res = await db.from('pedidos').select('fecha,total,id,cliente').limit(20000);
+      if(!res || res.error || !Array.isArray(res.data)) return;
+      var lista = (typeof depurarPedidosUnicos === 'function')
+        ? depurarPedidosUnicos(res.data)
+        : res.data;
+      var byFecha = {};
+      lista.forEach(function(p){
+        var f = (p && p.fecha) ? String(p.fecha).slice(0,10) : '';
+        if(!f) return;
+        var t = Number(p.total)||0;
+        if(t <= 0) return;
+        byFecha[f] = (byFecha[f]||0) + t;
+      });
+      window._vnVentasPorFecha = byFecha;
+      try { localStorage.setItem('_vnVentasPorFecha', JSON.stringify(byFecha)); } catch(e){}
+      // Re-render si Contabilidad está abierta
+      try {
+        if(document.getElementById('contaBody') && typeof renderConta === 'function'){
+          // Detectar tab activa por la clase .ftab.active
+          var activa = 'resumen';
+          var act = document.querySelector('#contaBody .ftab.active');
+          if(act){
+            var t = (act.textContent||'').toLowerCase();
+            if(t.indexOf('flujo') > -1) activa = 'flujo';
+            else if(t.indexOf('histor') > -1) activa = 'historial';
+            else if(t.indexOf('categor') > -1) activa = 'categorias';
+            else if(t.indexOf('cuenta') > -1) activa = 'cuentas';
+            else if(t.indexOf('caja') > -1) activa = 'caja';
+            else if(t.indexOf('cuotas') > -1) activa = 'cuotas';
+          }
+          if(['flujo','historial','categorias','resumen'].indexOf(activa) > -1){
+            renderConta(activa);
+          }
+        }
+      } catch(e){}
+    } catch(e){ console.warn('V24 ventasCargar:', e); }
+  };
+
+  // Cargar al inicio y refrescar cada 30s
+  setTimeout(window._vnVentasCargar, 800);
+  setInterval(window._vnVentasCargar, 30000);
+
+  // Helpers ---
+  function _ventasComoMovs(){
+    var movs = [];
+    var byFecha = window._vnVentasPorFecha || {};
+    Object.keys(byFecha).forEach(function(fecha){
+      var total = Number(byFecha[fecha])||0;
+      if(total <= 0) return;
+      movs.push({
+        fecha: fecha,
+        fechaISO: fecha + 'T12:00:00',
+        tipo: 'ingreso',
+        categoria: 'Venta de Reparto',
+        descripcion: 'Bruto ventas del ' + fecha,
+        cuenta: 'Ventas del día',
+        monto: total
+      });
+    });
+    return movs;
+  }
+
+  // Detecta si una entrada existente del array es nuestro auto-bruto residual
+  // (lo dejamos de usar pero por si quedó persistido lo reconocemos)
+  function _esAutoBrutoResidual(m){
+    return m && (m._autoBruto || (m.descripcion||'').indexOf('Bruto ventas del ') === 0);
+  }
+
+  // ---------- 1. _uHistRecolectar: añadir ventas ----------
+  if(typeof window._uHistRecolectar === 'function'){
+    var _origUHR = window._uHistRecolectar;
+    window._uHistRecolectar = function(){
+      var movs = _origUHR.apply(this, arguments) || [];
+      // Quitar auto-brutos residuales (los reemplazaremos por la fuente real)
+      movs = movs.filter(function(m){ return !_esAutoBrutoResidual(m); });
+      // Añadir ventas reales desde pedidos
+      _ventasComoMovs().forEach(function(v){
+        movs.push({
+          fecha: v.fecha,
+          tipo: 'ingreso',
+          categoria: v.categoria,
+          descripcion: v.descripcion,
+          cuenta: v.cuenta,
+          monto: v.monto,
+          origen: '_autoVenta',
+          origenIdx: v.fecha
+        });
+      });
+      return movs;
+    };
+  }
+
+  // ---------- 2. _uFlujo: inyectar ventas temporalmente ----------
+  function _conInyeccionVentas(origFn, ctx, args){
+    var arr = window.movimientosContables;
+    if(!Array.isArray(arr)){ window.movimientosContables = []; arr = window.movimientosContables; }
+
+    // Filtrar auto-brutos residuales para evitar doble conteo
+    var residuales = [];
+    var limpio = arr.filter(function(m){
+      if(_esAutoBrutoResidual(m)){ residuales.push(m); return false; }
+      return true;
+    });
+    if(residuales.length > 0){
+      window.movimientosContables = limpio;
+      arr = limpio;
+    }
+
+    // Inyectar ventas como entradas virtuales
+    var temp = [];
+    _ventasComoMovs().forEach(function(v){
+      temp.push({
+        tipo: 'ingreso',
+        monto: v.monto,
+        cuenta: v.cuenta,
+        descripcion: v.descripcion,
+        categoria: v.categoria,
+        fecha: v.fechaISO,
+        _vnVirtualVenta: true
+      });
+    });
+    var startLen = arr.length;
+    Array.prototype.push.apply(arr, temp);
+
+    try { return origFn.apply(ctx, args); }
+    finally {
+      // Quitar las virtuales (length-based para no afectar cualquier otro push concurrente)
+      arr.length = startLen;
+    }
+  }
+
+  if(typeof window._uFlujo === 'function'){
+    var _origUFlujo = window._uFlujo;
+    window._uFlujo = function(){
+      return _conInyeccionVentas(_origUFlujo, this, arguments);
+    };
+  }
+  if(typeof window._uCategorias === 'function'){
+    var _origUCat = window._uCategorias;
+    window._uCategorias = function(){
+      return _conInyeccionVentas(_origUCat, this, arguments);
+    };
+  }
+  if(typeof window._v9RenderCategorias === 'function'){
+    var _origV9Cat = window._v9RenderCategorias;
+    window._v9RenderCategorias = function(){
+      return _conInyeccionVentas(_origV9Cat, this, arguments);
+    };
+  }
+
+  // ---------- 3. Limpiar auto-brutos residuales en cada renderConta ----------
+  // Quita las entradas con _autoBruto que V23.1 pudo haber dejado
+  // (ahora son redundantes con la inyección virtual)
+  function _limpiarAutoBrutoResiduales(){
+    if(!Array.isArray(window.movimientosContables)) return false;
+    var antes = window.movimientosContables.length;
+    window.movimientosContables = window.movimientosContables.filter(function(m){
+      return !_esAutoBrutoResidual(m);
+    });
+    var despues = window.movimientosContables.length;
+    if(antes !== despues){
+      try { localStorage.setItem('mc_local', JSON.stringify(window.movimientosContables)); } catch(e){}
+      if(typeof window._vnSyncMC === 'function') window._vnSyncMC();
+      console.log('🧹 V24: '+(antes-despues)+' auto-brutos residuales removidos de movimientosContables');
+      return true;
+    }
+    return false;
+  }
+  // Ejecutar limpieza una vez al cargar
+  setTimeout(_limpiarAutoBrutoResiduales, 3500);
+  // Y desactivar la función V23.1 que los creaba
+  if(typeof window._actualizarAutoBrutoDesdePedidos === 'function'){
+    window._actualizarAutoBrutoDesdePedidos = async function(){
+      // Ahora solo refresca el cache de ventas
+      return window._vnVentasCargar();
+    };
+  }
+
+  console.log('✅ Parche V24: ventas desde pedidos como ingresos virtuales (fuente real)');
+})();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
