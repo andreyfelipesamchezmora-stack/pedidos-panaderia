@@ -11633,48 +11633,55 @@ window.vnDiagVentas = function(){
         if(t <= 0) return;
         byFecha[f] = (byFecha[f]||0) + t;
       });
+      var nuevoJSON = JSON.stringify(byFecha);
+      var antesJSON = JSON.stringify(window._vnVentasPorFecha||{});
+      var cambio = (nuevoJSON !== antesJSON);
       window._vnVentasPorFecha = byFecha;
-      try { localStorage.setItem('_vnVentasPorFecha', JSON.stringify(byFecha)); } catch(e){}
+      try { localStorage.setItem('_vnVentasPorFecha', nuevoJSON); } catch(e){}
       var fechas = Object.keys(byFecha);
-      console.log('[V24] ventas por fecha ('+fechas.length+' días):',
-        fechas.slice(-5).map(function(f){ return f+'=$'+byFecha[f].toLocaleString('es-CO'); }).join(' | '));
-      // Re-render si Contabilidad está abierta
-      try {
-        if(document.getElementById('contaBody') && typeof renderConta === 'function'){
-          // Detectar tab activa por la clase .ftab.active
-          var activa = 'resumen';
-          var act = document.querySelector('#contaBody .ftab.active');
-          if(act){
-            var t = (act.textContent||'').toLowerCase();
-            if(t.indexOf('flujo') > -1) activa = 'flujo';
-            else if(t.indexOf('histor') > -1) activa = 'historial';
-            else if(t.indexOf('categor') > -1) activa = 'categorias';
-            else if(t.indexOf('cuenta') > -1) activa = 'cuentas';
-            else if(t.indexOf('caja') > -1) activa = 'caja';
-            else if(t.indexOf('cuotas') > -1) activa = 'cuotas';
+      if(cambio){
+        console.log('[V24] ventas por fecha ('+fechas.length+' días):',
+          fechas.slice(-5).map(function(f){ return f+'=$'+byFecha[f].toLocaleString('es-CO'); }).join(' | '));
+      }
+      // Re-render SOLO si la data cambió y Contabilidad está abierta
+      if(cambio){
+        try {
+          if(document.getElementById('contaBody') && typeof renderConta === 'function'){
+            var activa = 'resumen';
+            var act = document.querySelector('#contaBody .ftab.active');
+            if(act){
+              var t = (act.textContent||'').toLowerCase();
+              if(t.indexOf('flujo') > -1) activa = 'flujo';
+              else if(t.indexOf('histor') > -1) activa = 'historial';
+              else if(t.indexOf('categor') > -1) activa = 'categorias';
+              else if(t.indexOf('cuenta') > -1) activa = 'cuentas';
+              else if(t.indexOf('caja') > -1) activa = 'caja';
+              else if(t.indexOf('cuotas') > -1) activa = 'cuotas';
+            }
+            if(['flujo','historial','categorias','resumen'].indexOf(activa) > -1){
+              // Bandera para evitar que el hook de renderConta dispare otra carga
+              window._vnSkipNextLoad = true;
+              renderConta(activa);
+            }
           }
-          if(['flujo','historial','categorias','resumen'].indexOf(activa) > -1){
-            renderConta(activa);
-          }
-        }
-      } catch(e){}
+        } catch(e){}
+      }
     } catch(e){ console.warn('V24 ventasCargar:', e); }
+  };
+
+  // Throttle: máximo una carga cada 5s
+  var _lastLoad = 0;
+  var _origCargar = window._vnVentasCargar;
+  window._vnVentasCargar = function(){
+    var ahora = Date.now();
+    if(ahora - _lastLoad < 5000) return Promise.resolve();
+    _lastLoad = ahora;
+    return _origCargar.apply(this, arguments);
   };
 
   // Cargar al inicio y refrescar cada 30s
   setTimeout(window._vnVentasCargar, 800);
   setInterval(window._vnVentasCargar, 30000);
-
-  // Hookear renderConta para forzar carga al abrir cualquier tab
-  setTimeout(function(){
-    if(typeof window.renderConta === 'function'){
-      var _origRC24 = window.renderConta;
-      window.renderConta = function(tab){
-        try { window._vnVentasCargar(); } catch(e){}
-        return _origRC24.apply(this, arguments);
-      };
-    }
-  }, 1500);
 
   // Función de diagnóstico ejecutable desde consola
   window.vnDiagVentas = function(){
