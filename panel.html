@@ -11720,10 +11720,23 @@ window.vnDiagVentas = function(){
     var _origRenderV25 = window.renderConta;
 
     window.renderConta = function(tab){
-      var arr = window.movimientosContables;
-      if(!Array.isArray(arr)){
-        window.movimientosContables = [];
-        arr = window.movimientosContables;
+      // CRÍTICO: el archivo declara `let movimientosContables = []` (línea 12).
+      // Ese binding lexical es lo que leen _uFlujo, _uHistRecolectar, etc.
+      // window.movimientosContables puede ser una referencia DISTINTA si V12 hizo
+      // reassignment. Sincronizamos ambas referencias antes de inyectar.
+      var lexArr = null;
+      try { lexArr = movimientosContables; } catch(e){}
+      var winArr = window.movimientosContables;
+
+      // Usar el array lexical como autoridad (eso es lo que ven los renderers)
+      var arr = Array.isArray(lexArr) ? lexArr : (Array.isArray(winArr) ? winArr : null);
+      if(!arr){
+        arr = [];
+        try { movimientosContables = arr; } catch(e){}
+        window.movimientosContables = arr;
+      } else {
+        // Asegurar que window apunte al mismo array
+        if(winArr !== arr) window.movimientosContables = arr;
       }
 
       // 1) Quitar auto-brutos residuales del array para evitar doble conteo
@@ -11750,7 +11763,7 @@ window.vnDiagVentas = function(){
       });
       Array.prototype.push.apply(arr, virtuales);
 
-      console.log('[V25] renderConta('+tab+') → '+virtuales.length+' ventas virtuales inyectadas (cache: '+Object.keys(window._vnVentasPorFecha||{}).length+' fechas, arr largo: '+arr.length+')');
+      console.log('[V25] renderConta('+tab+') → '+virtuales.length+' ventas inyectadas | cache:'+Object.keys(window._vnVentasPorFecha||{}).length+' fechas | arr:'+arr.length+' | lex===win? '+(lexArr === winArr));
 
       try {
         return _origRenderV25.apply(this, arguments);
