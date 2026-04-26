@@ -11251,25 +11251,13 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
     };
     anchor.parentElement.insertBefore(btn, anchor.nextSibling);
   }
+  // V24.3: el hook de renderConta para auto-bruto fue NEUTRALIZADO.
+  // Causaba loop infinito (auto-bruto → mcPersist → push Supabase → realtime → merge → push…).
+  // El bruto del día ahora se inyecta virtualmente en V24 sin tocar movimientosContables.
+  // Solo conservamos el botón Reset de categorías.
   if(typeof window.renderConta === 'function'){
     var _origRConta23 = window.renderConta;
     window.renderConta = function(tab){
-      // Recalcular auto-bruto desde Supabase ANTES de pintar (asincrónico, pinta y luego refresca)
-      try {
-        if(['historial','flujo','categorias','resumen'].indexOf(tab) > -1){
-          _actualizarAutoBrutoDesdePedidos().then(function(){
-            // Re-render rápido si el monto cambió y la pestaña sigue abierta
-            try {
-              var stillOpen = document.getElementById('contaBody');
-              if(stillOpen){
-                _origRConta23(tab);
-                if(tab === 'categorias') setTimeout(_inyectarBotonResetCat, 200);
-              }
-            } catch(e){}
-          }).catch(function(){});
-        }
-      } catch(e){}
-
       var r = _origRConta23.apply(this, arguments);
       if(tab === 'categorias'){
         setTimeout(_inyectarBotonResetCat, 350);
@@ -11277,15 +11265,6 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
       return r;
     };
   }
-
-  // Refresco periódico mientras Contabilidad esté abierta
-  setInterval(function(){
-    try {
-      if(document.getElementById('contaBody')){
-        _actualizarAutoBrutoDesdePedidos();
-      }
-    } catch(e){}
-  }, 60000);
 
   // ---------- Reset Categorías mejorado: también limpia gastosMemoria ----------
   // Reemplaza la versión anterior con una más completa.
