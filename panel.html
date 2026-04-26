@@ -10828,16 +10828,16 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
   console.log('☁️ V12 iniciado');
 })();
 
+
 // =====================================================
-// PARCHE V23 — FIXES OPTIMIZACIÓN (sin pérdida de datos)
-//   1. Fecha LOCAL real (corrige cajaFechaHoy → no más fecha de mañana por UTC)
-//   2. Auto-registro del BRUTO del día en movimientosContables (historial + flujo)
-//   3. Ingresos adicionales (cajaRegistrarIngreso) → registrar también en
-//      movimientosContables con X para borrar (efecto contable real)
-//   4. Cerrar caja NO toca ingresos/flujo (verificado, no cambia)
-//   5. Cartera: nuevo "Historial General de Deudas" agregado a partir de
-//      todas las h[] del store V20 (lectura, no muta nada)
-//   6. Reset de Categorías por mes (excluyendo movimientos relacionados a deudas)
+// PARCHE V24 — OPTIMIZACIÓN COMPLETA
+//   1. Fecha LOCAL correcta (sin drift UTC)
+//   2. Auto-bruto de ventas → movimientosContables (historial + flujo)
+//   3. Ingresos extras (caja) → movimientosContables
+//   4. Reset abril automático (UNA vez, conserva deudas/cartera)
+//   5. Historial general de deudas (solo lectura)
+//   6. Reset categorías por mes
+//   *** CARTERA Y DEUDAS: INTACTAS ***
 // =====================================================
 (function(){
   'use strict';
@@ -10847,7 +10847,6 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
   function _localISO(d){
     d = d || new Date();
     if(typeof d === 'string'){
-      // Si ya es YYYY-MM-DD lo devolvemos tal cual
       if(/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
       d = new Date(d);
     }
@@ -10856,7 +10855,7 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
   }
   window._fechaLocalISO = _localISO;
 
-  // Sobreescribir cajaFechaHoy para usar fecha local SI no hay input #fecha con valor
+  // Sobreescribir cajaFechaHoy para usar fecha local
   if(typeof window.cajaFechaHoy === 'function'){
     var _origCFH = window.cajaFechaHoy;
     window.cajaFechaHoy = function(){
@@ -10868,16 +10867,25 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
     };
   }
 
-  // ---------- 2. AUTO-BRUTO del día → movimientosContables ----------
-  // Mantener UN único movimiento por día con el bruto actual.
-  // Etiquetado con _autoBruto:'YYYY-MM-DD' para idempotencia.
-  function _registrarBrutoDia(){
+  // ================================================================
+  // 1. AUTO-BRUTO: Registra ventas del día en movimientosContables
+  //    - Un solo movimiento por fecha con tag _autoBruto
+  //    - Se actualiza (idempotente) cada vez que se abre contabilidad
+  //    - Consulta directamente Supabase para tener cifra real
+  // ================================================================
+  async function _actualizarAutoBruto(fechaArg){
     try {
-      var c = window._recaudoCache;
-      if(!c || !c.resumen) return;
-      var fechaStr = c.fecha || _localISO();
-      var bruto = Number(c.resumen.bruto)||0;
-      if(bruto <= 0) return;
+      if(typeof db === 'undefined' || !db || !db.from) return;
+      var fechaStr = fechaArg || ((typeof cajaFechaHoy==='function') ? cajaFechaHoy() : _localISO());
+
+      var res = await db.from('pedidos').select('total,fecha,cliente,id').eq('fecha', fechaStr);
+      if(!res || res.error || !Array.isArray(res.data)) return;
+
+      var lista = (typeof depurarPedidosUnicos==='function')
+        ? depurarPedidosUnicos(res.data) : res.data;
+
+      var bruto = 0;
+      lista.forEach(function(p){ bruto += Number(p.total)||0; });
 
       if(!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
       var arr = window.movimientosContables;
@@ -10888,78 +10896,8 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
         if(arr[i] && arr[i]._autoBruto === fechaStr){ idx = i; break; }
       }
 
-      var fechaISO = fechaStr + 'T12:00:00';   // mediodía local: evita drift por TZ
-      var entry = {
-        tipo: 'ingreso',
-        monto: bruto,
-        cuenta: 'Ventas del día',
-        descripcion: 'Bruto ventas del ' + fechaStr,
-        categoria: 'Venta de Reparto',
-        fecha: fechaISO,
-        _autoBruto: fechaStr
-      };
-
-      if(idx >= 0){
-        if((Number(arr[idx].monto)||0) === bruto) return; // sin cambios
-        arr[idx] = entry;
-      } else {
-        arr.push(entry);
-      }
-      if(typeof window._mcPersist === 'function') window._mcPersist();
-    } catch(e){ console.warn('V23 bruto:', e); }
-  }
-
-  // Wrap vnPrecargarRecaudo para registrar bruto cada vez que se actualiza el cache
-  if(typeof window.vnPrecargarRecaudo === 'function'){
-    var _origPrec = window.vnPrecargarRecaudo;
-    window.vnPrecargarRecaudo = async function(){
-      var r = await _origPrec.apply(this, arguments);
-      try { _registrarBrutoDia(); } catch(e){}
-      return r;
-    };
-  }
-  // También al cerrar el panel de recaudo (cuando el usuario lo guardó)
-  if(typeof window.renderRecaudo === 'function'){
-    var _origRR = window.renderRecaudo;
-    window.renderRecaudo = async function(){
-      var r = await _origRR.apply(this, arguments);
-      setTimeout(_registrarBrutoDia, 350);
-      return r;
-    };
-  }
-
-  // ---------- 2.b RECALCULAR BRUTO desde Supabase pedidos ----------
-  // Mantiene UN movimiento contable por día con el bruto real de la tabla pedidos.
-  // Se ejecuta al abrir Contabilidad (cualquier tab) y cada 60s mientras esté abierta.
-  async function _actualizarAutoBrutoDesdePedidos(fechaArg){
-    try {
-      if(typeof db === 'undefined' || !db || !db.from) return;
-      var fechaStr = fechaArg || ((typeof cajaFechaHoy==='function') ? cajaFechaHoy() : _localISO());
-
-      var res = await db.from('pedidos').select('total,fecha,cliente,id').eq('fecha', fechaStr);
-      if(!res || res.error || !Array.isArray(res.data)) return;
-
-      var lista = (typeof depurarPedidosUnicos==='function')
-        ? depurarPedidosUnicos(res.data)
-        : res.data;
-
-      var bruto = 0;
-      lista.forEach(function(p){ bruto += Number(p.total)||0; });
-
-      if(!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
-      var arr = window.movimientosContables;
-
-      var idx = -1;
-      for(var i=0; i<arr.length; i++){
-        if(arr[i] && arr[i]._autoBruto === fechaStr){ idx = i; break; }
-      }
-
       if(bruto <= 0){
-        // Si no hay ventas y existía entrada → quitarla (evita ruido)
-        if(idx >= 0){
-          arr.splice(idx,1);
-          if(typeof window._mcPersist==='function') window._mcPersist();
-        }
+        if(idx >= 0){ arr.splice(idx,1); if(typeof window._mcPersist==='function') window._mcPersist(); }
         return;
       }
 
@@ -10967,7 +10905,7 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
         tipo: 'ingreso',
         monto: bruto,
         cuenta: 'Ventas del día',
-        descripcion: 'Bruto ventas del ' + fechaStr,
+        descripcion: 'Bruto ventas ' + fechaStr + ' (' + lista.length + ' pedidos)',
         categoria: 'Venta de Reparto',
         fecha: fechaStr + 'T12:00:00',
         _autoBruto: fechaStr,
@@ -10981,18 +10919,67 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
         arr.push(entry);
       }
       if(typeof window._mcPersist==='function') window._mcPersist();
-    } catch(e){ console.warn('V23.1 auto-bruto pedidos:', e); }
+    } catch(e){ console.warn('V24 auto-bruto:', e); }
   }
-  window._actualizarAutoBrutoDesdePedidos = _actualizarAutoBrutoDesdePedidos;
+  window._actualizarAutoBrutoDesdePedidos = _actualizarAutoBruto;
 
-  // ---------- 3. INGRESOS ADICIONALES → movimientosContables ----------
+  // También registrar bruto al precargar recaudo (cuando el usuario está en Recaudo)
+  function _registrarBrutoDesdeCache(){
+    try {
+      var c = window._recaudoCache;
+      if(!c || !c.resumen) return;
+      var fechaStr = c.fecha || _localISO();
+      var bruto = Number(c.resumen.bruto)||0;
+      if(bruto <= 0) return;
+      if(!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
+      var arr = window.movimientosContables;
+      var idx = -1;
+      for(var i=0; i<arr.length; i++){
+        if(arr[i] && arr[i]._autoBruto === fechaStr){ idx = i; break; }
+      }
+      var entry = {
+        tipo: 'ingreso', monto: bruto, cuenta: 'Ventas del día',
+        descripcion: 'Bruto ventas ' + fechaStr,
+        categoria: 'Venta de Reparto',
+        fecha: fechaStr + 'T12:00:00',
+        _autoBruto: fechaStr
+      };
+      if(idx >= 0){
+        if((Number(arr[idx].monto)||0) === bruto) return;
+        arr[idx] = entry;
+      } else {
+        arr.push(entry);
+      }
+      if(typeof window._mcPersist === 'function') window._mcPersist();
+    } catch(e){}
+  }
+
+  // Wrap vnPrecargarRecaudo
+  if(typeof window.vnPrecargarRecaudo === 'function'){
+    var _origPrec = window.vnPrecargarRecaudo;
+    window.vnPrecargarRecaudo = async function(){
+      var r = await _origPrec.apply(this, arguments);
+      try { _registrarBrutoDesdeCache(); } catch(e){}
+      return r;
+    };
+  }
+  // Wrap renderRecaudo
+  if(typeof window.renderRecaudo === 'function'){
+    var _origRR24 = window.renderRecaudo;
+    window.renderRecaudo = async function(){
+      var r = await _origRR24.apply(this, arguments);
+      setTimeout(_registrarBrutoDesdeCache, 350);
+      return r;
+    };
+  }
+
+  // ================================================================
+  // 2. INGRESOS EXTRAS (desde Caja) → movimientosContables
+  // ================================================================
   if(typeof window.cajaRegistrarIngreso === 'function'){
     var _origCRI = window.cajaRegistrarIngreso;
     window.cajaRegistrarIngreso = async function(){
-      // Capturar valores ANTES porque la función original limpia los inputs
-      var pre = {
-        tipo: '', desc: '', valor: 0
-      };
+      var pre = { tipo:'', desc:'', valor:0 };
       try {
         pre.tipo  = (document.getElementById('cajaIngresoTipo')||{}).value || '';
         pre.desc  = (document.getElementById('cajaIngresoDesc')||{}).value || '';
@@ -11002,7 +10989,7 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
       var res = await _origCRI.apply(this, arguments);
 
       try {
-        if(pre.valor > 0 && pre.tipo && pre.desc){
+        if(pre.valor > 0 && pre.desc){
           if(!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
           var fechaStr = (typeof cajaFechaHoy==='function') ? cajaFechaHoy() : _localISO();
           window.movimientosContables.push({
@@ -11015,17 +11002,120 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
             _origenCaja: 'ingreso-extra'
           });
           if(typeof window._mcPersist === 'function') window._mcPersist();
-          if(typeof renderConta === 'function') setTimeout(function(){
-            try { renderConta('caja'); } catch(e){}
-          }, 200);
         }
-      } catch(e){ console.warn('V23 ingreso extra:', e); }
-
+      } catch(e){}
       return res;
     };
   }
 
-  // ---------- 5. HISTORIAL GENERAL DE DEUDAS (Cartera) ----------
+  // ================================================================
+  // 3. Al abrir Contabilidad → recalcular bruto desde Supabase
+  // ================================================================
+  if(typeof window.renderConta === 'function'){
+    var _origRConta24 = window.renderConta;
+    window.renderConta = function(tab){
+      // Recalcular auto-bruto para tabs que lo necesitan
+      try {
+        if(['historial','flujo','categorias','resumen'].indexOf(tab) > -1){
+          _actualizarAutoBruto().then(function(){
+            try {
+              var stillOpen = document.getElementById('contaBody');
+              if(stillOpen) _origRConta24(tab);
+            } catch(e){}
+          }).catch(function(){});
+        }
+      } catch(e){}
+
+      var r = _origRConta24.apply(this, arguments);
+
+      // Inyectar botones extras
+      if(tab === 'categorias') setTimeout(_inyectarBotonResetCat, 350);
+      return r;
+    };
+  }
+
+  // Refresco periódico (cada 60s) mientras Contabilidad esté abierta
+  setInterval(function(){
+    try {
+      if(document.getElementById('contaBody')) _actualizarAutoBruto();
+    } catch(e){}
+  }, 60000);
+
+  // ================================================================
+  // 4. RESET ABRIL — UNA sola vez, conserva deudas/cartera
+  // ================================================================
+  function _resetAbril(){
+    var FLAG = 'vn_reset_abril_2026_v24';
+    if(localStorage.getItem(FLAG)) return; // ya se ejecutó
+
+    var mesTarget = '2026-04';
+
+    // Backup antes de tocar nada
+    try {
+      var bk = 'bk_reset_abril_' + new Date().toISOString().replace(/[:.]/g,'-');
+      localStorage.setItem(bk, JSON.stringify({
+        mc: window.movimientosContables || [],
+        gm: window.gastosMemoria || [],
+        ts: new Date().toISOString()
+      }));
+    } catch(e){}
+
+    // Limpiar movimientosContables de abril (PRESERVAR deudas)
+    if(Array.isArray(window.movimientosContables)){
+      var conservados = [];
+      window.movimientosContables.forEach(function(m){
+        if(!m) return;
+        var fechaISO = '';
+        if(m.fecha){
+          var d = new Date(m.fecha);
+          if(!isNaN(d.getTime())) fechaISO = d.getFullYear()+'-'+_pad(d.getMonth()+1);
+        }
+        var esAbril = (fechaISO === mesTarget);
+        var desc = (m.descripcion || '').toLowerCase();
+        var esDeuda = (m.tipo === 'deuda') ||
+                      desc.indexOf('pago deuda') > -1 ||
+                      desc.indexOf('deuda de ') > -1 ||
+                      desc.indexOf('le debo a ') > -1;
+        // Conservar si NO es de abril, o si es deuda
+        if(!esAbril || esDeuda) conservados.push(m);
+      });
+      window.movimientosContables = conservados;
+    }
+
+    // Limpiar gastosMemoria de abril (PRESERVAR deudas)
+    if(Array.isArray(window.gastosMemoria)){
+      var conservadosGM = [];
+      window.gastosMemoria.forEach(function(g){
+        if(!g) return;
+        var fechaISO = '';
+        if(g.fecha){
+          var d = new Date(g.fecha);
+          if(!isNaN(d.getTime())) fechaISO = d.getFullYear()+'-'+_pad(d.getMonth()+1);
+        }
+        var esAbril = (fechaISO === mesTarget);
+        var desc = (g.descripcion || '').toLowerCase();
+        var esDeuda = desc.indexOf('deuda') > -1 || desc.indexOf('pago deuda') > -1;
+        if(!esAbril || esDeuda) conservadosGM.push(g);
+      });
+      window.gastosMemoria = conservadosGM;
+      try { sessionStorage.setItem('gastos', JSON.stringify(conservadosGM)); } catch(e){}
+    }
+
+    if(typeof window._mcPersist === 'function') window._mcPersist();
+
+    // Marcar como ejecutado
+    localStorage.setItem(FLAG, new Date().toISOString());
+    console.log('✅ Reset abril completado (deudas/cartera intactas)');
+  }
+
+  // Ejecutar después de que Supabase sync termine (2.5s)
+  setTimeout(function(){
+    try { _resetAbril(); } catch(e){ console.warn('Reset abril:', e); }
+  }, 2500);
+
+  // ================================================================
+  // 5. HISTORIAL GENERAL DE DEUDAS (solo lectura, modal)
+  // ================================================================
   function _leerStoreDeudas(){
     try { return JSON.parse(localStorage.getItem('vn_deudas_v20')||'{}')||{}; }
     catch(e){ return {}; }
@@ -11040,29 +11130,18 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
       c.h.forEach(function(x){
         if(!x) return;
         todas.push({
-          cliente: nombre,
-          fecha: x.fecha || '',
-          hora: x.hora || '',
-          tipo: x.tipo || '',
-          sub:  x.sub  || '',
-          monto: Number(x.monto)||0,
-          metodo: x.metodo || '',
-          banco: x.banco || '',
-          saldo: Number(x.saldo)||0,
-          nota: x.nota || '',
-          _reconstruido: x._reconstruido === true,
-          id: x.id || ''
+          cliente: nombre, fecha: x.fecha||'', hora: x.hora||'',
+          tipo: x.tipo||'', sub: x.sub||'',
+          monto: Number(x.monto)||0, metodo: x.metodo||'',
+          banco: x.banco||'', saldo: Number(x.saldo)||0,
+          nota: x.nota||'', id: x.id||''
         });
       });
     });
-    // Orden descendente por fecha+hora
     todas.sort(function(a,b){
-      var fa = (a.fecha||'') + ' ' + (a.hora||'');
-      var fb = (b.fecha||'') + ' ' + (b.hora||'');
-      return fb.localeCompare(fa);
+      return ((b.fecha||'')+' '+(b.hora||'')).localeCompare((a.fecha||'')+' '+(a.hora||''));
     });
 
-    // Filtros (estado en window._vnHGFiltro)
     var f = window._vnHGFiltro || { tipo:'todos', cliente:'' };
     var filtradas = todas.filter(function(x){
       if(f.tipo && f.tipo !== 'todos'){
@@ -11085,7 +11164,7 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
     });
 
     var rowsHtml = filtradas.length===0
-      ? '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:18px;">Sin movimientos para este filtro.</td></tr>'
+      ? '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:18px;">Sin movimientos.</td></tr>'
       : filtradas.map(function(x){
           var tipoLab='', tipoColor='#94a3b8';
           if(x.tipo==='deuda' && x.sub==='cliente'){ tipoLab='Me debe'; tipoColor='#f87171'; }
@@ -11094,10 +11173,10 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
           else if(x.tipo==='saldo_ini'){ tipoLab='Saldo ini.'; tipoColor='#a78bfa'; }
           else tipoLab = x.tipo;
           return '<tr style="border-top:1px solid rgba(255,255,255,0.05);">'+
-            '<td style="padding:8px 10px;font-size:12px;color:#cbd5e1;white-space:nowrap;">'+(x.fecha||'—')+(x.hora?' '+x.hora:'')+'</td>'+
+            '<td style="padding:8px 10px;font-size:12px;color:#cbd5e1;">'+(x.fecha||'—')+(x.hora?' '+x.hora:'')+'</td>'+
             '<td style="padding:8px 10px;font-size:12px;font-weight:700;color:#e2e8f0;">'+x.cliente+'</td>'+
-            '<td style="padding:8px 10px;font-size:11px;font-weight:700;color:'+tipoColor+';">'+tipoLab+(x._reconstruido?' <span title="Reconstruido" style="opacity:0.6;">⟲</span>':'')+'</td>'+
-            '<td style="padding:8px 10px;font-size:13px;font-weight:800;color:'+tipoColor+';text-align:right;font-variant-numeric:tabular-nums;">'+nMoney(x.monto)+'</td>'+
+            '<td style="padding:8px 10px;font-size:11px;font-weight:700;color:'+tipoColor+';">'+tipoLab+'</td>'+
+            '<td style="padding:8px 10px;font-size:13px;font-weight:800;color:'+tipoColor+';text-align:right;">'+nMoney(x.monto)+'</td>'+
             '<td style="padding:8px 10px;font-size:11px;color:#94a3b8;">'+(x.metodo||'')+(x.banco?' · '+x.banco:'')+'</td>'+
             '<td style="padding:8px 10px;font-size:11px;color:#94a3b8;">'+(x.nota||'')+'</td>'+
           '</tr>';
@@ -11108,18 +11187,15 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
     if(typeof mostrarMC === 'function'){
       mostrarMC(
         '<div style="max-width:980px;width:96vw;">'+
-          '<h3 style="margin:0 0 14px 0;display:flex;align-items:center;gap:8px;">📚 Historial General de Deudas <span style="font-size:11px;color:#94a3b8;font-weight:500;">(todas las deudas y pagos · solo lectura)</span></h3>'+
+          '<h3 style="margin:0 0 14px 0;display:flex;align-items:center;gap:8px;">📚 Historial General de Deudas</h3>'+
           '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">'+
             '<div><label style="display:block;font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:3px;">Tipo</label>'+
               '<select id="vnHGFiltroTipo" onchange="window._vnHGFiltro={tipo:this.value,cliente:(document.getElementById(\'vnHGFiltroCli\')||{}).value||\'\'};vnHistorialGeneralDeudas();" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:12px;font-weight:600;">'+
-                tipoOpt('todos','Todos')+
-                tipoOpt('me_deben','Me deben')+
-                tipoOpt('le_debo','Le debo')+
-                tipoOpt('pagos','Pagos')+
+                tipoOpt('todos','Todos')+tipoOpt('me_deben','Me deben')+tipoOpt('le_debo','Le debo')+tipoOpt('pagos','Pagos')+
               '</select>'+
             '</div>'+
             '<div style="flex:1;min-width:180px;"><label style="display:block;font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:3px;">Cliente</label>'+
-              '<input id="vnHGFiltroCli" type="text" value="'+(f.cliente||'').replace(/"/g,'&quot;')+'" placeholder="Buscar cliente..." oninput="clearTimeout(window._vnHGT);window._vnHGT=setTimeout(function(){window._vnHGFiltro={tipo:document.getElementById(\'vnHGFiltroTipo\').value,cliente:document.getElementById(\'vnHGFiltroCli\').value};vnHistorialGeneralDeudas();},300);" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:12px;font-weight:600;">'+
+              '<input id="vnHGFiltroCli" type="text" value="'+(f.cliente||'').replace(/"/g,'&quot;')+'" placeholder="Buscar..." oninput="clearTimeout(window._vnHGT);window._vnHGT=setTimeout(function(){window._vnHGFiltro={tipo:document.getElementById(\'vnHGFiltroTipo\').value,cliente:document.getElementById(\'vnHGFiltroCli\').value};vnHistorialGeneralDeudas();},300);" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:12px;">'+
             '</div>'+
           '</div>'+
           '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">'+
@@ -11130,28 +11206,27 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
           '<div style="max-height:50vh;overflow:auto;border:1px solid rgba(255,255,255,0.08);border-radius:10px;">'+
             '<table style="width:100%;border-collapse:collapse;">'+
               '<thead style="position:sticky;top:0;background:#1f2937;"><tr>'+
-                '<th style="padding:9px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:left;font-weight:700;">Fecha</th>'+
-                '<th style="padding:9px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:left;font-weight:700;">Cliente</th>'+
-                '<th style="padding:9px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:left;font-weight:700;">Tipo</th>'+
-                '<th style="padding:9px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:right;font-weight:700;">Monto</th>'+
-                '<th style="padding:9px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:left;font-weight:700;">Método</th>'+
-                '<th style="padding:9px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:left;font-weight:700;">Nota</th>'+
+                '<th style="padding:9px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:left;">Fecha</th>'+
+                '<th style="padding:9px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:left;">Cliente</th>'+
+                '<th style="padding:9px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:left;">Tipo</th>'+
+                '<th style="padding:9px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:right;">Monto</th>'+
+                '<th style="padding:9px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:left;">Método</th>'+
+                '<th style="padding:9px 10px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:left;">Nota</th>'+
               '</tr></thead>'+
               '<tbody>'+rowsHtml+'</tbody>'+
             '</table>'+
           '</div>'+
-          '<div style="margin-top:8px;font-size:11px;color:#64748b;">'+filtradas.length+' movimientos · '+Object.keys(store).length+' clientes en el store</div>'+
+          '<div style="margin-top:8px;font-size:11px;color:#64748b;">'+filtradas.length+' movimientos</div>'+
           '<div class="mc-btns" style="margin-top:14px;"><button class="mc-btn-cancel" onclick="cerrarMC()">Cerrar</button></div>'+
         '</div>'
       );
     }
   };
 
-  // Inyectar botón "📚 Historial general" en cabecera de cartera
+  // Inyectar botón "📚 Historial general" en cartera
   function _inyectarBotonHG(){
     var body = document.getElementById('carteraBody') || document.getElementById('panelCartera');
-    if(!body) return;
-    if(document.getElementById('vnHGBtn')) return;
+    if(!body || document.getElementById('vnHGBtn')) return;
     var btn = document.createElement('button');
     btn.id = 'vnHGBtn';
     btn.textContent = '📚 Historial general';
@@ -11160,80 +11235,92 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
     body.appendChild(btn);
   }
   if(typeof window.renderCartera === 'function'){
-    var _origRC23 = window.renderCartera;
+    var _origRC24 = window.renderCartera;
     window.renderCartera = async function(){
-      var r = await _origRC23.apply(this, arguments);
+      var r = await _origRC24.apply(this, arguments);
       setTimeout(_inyectarBotonHG, 250);
       return r;
     };
   }
 
-  // ---------- 6. RESET CATEGORÍAS POR MES ----------
-  // Borra movimientosContables del mes objetivo, EXCLUYENDO los que se relacionan
-  // con deudas/cartera (preserva integridad de cartera).
+  // ================================================================
+  // 6. RESET CATEGORÍAS POR MES (con botón en pestaña Categorías)
+  // ================================================================
   window.vnResetCategoriasMes = function(mesYear){
-    // mesYear: 'YYYY-MM' (ej '2026-04'). Si no se pasa, usa el mes actual local.
     if(!mesYear){
       var hoy = new Date();
       mesYear = hoy.getFullYear()+'-'+_pad(hoy.getMonth()+1);
     }
-    if(!Array.isArray(window.movimientosContables)) return { eliminados:0, conservados:0 };
 
-    var antes = window.movimientosContables.length;
-    var conservados = [];
-    var eliminados = 0;
-
-    window.movimientosContables.forEach(function(m){
-      var fechaISO = '';
-      if(m && m.fecha){
-        var d = new Date(m.fecha);
-        if(!isNaN(d.getTime())){
-          fechaISO = d.getFullYear()+'-'+_pad(d.getMonth()+1);
-        }
-      }
-      var esDelMes = (fechaISO === mesYear);
-      var desc = (m && m.descripcion ? m.descripcion : '').toLowerCase();
-      var esDeuda = (m && m.tipo === 'deuda') ||
-                    desc.indexOf('pago deuda') > -1 ||
-                    desc.indexOf('deuda de ') > -1 ||
-                    desc.indexOf('le debo a ') > -1;
-
-      if(esDelMes && !esDeuda){
-        eliminados++;
-      } else {
-        conservados.push(m);
-      }
-    });
-
-    if(eliminados === 0) return { eliminados:0, conservados:antes };
-
-    // Backup local antes de aplicar
+    // Backup completo
     try {
-      var bk = 'mc_bk_' + mesYear + '_' + new Date().toISOString().replace(/[:.]/g,'-');
-      localStorage.setItem(bk, JSON.stringify(window.movimientosContables));
+      var bk = 'cat_reset_bk_' + mesYear + '_' + new Date().toISOString().replace(/[:.]/g,'-');
+      localStorage.setItem(bk, JSON.stringify({
+        mc: window.movimientosContables || [],
+        gm: window.gastosMemoria || [],
+        ts: new Date().toISOString()
+      }));
     } catch(e){}
 
-    window.movimientosContables = conservados;
+    // Limpiar movimientosContables del mes (EXCLUIR deudas)
+    var rMC = { eliminados:0, conservados:0 };
+    if(Array.isArray(window.movimientosContables)){
+      var cMC = [];
+      window.movimientosContables.forEach(function(m){
+        if(!m){ return; }
+        var fechaISO = '';
+        if(m.fecha){
+          var d = new Date(m.fecha);
+          if(!isNaN(d.getTime())) fechaISO = d.getFullYear()+'-'+_pad(d.getMonth()+1);
+        }
+        var esDelMes = (fechaISO === mesYear);
+        var desc = (m.descripcion || '').toLowerCase();
+        var esDeuda = (m.tipo === 'deuda') ||
+                      desc.indexOf('pago deuda') > -1 ||
+                      desc.indexOf('deuda de ') > -1 ||
+                      desc.indexOf('le debo a ') > -1;
+        if(esDelMes && !esDeuda) rMC.eliminados++;
+        else cMC.push(m);
+      });
+      rMC.conservados = cMC.length;
+      window.movimientosContables = cMC;
+    }
+
+    // Limpiar gastosMemoria del mes (EXCLUIR deudas)
+    var rGM = { eliminados:0, conservados:0 };
+    if(Array.isArray(window.gastosMemoria)){
+      var cGM = [];
+      window.gastosMemoria.forEach(function(g){
+        if(!g) return;
+        var fechaISO = '';
+        if(g.fecha){
+          var d = new Date(g.fecha);
+          if(!isNaN(d.getTime())) fechaISO = d.getFullYear()+'-'+_pad(d.getMonth()+1);
+        }
+        var esDelMes = (fechaISO === mesYear);
+        var desc = (g.descripcion || '').toLowerCase();
+        var esDeuda = desc.indexOf('deuda') > -1;
+        if(esDelMes && !esDeuda) rGM.eliminados++;
+        else cGM.push(g);
+      });
+      rGM.conservados = cGM.length;
+      window.gastosMemoria = cGM;
+      try { sessionStorage.setItem('gastos', JSON.stringify(cGM)); } catch(e){}
+    }
+
     if(typeof window._mcPersist === 'function') window._mcPersist();
-    return { eliminados:eliminados, conservados:conservados.length };
+    return { eliminados: rMC.eliminados + rGM.eliminados, conservados: rMC.conservados + rGM.conservados };
   };
 
-  // Inyectar botón "🔄 Resetear mes" en pestaña Categorías
+  // Botón "Resetear mes" en pestaña Categorías
   function _inyectarBotonResetCat(){
-    // El render de categorías expone un contenedor; buscamos los headings comunes
-    var anchors = [];
-    try {
-      var h2 = document.querySelectorAll('h2,h3');
-      h2.forEach(function(el){
-        var t = (el.textContent||'').toLowerCase();
-        if(t.indexOf('dashboard categor') > -1 || t.indexOf('categor') > -1){
-          anchors.push(el);
-        }
-      });
-    } catch(e){}
-    if(anchors.length === 0) return;
-    var anchor = anchors[anchors.length-1];
-    if(anchor.parentElement && anchor.parentElement.querySelector('#vnResetCatBtn')) return;
+    if(document.getElementById('vnResetCatBtn')) return;
+    var headers = document.querySelectorAll('.section-title, h2, h3');
+    var anchor = null;
+    headers.forEach(function(el){
+      if((el.textContent||'').toLowerCase().indexOf('categor') > -1) anchor = el;
+    });
+    if(!anchor) return;
 
     var btn = document.createElement('button');
     btn.id = 'vnResetCatBtn';
@@ -11243,119 +11330,16 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
       var hoy = new Date();
       var mesYear = hoy.getFullYear()+'-'+_pad(hoy.getMonth()+1);
       var nombreMes = hoy.toLocaleString('es-CO',{month:'long',year:'numeric'});
-      if(!confirm('¿Resetear los movimientos contables de '+nombreMes+'?\n\n• Se borran ingresos/gastos del mes (excluyendo los de deudas)\n• Cartera y deudas NO se tocan\n• Se hace backup automático antes de borrar'))
+      if(!confirm('¿Resetear movimientos de '+nombreMes+'?\n\n• Borra ingresos/gastos del mes\n• Cartera y deudas NO se tocan\n• Backup automático'))
         return;
       var r = window.vnResetCategoriasMes(mesYear);
-      alert('✅ Reset completado\n\n• Eliminados: '+r.eliminados+'\n• Conservados: '+r.conservados+'\n\nLa pestaña se actualizará.');
+      alert('✅ Eliminados: '+r.eliminados+' | Conservados: '+r.conservados);
       try { if(typeof renderConta === 'function') renderConta('categorias'); } catch(e){}
     };
-    anchor.parentElement.insertBefore(btn, anchor.nextSibling);
-  }
-  if(typeof window.renderConta === 'function'){
-    var _origRConta23 = window.renderConta;
-    window.renderConta = function(tab){
-      // Recalcular auto-bruto desde Supabase ANTES de pintar (asincrónico, pinta y luego refresca)
-      try {
-        if(['historial','flujo','categorias','resumen'].indexOf(tab) > -1){
-          _actualizarAutoBrutoDesdePedidos().then(function(){
-            // Re-render rápido si el monto cambió y la pestaña sigue abierta
-            try {
-              var stillOpen = document.getElementById('contaBody');
-              if(stillOpen){
-                _origRConta23(tab);
-                if(tab === 'categorias') setTimeout(_inyectarBotonResetCat, 200);
-              }
-            } catch(e){}
-          }).catch(function(){});
-        }
-      } catch(e){}
-
-      var r = _origRConta23.apply(this, arguments);
-      if(tab === 'categorias'){
-        setTimeout(_inyectarBotonResetCat, 350);
-      }
-      return r;
-    };
+    if(anchor.parentElement) anchor.parentElement.insertBefore(btn, anchor.nextSibling);
   }
 
-  // Refresco periódico mientras Contabilidad esté abierta
-  setInterval(function(){
-    try {
-      if(document.getElementById('contaBody')){
-        _actualizarAutoBrutoDesdePedidos();
-      }
-    } catch(e){}
-  }, 60000);
-
-  // ---------- Reset Categorías mejorado: también limpia gastosMemoria ----------
-  // Reemplaza la versión anterior con una más completa.
-  var _vnResetPrev = window.vnResetCategoriasMes;
-  window.vnResetCategoriasMes = function(mesYear){
-    if(!mesYear){
-      var hoy = new Date();
-      mesYear = hoy.getFullYear()+'-'+_pad(hoy.getMonth()+1);
-    }
-
-    // Backup completo antes de tocar nada
-    try {
-      var bk = 'cat_reset_bk_' + mesYear + '_' + new Date().toISOString().replace(/[:.]/g,'-');
-      var snapshot = {
-        movimientosContables: window.movimientosContables || [],
-        gastosMemoria: window.gastosMemoria || [],
-        ts: new Date().toISOString()
-      };
-      localStorage.setItem(bk, JSON.stringify(snapshot));
-    } catch(e){}
-
-    // 1) Limpiar movimientosContables del mes (excluyendo deudas)
-    var rMC = { eliminados:0, conservados:0 };
-    if(Array.isArray(window.movimientosContables)){
-      var conservadosMC = [];
-      window.movimientosContables.forEach(function(m){
-        var fechaISO = '';
-        if(m && m.fecha){
-          var d = new Date(m.fecha);
-          if(!isNaN(d.getTime())) fechaISO = d.getFullYear()+'-'+_pad(d.getMonth()+1);
-        }
-        var esDelMes = (fechaISO === mesYear);
-        var desc = (m && m.descripcion ? m.descripcion : '').toLowerCase();
-        var esDeuda = (m && m.tipo === 'deuda') ||
-                      desc.indexOf('pago deuda') > -1 ||
-                      desc.indexOf('deuda de ') > -1 ||
-                      desc.indexOf('le debo a ') > -1;
-        if(esDelMes && !esDeuda){ rMC.eliminados++; }
-        else conservadosMC.push(m);
-      });
-      rMC.conservados = conservadosMC.length;
-      window.movimientosContables = conservadosMC;
-    }
-
-    // 2) Limpiar gastosMemoria — no tiene fecha, así que se vacía (con backup arriba)
-    //    Excepción: conservar entradas con descripción que contenga 'deuda' (cartera).
-    var rGM = { eliminados:0, conservados:0 };
-    if(Array.isArray(window.gastosMemoria)){
-      var conservadosGM = [];
-      window.gastosMemoria.forEach(function(g){
-        var desc = (g && g.descripcion ? g.descripcion : '').toLowerCase();
-        var esDeuda = desc.indexOf('deuda') > -1 || desc.indexOf('pago deuda') > -1;
-        if(esDeuda) conservadosGM.push(g);
-        else rGM.eliminados++;
-      });
-      rGM.conservados = conservadosGM.length;
-      window.gastosMemoria = conservadosGM;
-      try { sessionStorage.setItem('gastos', JSON.stringify(conservadosGM)); } catch(e){}
-    }
-
-    if(typeof window._mcPersist === 'function') window._mcPersist();
-
-    return {
-      eliminados: rMC.eliminados + rGM.eliminados,
-      conservados: rMC.conservados + rGM.conservados,
-      detalle: { movimientos: rMC, gastos: rGM }
-    };
-  };
-
-  console.log('✅ Parche V23.1: bruto auto desde pedidos + reset profundo categorías');
+  console.log('✅ Parche V24 cargado');
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
