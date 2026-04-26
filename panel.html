@@ -11684,10 +11684,22 @@ window.vnDiagVentas = function(){
   };
 
   // Helpers ---
+  function _fechasOcultas(){
+    try { return JSON.parse(localStorage.getItem('_vnFechasOcultas')||'{}') || {}; }
+    catch(e){ return {}; }
+  }
+  function _setFechaOculta(fecha, ocultar){
+    var o = _fechasOcultas();
+    if(ocultar) o[fecha] = true; else delete o[fecha];
+    try { localStorage.setItem('_vnFechasOcultas', JSON.stringify(o)); } catch(e){}
+  }
+
   function _ventasComoMovs(){
     var movs = [];
     var byFecha = window._vnVentasPorFecha || {};
+    var ocultas = _fechasOcultas();
     Object.keys(byFecha).forEach(function(fecha){
+      if(ocultas[fecha]) return;  // fecha ocultada por el usuario
       var total = Number(byFecha[fecha])||0;
       if(total <= 0) return;
       movs.push({
@@ -11702,6 +11714,54 @@ window.vnDiagVentas = function(){
     });
     return movs;
   }
+
+  // Handler de borrado de ingreso virtual: lo OCULTA (no toca pedidos)
+  window.vnBorrarVentaVirtual = function(fecha){
+    var byFecha = window._vnVentasPorFecha || {};
+    var monto = Number(byFecha[fecha]||0);
+    var msg = '¿Ocultar el ingreso virtual del '+fecha+' ($'+monto.toLocaleString('es-CO')+')?';
+    msg += '\n\n• Los pedidos REALES de esa fecha NO se borran.';
+    msg += '\n• El ingreso desaparece del Historial, Flujo y Categorías.';
+    msg += '\n• Para revertir: ejecuta vnRevertirVentaOculta("'+fecha+'") en la consola.';
+    if(!confirm(msg)) return;
+    _setFechaOculta(fecha, true);
+    if(typeof renderConta === 'function') renderConta('historial');
+  };
+  window.vnRevertirVentaOculta = function(fecha){
+    if(!fecha){
+      console.log('Fechas ocultas:', _fechasOcultas());
+      console.log('Uso: vnRevertirVentaOculta("2026-04-26")');
+      return;
+    }
+    _setFechaOculta(fecha, false);
+    console.log('✅ Fecha '+fecha+' restaurada');
+    if(typeof renderConta === 'function') renderConta('historial');
+  };
+
+  // Reemplaza el onclick del botón ✕ para filas virtuales después del render
+  function _vnPatchBotonesVirtuales(){
+    try {
+      var body = document.getElementById('contaBody');
+      if(!body) return;
+      var filas = body.querySelectorAll('tr');
+      filas.forEach(function(tr){
+        var cells = tr.querySelectorAll('td');
+        if(cells.length < 4) return;
+        // Buscar columna descripción que contenga "Bruto ventas del YYYY-MM-DD"
+        var texto = '';
+        cells.forEach(function(td){ texto += ' ' + (td.textContent||''); });
+        var m = texto.match(/Bruto ventas del (\d{4}-\d{2}-\d{2})/);
+        if(!m) return;
+        var fecha = m[1];
+        // Encontrar el botón ✕ dentro de la fila
+        var btn = tr.querySelector('button[onclick*="uHistBorrar"]');
+        if(!btn) return;
+        btn.setAttribute('onclick', 'vnBorrarVentaVirtual(\''+fecha+'\')');
+        btn.setAttribute('title', 'Ocultar ingreso de '+fecha+' (no borra los pedidos)');
+      });
+    } catch(e){ console.warn('V25 patch botones:', e); }
+  }
+  window._vnPatchBotonesVirtuales = _vnPatchBotonesVirtuales;
 
   // Detecta si una entrada existente del array es nuestro auto-bruto residual
   // (lo dejamos de usar pero por si quedó persistido lo reconocemos)
@@ -11771,6 +11831,11 @@ window.vnDiagVentas = function(){
         // 3) Quitar las virtuales (vuelve al estado original)
         if(arr.length >= startLen){
           arr.length = startLen;
+        }
+        // 4) Si renderizamos historial, parchear los botones ✕ de filas virtuales
+        if(tab === 'historial'){
+          setTimeout(_vnPatchBotonesVirtuales, 50);
+          setTimeout(_vnPatchBotonesVirtuales, 200);
         }
       }
     };
