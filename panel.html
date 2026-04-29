@@ -3566,6 +3566,7 @@ async function renderRecaudo(){
                   <td style="text-align:center;">
                     <input id="rec_rec_${safe}" class="recaudo-check" type="checkbox"
                       ${r.recibido ? 'checked' : ''}
+                      style="accent-color:#4ade80;${r.recibido ? 'filter:drop-shadow(0 0 4px #4ade80aa);' : ''}"
                       onclick="recaudoToggleRecibido(${JSON.stringify(safe).replace(/"/g,'&quot;')})">
                   </td>
                   <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.nequi > 0 ? r.nequi.toLocaleString('es-CO') : ''}" data-raw="${r.nequi}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
