@@ -3727,7 +3727,12 @@ function recaudoToggleRecibido(nombre){
   if(!estado[nombre]) estado[nombre] = {};
   estado[nombre].recibido = !!(cb && cb.checked);
   recaudoGuardarEstado(estado);
-  renderRecaudo();
+  // Actualizar color de fila sin re-renderizar
+  var tr = cb && cb.closest('tr');
+  if(tr){
+    tr.style.background = cb.checked ? 'rgba(74,222,128,0.13)' : '';
+  }
+  setTimeout(function(){ renderRecaudo(); }, 300);
 }
 
 async function abrirRecaudo(){
@@ -5311,7 +5316,8 @@ function recaudoToggleDomiDeuda(nombre){
   }
   // Si se desactiva, NO desactivar automáticamente el domi normal
   recaudoGuardarEstado(estado);
-  renderRecaudo();
+  // Re-renderizar en background para no bloquear clicks
+  setTimeout(function(){ renderRecaudo(); }, 300);
 }
 
 function _contaTabs(activa){
