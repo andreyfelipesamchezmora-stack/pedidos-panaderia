@@ -736,7 +736,7 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
 .recaudo-check{
   width:18px;
   height:18px;
-  accent-color:#16a34a;
+  accent-color:#ef4444;
   cursor:pointer;
 }
 .recaudo-btns{
@@ -3524,9 +3524,9 @@ async function renderRecaudo(){
               // COLOR DE FILA según estado
               let bgColor = '';
               if(r.recibido) {
-                bgColor = 'rgba(34,197,94,0.15)'; // VERDE si está recibido
+                bgColor = 'rgba(239,68,68,0.18)'; // ROJO si está recibido
               } else if(r.recaudoDomi > 0) {
-                bgColor = 'rgba(245,158,11,0.15)'; // NARANJA si marcó recaudo domi
+                bgColor = 'rgba(239,68,68,0.12)'; // ROJO suave si marcó recaudo domi
               }
  
               // HTML de deuda
@@ -10436,6 +10436,11 @@ window.vnDeudaPagar = function(nombre, tipo, monto, metodo, banco, ci, nota){
 window.vnDeudaSetInicial = function(nombre, tipo, monto){
   var d=dLeer(); dNorm(d, nombre);
   monto=Math.abs(Number(monto)||0);
+  // Backup automático antes de sobreescribir
+  try {
+    var bk='vn_deudas_bk_'+Date.now();
+    localStorage.setItem(bk, localStorage.getItem('vn_deudas_v20')||'{}');
+  } catch(e){}
   if(tipo==='cliente') d[nombre].sc=monto; else d[nombre].sm=monto;
   d[nombre].h.push({id:'i'+Date.now(),fecha:new Date().toISOString().slice(0,10),hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),tipo:'saldo_ini',sub:tipo,monto:monto,saldo:monto,nota:'Saldo inicial'});
   dGuardar(d);
@@ -10445,11 +10450,17 @@ window.vnDeudaSetInicial = function(nombre, tipo, monto){
 window.vnDeudaEliminar = function(nombre, id){
   if(!confirm('¿Eliminar esta línea?')) return;
   var d=dLeer(); if(!d[nombre]) return;
+  // Backup automático
+  try {
+    var bk='vn_deudas_bk_'+Date.now();
+    localStorage.setItem(bk, JSON.stringify(d));
+  } catch(e){}
   d[nombre].h=(d[nombre].h||[]).filter(function(x){return x.id!==id;});
   // Recalcular saldos
   var sc=0,sm=0;
   d[nombre].h.forEach(function(x){
     if(x.tipo==='saldo_ini'){ if(x.sub==='cliente') sc=x.monto; else sm=x.monto; }
+    else if(x.tipo==='edicion'){ if(x.nota){var m=x.nota.match(/debe=(\d+).*debo=(\d+)/);if(m){sc=Number(m[1])||0;sm=Number(m[2])||0;}} }
     else if(x.tipo==='deuda'){ if(x.sub==='cliente') sc+=x.monto; else sm+=x.monto; }
     else if(x.tipo==='pago'){ if(x.sub==='cliente') sc=Math.max(sc-x.monto,0); else sm=Math.max(sm-x.monto,0); }
   });
@@ -10764,8 +10775,26 @@ window.vnCartEditarDeuda = function(nombre){
 window.vnCartGuardarEdit = function(nombre){
   var dc=Number(document.getElementById('vnED1').value)||0;
   var dm=Number(document.getElementById('vnED2').value)||0;
-  vnDeudaSetInicial(nombre,'cliente',dc);
-  vnDeudaSetInicial(nombre,'mia',dm);
+  // Editar saldos DIRECTAMENTE sin tocar historial (preserva todo)
+  var DK='vn_deudas_v20';
+  try {
+    var d=JSON.parse(localStorage.getItem(DK)||'{}');
+    if(!d[nombre]) d[nombre]={sc:0,sm:0,h:[]};
+    if(!Array.isArray(d[nombre].h)) d[nombre].h=[];
+    // Solo actualizar saldos, historial INTACTO
+    d[nombre].sc=dc;
+    d[nombre].sm=dm;
+    // Agregar UNA nota de edición manual (para auditoría)
+    d[nombre].h.push({
+      id:'edit'+Date.now(),
+      fecha:new Date().toISOString().slice(0,10),
+      hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),
+      tipo:'edicion',sub:'manual',
+      monto:dc+dm,saldo:dc+dm,
+      nota:'Editado: debe='+dc+' / debo='+dm
+    });
+    localStorage.setItem(DK, JSON.stringify(d));
+  } catch(e){ console.error('Error editando deuda:', e); }
   cerrarMC();
   renderCartera();
 };
@@ -10804,7 +10833,7 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
 // =====================================================
 (function(){
   'use strict';
-  var MAP={'clientes':'clientes_config','clientesDatos':'clientes_datos','cuentasMemoria':'cuentas_bancarias','transferenciasMem':'transferencias','cuotas_obligaciones':'cuotas_obligaciones','contabilidad_categorias':'categorias_contables','cartera_deudas':'cartera_deudas','cartera_pagos_historial':'cartera_pagos','obs_marquee':'observaciones_marquee','nomina_data':'nomina_config','cuentas_por_pagar':'cuentas_por_pagar','vn_deudas_v20':'cartera_deudas'};
+  var MAP={'clientes':'clientes_config','clientesDatos':'clientes_datos','cuentasMemoria':'cuentas_bancarias','transferenciasMem':'transferencias','cuotas_obligaciones':'cuotas_obligaciones','contabilidad_categorias':'categorias_contables','cartera_deudas':'cartera_deudas','cartera_pagos_historial':'cartera_pagos','obs_marquee':'observaciones_marquee','nomina_data':'nomina_config','cuentas_por_pagar':'cuentas_por_pagar','vn_deudas_v20':'deudas_store_v20'};
   var RMAP={};for(var k in MAP)RMAP[MAP[k]]=k;
   var LS={set:localStorage.setItem.bind(localStorage),get:localStorage.getItem.bind(localStorage)};
   var SS={set:sessionStorage.setItem.bind(sessionStorage),get:sessionStorage.getItem.bind(sessionStorage)};
@@ -10820,7 +10849,7 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
   // Helper: persistencia local inmediata para movimientos/gastos
   window._mcPersist=function(){try{var m=window.movimientosContables;if(Array.isArray(m))LS.set('mc_local',JSON.stringify(m));}catch(e){}try{var g=window.gastosMemoria;if(Array.isArray(g)){LS.set('gm_local',JSON.stringify(g));SS.set('gastos',JSON.stringify(g));}}catch(e){}};
   setInterval(function(){if(_s)return;var m=window.movimientosContables;if(Array.isArray(m)){try{LS.set('mc_local',JSON.stringify(m));}catch(e){}if(m.length>0&&m.length!==_lM){_lM=m.length;sub('movimientos_contables',m);}}var g=window.gastosMemoria;if(!Array.isArray(g))try{g=JSON.parse(SS.get('gastos')||'[]');}catch(e){g=[];}try{LS.set('gm_local',JSON.stringify(g));}catch(e){}if(g.length>0&&g.length!==_lG){_lG=g.length;sub('gastos_manuales',g);}},3000);
-  function initRT(){try{['clientes_config','clientes_datos','cuentas_bancarias','transferencias','movimientos_contables','gastos_manuales','nomina_config','cartera_deudas','cartera_pagos','cuotas_obligaciones','categorias_contables','cuentas_por_pagar','observaciones_marquee'].forEach(function(t){db.channel('r-'+t).on('postgres_changes',{event:'*',schema:'public',table:t,filter:'id=eq.1'},function(p){if(p.new&&p.new.datos!==undefined){apl(t,p.new.datos);setTimeout(function(){try{if(t==='clientes_config'&&typeof cargar==='function')cargar();if(t==='observaciones_marquee'&&typeof actualizarMarquee==='function')actualizarMarquee();}catch(e){}},300);}}).subscribe();});db.channel('r-rec').on('postgres_changes',{event:'*',schema:'public',table:'recaudo_diario'},function(p){if(p.new&&p.new.fecha&&p.new.datos){var h=(typeof cajaFechaHoy==='function')?cajaFechaHoy():new Date().toISOString().split('T')[0];if(p.new.fecha===h){_s=true;LS.set('recaudo_'+h,JSON.stringify(p.new.datos));setTimeout(function(){_s=false;},500);}}}).subscribe();}catch(e){}}
+  function initRT(){try{['clientes_config','clientes_datos','cuentas_bancarias','transferencias','movimientos_contables','gastos_manuales','nomina_config','cartera_deudas','cartera_pagos','cuotas_obligaciones','categorias_contables','cuentas_por_pagar','observaciones_marquee','deudas_store_v20'].forEach(function(t){db.channel('r-'+t).on('postgres_changes',{event:'*',schema:'public',table:t,filter:'id=eq.1'},function(p){if(p.new&&p.new.datos!==undefined){apl(t,p.new.datos);setTimeout(function(){try{if(t==='clientes_config'&&typeof cargar==='function')cargar();if(t==='observaciones_marquee'&&typeof actualizarMarquee==='function')actualizarMarquee();}catch(e){}},300);}}).subscribe();});db.channel('r-rec').on('postgres_changes',{event:'*',schema:'public',table:'recaudo_diario'},function(p){if(p.new&&p.new.fecha&&p.new.datos){var h=(typeof cajaFechaHoy==='function')?cajaFechaHoy():new Date().toISOString().split('T')[0];if(p.new.fecha===h){_s=true;LS.set('recaudo_'+h,JSON.stringify(p.new.datos));setTimeout(function(){_s=false;},500);}}}).subscribe();}catch(e){}}
   async function init(){console.log('☁️ Sync...');var dl=0,sl=0;for(var l in MAP){var t=MAP[l];var d=await baj(t);if(d!==null){var h=Array.isArray(d)?d.length>0:(d&&typeof d==='object'&&Object.keys(d).length>0);if(h){apl(t,d);dl++;continue;}}var r=LS.get(l);if(r){try{var ld=JSON.parse(r);var lh=Array.isArray(ld)?ld.length>0:(ld&&typeof ld==='object'&&Object.keys(ld).length>0);if(lh){await sub(t,ld);sl++;}}catch(e){}}}var mc=await baj('movimientos_contables');if(mc&&Array.isArray(mc)&&mc.length>0){window.movimientosContables=mc;_lM=mc.length;dl++;}else{try{var lmc=JSON.parse(LS.get('mc_local')||'[]');if(Array.isArray(lmc)&&lmc.length>0){window.movimientosContables=lmc;_lM=lmc.length;await sub('movimientos_contables',lmc);sl++;}else if(Array.isArray(window.movimientosContables)&&window.movimientosContables.length>0){await sub('movimientos_contables',window.movimientosContables);_lM=window.movimientosContables.length;sl++;}}catch(e){}}var gm=await baj('gastos_manuales');if(gm&&Array.isArray(gm)&&gm.length>0){window.gastosMemoria=gm;SS.set('gastos',JSON.stringify(gm));_lG=gm.length;dl++;}else{try{var lgm=JSON.parse(LS.get('gm_local')||'[]');if(Array.isArray(lgm)&&lgm.length>0){window.gastosMemoria=lgm;SS.set('gastos',JSON.stringify(lgm));_lG=lgm.length;await sub('gastos_manuales',lgm);sl++;}}catch(e){}}var hoy=(typeof cajaFechaHoy==='function')?cajaFechaHoy():new Date().toISOString().split('T')[0];var rd=await bajF('recaudo_diario',hoy);if(rd&&Object.keys(rd).length>0){_s=true;LS.set('recaudo_'+hoy,JSON.stringify(rd));setTimeout(function(){_s=false;},300);dl++;}console.log('✅ '+dl+' desc, '+sl+' sub');try{if(typeof cargar==='function')await cargar();}catch(e){}try{if(typeof actualizarMarquee==='function')actualizarMarquee();}catch(e){}initRT();}
   function badge(){if(document.getElementById('vnSB'))return;var s=document.createElement('style');s.textContent='@keyframes vnP{0%,100%{opacity:1;}50%{opacity:0.4;}}';document.head.appendChild(s);var d=document.createElement('div');d.id='vnSB';d.style.cssText='position:fixed;bottom:12px;right:12px;background:rgba(16,185,129,0.92);color:white;padding:7px 14px;border-radius:20px;font-size:11px;font-weight:600;z-index:99998;display:flex;align-items:center;gap:6px;box-shadow:0 4px 14px rgba(0,0,0,0.25);cursor:pointer;';d.innerHTML='<span style="width:7px;height:7px;border-radius:50%;background:white;animation:vnP 2s infinite;"></span> En vivo · Supabase';d.onclick=function(){d.innerHTML='<span style="width:7px;height:7px;border-radius:50%;background:#fbbf24;"></span> Sync...';d.style.background='rgba(245,158,11,0.9)';init().then(function(){d.innerHTML='<span style="width:7px;height:7px;border-radius:50%;background:white;animation:vnP 2s infinite;"></span> En vivo ✓';d.style.background='rgba(16,185,129,0.92)';});};document.body.appendChild(d);}
   function start(){setTimeout(function(){init().catch(function(e){console.error('Sync err:',e);});badge();},1200);}
