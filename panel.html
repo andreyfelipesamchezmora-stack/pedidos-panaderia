@@ -5291,9 +5291,25 @@ function recaudoCalcularDesgloseMetodos(rows){
 // Toggle: incluir la deuda del cliente en el total de recaudo domi
 function recaudoToggleDomiDeuda(nombre){
   let cb = document.getElementById('rec_domideuda_' + nombre);
+  let cbDomi = document.getElementById('rec_domi_' + nombre);
   let estado = recaudoLeerEstado();
   if(!estado[nombre]) estado[nombre] = {};
-  estado[nombre].domiIncluirDeuda = !!(cb && cb.checked);
+  let incluir = !!(cb && cb.checked);
+  estado[nombre].domiIncluirDeuda = incluir;
+  // Si se activa la deuda domi, también activar el recaudo domi normal
+  if(incluir && cbDomi && !cbDomi.checked){
+    cbDomi.checked = true;
+    estado[nombre].recaudoDomi = Number(estado[nombre].subtotal || 0);
+    // Obtener subtotal del row desde recaudoCache
+    let cache = window._recaudoCache || window.recaudoCache;
+    if(cache && cache.rows){
+      let row = cache.rows.find(function(r){
+        return r.cliente.replace(/[^a-zA-Z0-9]/g,'_') === nombre;
+      });
+      if(row) estado[nombre].recaudoDomi = row.subtotal || 0;
+    }
+  }
+  // Si se desactiva, NO desactivar automáticamente el domi normal
   recaudoGuardarEstado(estado);
   renderRecaudo();
 }
