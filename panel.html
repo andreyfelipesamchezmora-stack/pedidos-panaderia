@@ -1243,7 +1243,7 @@ if(clientes.length === 0){
   ];
 }
 
-document.getElementById("fecha").value = new Date().toISOString().split("T")[0];
+document.getElementById("fecha").value = (function(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
 
 // =========== ORIGINAL FUNCTIONS (UNCHANGED) ===========
 
@@ -1267,7 +1267,10 @@ function renderProductos(){
 
 async function cargar(){
   let fechaInput = document.getElementById("fecha");
-  if(!fechaInput.value) fechaInput.value = new Date().toISOString().split("T")[0];
+  if(!fechaInput.value){
+    var _d=new Date();
+    fechaInput.value = _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');
+  }
   let fechaSeleccionada = fechaInput.value;
   let data = [];
   try {
@@ -1400,7 +1403,11 @@ async function guardar(){
   if(!actualCliente){alert("No hay cliente activo");return;}
   let fechaInput=document.getElementById("fecha");
   let fecha=fechaInput.value;
-  if(!fecha){fecha=new Date().toISOString().split("T")[0];fechaInput.value=fecha;}
+  if(!fecha){
+    var _d=new Date();
+    fecha = _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');
+    fechaInput.value=fecha;
+  }
   let total=0,texto="",listaProductos=[];
   productos.forEach((p,i)=>{
     let cant=Number(document.getElementById("cant"+i)?.value)||0;
@@ -2005,7 +2012,13 @@ function depurarPedidosUnicos(lista){
 function cajaFechaHoy(){
   var f = document.getElementById("fecha");
   if(f && f.value) return f.value;
-  return new Date().toISOString().split("T")[0];
+  // FIX: usar fecha LOCAL (no UTC) para evitar que después de las 7pm en Colombia
+  // se adelante un día (toISOString() devuelve UTC siempre).
+  var d = new Date();
+  var y = d.getFullYear();
+  var m = String(d.getMonth()+1).padStart(2,'0');
+  var dd = String(d.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+dd;
 }
 
 function cajaUsuarioActual(){
@@ -3362,7 +3375,12 @@ async function renderRecaudo(){
     rows.forEach(function(r){
       bruto += r.subtotal;
       recaudoDomi += r.recaudoDomi;
-      if(r.domiIncluirDeuda) recaudoDomi += (Number(r._deudaTotalCliente)||0);
+      if(r.domiIncluirDeuda) {
+        recaudoDomi += (Number(r._deudaTotalCliente)||0);
+        // FIX: Si el cliente tiene "yo le debo" (deuda mía), eso RESTA del recaudo domi
+        // porque al cliente se le descontó esa plata (yo le debía)
+        recaudoDomi -= (Number(r._deudaTotalMia)||0);
+      }
       nequiVentas += r.nequi;
       bancolombiaVentas += r.bancolombia;
       faltantes += r.faltantes;
@@ -8814,6 +8832,11 @@ window.vnPrecargarRecaudo = async function(){
     rows.forEach(function(r){
       bruto += Number(r.subtotal)||0;
       recaudoDomi += Number(r.recaudoDomi)||0;
+      // FIX: incluir deuda cliente en recaudo domi y RESTAR deuda mía
+      if(r.domiIncluirDeuda) {
+        recaudoDomi += (Number(r._deudaTotalCliente)||0);
+        recaudoDomi -= (Number(r._deudaTotalMia)||0);
+      }
       nequiVentas += Number(r.nequi)||0;
       bancolombiaVentas += Number(r.bancolombia)||0;
       faltantes += Number(r.faltantes)||0;
@@ -11925,6 +11948,205 @@ window.vnDiagVentas = function(){
   console.log('✅ Parche V24: ventas desde pedidos como ingresos virtuales (fuente real)');
 
   } // fin _doSetup
+})();
+
+// =====================================================
+// PARCHE V25 — FIXES FINALES (sin tocar deudas/cartera)
+//   1. Helper de fecha LOCAL global (_vnFL) para todos los usos
+//   2. Reset MARZO 2026 (sin tocar deudas)
+//   3. Forzar recarga de ventas al abrir Contabilidad por primera vez
+//   4. Sincronización mejorada cartera ↔ recaudo
+//   5. Bandera de fecha-de-hoy compartida y consistente
+// =====================================================
+(function(){
+  'use strict';
+
+  // ---------- 1. Helper de fecha LOCAL ----------
+  function _pad(n){ return String(n).length<2 ? '0'+n : String(n); }
+  function _fechaLocal(d){
+    d = d || new Date();
+    if(typeof d === 'string'){
+      if(/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+      d = new Date(d);
+    }
+    if(!d || isNaN(d.getTime())) d = new Date();
+    return d.getFullYear()+'-'+_pad(d.getMonth()+1)+'-'+_pad(d.getDate());
+  }
+  window._vnFL = _fechaLocal;
+  // Garantizar que cajaFechaHoy use fecha local
+  if(typeof window.cajaFechaHoy === 'function'){
+    var _origCFH = window.cajaFechaHoy;
+    window.cajaFechaHoy = function(){
+      try {
+        var f = document.getElementById('fecha');
+        if(f && f.value) return f.value;
+      } catch(e){}
+      return _fechaLocal();
+    };
+  }
+
+  // ---------- 2. Reset MARZO 2026 (UNA vez, conserva deudas/cartera) ----------
+  function _resetMarzo(){
+    var FLAG = 'vn_reset_marzo_2026_v25';
+    if(localStorage.getItem(FLAG)) return;
+    var mesTarget = '2026-03';
+
+    // Backup completo antes de tocar nada
+    try {
+      var bk = 'bk_reset_marzo_' + new Date().toISOString().replace(/[:.]/g,'-');
+      localStorage.setItem(bk, JSON.stringify({
+        mc: window.movimientosContables || [],
+        gm: window.gastosMemoria || [],
+        ts: new Date().toISOString()
+      }));
+    } catch(e){}
+
+    // Limpiar movimientosContables de marzo (preservar deudas)
+    if(Array.isArray(window.movimientosContables)){
+      var conservados = [];
+      window.movimientosContables.forEach(function(m){
+        if(!m) return;
+        var fechaISO = '';
+        if(m.fecha){
+          var d = new Date(m.fecha);
+          if(!isNaN(d.getTime())) fechaISO = d.getFullYear()+'-'+_pad(d.getMonth()+1);
+        }
+        var esMarzo = (fechaISO === mesTarget);
+        var desc = (m.descripcion || '').toLowerCase();
+        var esDeuda = (m.tipo === 'deuda') ||
+                      desc.indexOf('pago deuda') > -1 ||
+                      desc.indexOf('deuda de ') > -1 ||
+                      desc.indexOf('le debo a ') > -1;
+        if(!esMarzo || esDeuda) conservados.push(m);
+      });
+      window.movimientosContables = conservados;
+    }
+
+    // Limpiar gastosMemoria de marzo (preservar deudas)
+    if(Array.isArray(window.gastosMemoria)){
+      var conservadosGM = [];
+      window.gastosMemoria.forEach(function(g){
+        if(!g) return;
+        var fechaISO = '';
+        if(g.fecha){
+          var d = new Date(g.fecha);
+          if(!isNaN(d.getTime())) fechaISO = d.getFullYear()+'-'+_pad(d.getMonth()+1);
+        }
+        var esMarzo = (fechaISO === mesTarget);
+        var desc = (g.descripcion || '').toLowerCase();
+        var esDeuda = desc.indexOf('deuda') > -1;
+        if(!esMarzo || esDeuda) conservadosGM.push(g);
+      });
+      window.gastosMemoria = conservadosGM;
+      try { sessionStorage.setItem('gastos', JSON.stringify(conservadosGM)); } catch(e){}
+    }
+
+    if(typeof window._mcPersist === 'function') window._mcPersist();
+    localStorage.setItem(FLAG, new Date().toISOString());
+    console.log('✅ Reset marzo 2026 completado (deudas/cartera intactas)');
+  }
+  setTimeout(_resetMarzo, 3000);
+
+  // ---------- 3. Forzar recarga de ventas al abrir Contabilidad ----------
+  // Cuando se abre el panel de contabilidad, recarga el cache de pedidos
+  // para que TODOS los días con ventas aparezcan en historial/flujo
+  function _hookAbrirContabilidad(){
+    var btn = null;
+    try { btn = document.querySelector('[onclick*="abrirContabilidad"], [onclick*="renderConta"]'); } catch(e){}
+    // En vez de hookear el botón, hookeamos renderConta directamente
+    if(typeof window.renderConta === 'function' && !window._vnContaForzarVentas){
+      window._vnContaForzarVentas = true;
+      var _origRenderConta25 = window.renderConta;
+      window.renderConta = function(tab){
+        // Si es la primera vez que se abre conta, forzar recarga inmediata
+        try {
+          if(typeof window._vnVentasCargar === 'function'){
+            // Bypass throttle al ABRIR el panel
+            window._vnVentasCargar();
+          }
+        } catch(e){}
+        return _origRenderConta25.apply(this, arguments);
+      };
+    }
+  }
+  setTimeout(_hookAbrirContabilidad, 2500);
+
+  // ---------- 4. Forzar recarga ventas cada 15s mientras conta esté abierta ----------
+  setInterval(function(){
+    try {
+      if(document.getElementById('contaBody') && typeof window._vnVentasCargar === 'function'){
+        window._vnVentasCargar();
+      }
+    } catch(e){}
+  }, 15000);
+
+  // ---------- 5. Helper para usuario: ver todas las ventas registradas ----------
+  window.vnVerVentasPorDia = function(){
+    var c = window._vnVentasPorFecha || {};
+    var keys = Object.keys(c).sort();
+    if(keys.length === 0){
+      console.log('No hay ventas en cache. Forzando recarga...');
+      if(typeof window._vnVentasCargar === 'function') window._vnVentasCargar();
+      return;
+    }
+    console.log('=== Ventas registradas por día ===');
+    var total = 0;
+    keys.forEach(function(f){
+      var v = Number(c[f])||0;
+      total += v;
+      console.log('  '+f+': $'+v.toLocaleString('es-CO'));
+    });
+    console.log('TOTAL: $'+total.toLocaleString('es-CO')+' ('+keys.length+' días)');
+  };
+
+  // ---------- 6. Botón "🔄 Resetear marzo" en categorías ----------
+  // (solo si no existe ya el de abril)
+  function _btnResetMarzoManual(){
+    if(document.getElementById('vnResetMarzoBtn')) return;
+    var headers = document.querySelectorAll('.section-title, h2, h3');
+    var anchor = null;
+    headers.forEach(function(el){
+      if((el.textContent||'').toLowerCase().indexOf('categor') > -1) anchor = el;
+    });
+    if(!anchor) return;
+
+    var btn = document.createElement('button');
+    btn.id = 'vnResetMarzoBtn';
+    btn.textContent = '🔄 Reset MAR/ABR';
+    btn.title = 'Volver a resetear marzo y abril si es necesario';
+    btn.style.cssText = 'margin-left:8px;padding:6px 12px;background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.35);border-radius:8px;color:#c4b5fd;font-weight:700;cursor:pointer;font-size:11px;';
+    btn.onclick = function(){
+      if(!confirm('¿Resetear marzo y abril 2026?\n\n• Borra ingresos/gastos\n• Cartera/deudas NO se tocan\n• Backup automático')) return;
+      // Borrar flags y re-ejecutar
+      localStorage.removeItem('vn_reset_marzo_2026_v25');
+      localStorage.removeItem('vn_reset_abril_2026_v24');
+      _resetMarzo();
+      // Reset abril si la función existe
+      try {
+        if(typeof window.vnResetCategoriasMes === 'function'){
+          window.vnResetCategoriasMes('2026-04');
+        }
+      } catch(e){}
+      alert('✅ Marzo y Abril 2026 reseteados');
+      try { if(typeof renderConta === 'function') renderConta('categorias'); } catch(e){}
+    };
+    if(anchor.parentElement) anchor.parentElement.insertBefore(btn, anchor.nextSibling);
+  }
+  // Se inyecta cada vez que se abre categorías
+  if(typeof window.renderConta === 'function'){
+    var _origRConta25b = window.renderConta;
+    var _wrapped25b = false;
+    if(!window._vnRC25bWrapped){
+      window._vnRC25bWrapped = true;
+      window.renderConta = function(tab){
+        var r = _origRConta25b.apply(this, arguments);
+        if(tab === 'categorias') setTimeout(_btnResetMarzoManual, 400);
+        return r;
+      };
+    }
+  }
+
+  console.log('✅ Parche V25: fecha local + reset marzo + forzar ventas');
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
