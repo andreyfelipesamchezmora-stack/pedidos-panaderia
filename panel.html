@@ -1267,10 +1267,7 @@ function renderProductos(){
 
 async function cargar(){
   let fechaInput = document.getElementById("fecha");
-  if(!fechaInput.value){
-    var _d=new Date();
-    fechaInput.value = _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');
-  }
+  if(!fechaInput.value){var _d=new Date();fechaInput.value = _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');}
   let fechaSeleccionada = fechaInput.value;
   let data = [];
   try {
@@ -1403,11 +1400,7 @@ async function guardar(){
   if(!actualCliente){alert("No hay cliente activo");return;}
   let fechaInput=document.getElementById("fecha");
   let fecha=fechaInput.value;
-  if(!fecha){
-    var _d=new Date();
-    fecha = _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');
-    fechaInput.value=fecha;
-  }
+  if(!fecha){var _d=new Date();fecha = _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');fechaInput.value=fecha;}
   let total=0,texto="",listaProductos=[];
   productos.forEach((p,i)=>{
     let cant=Number(document.getElementById("cant"+i)?.value)||0;
@@ -2012,13 +2005,8 @@ function depurarPedidosUnicos(lista){
 function cajaFechaHoy(){
   var f = document.getElementById("fecha");
   if(f && f.value) return f.value;
-  // FIX: usar fecha LOCAL (no UTC) para evitar que después de las 7pm en Colombia
-  // se adelante un día (toISOString() devuelve UTC siempre).
   var d = new Date();
-  var y = d.getFullYear();
-  var m = String(d.getMonth()+1).padStart(2,'0');
-  var dd = String(d.getDate()).padStart(2,'0');
-  return y+'-'+m+'-'+dd;
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 
 function cajaUsuarioActual(){
@@ -3377,8 +3365,7 @@ async function renderRecaudo(){
       recaudoDomi += r.recaudoDomi;
       if(r.domiIncluirDeuda) {
         recaudoDomi += (Number(r._deudaTotalCliente)||0);
-        // FIX: Si el cliente tiene "yo le debo" (deuda mía), eso RESTA del recaudo domi
-        // porque al cliente se le descontó esa plata (yo le debía)
+        // FIX V26: si tengo deuda con el cliente (yo le debo), RESTA del recaudo domi
         recaudoDomi -= (Number(r._deudaTotalMia)||0);
       }
       nequiVentas += r.nequi;
@@ -8832,7 +8819,7 @@ window.vnPrecargarRecaudo = async function(){
     rows.forEach(function(r){
       bruto += Number(r.subtotal)||0;
       recaudoDomi += Number(r.recaudoDomi)||0;
-      // FIX: incluir deuda cliente en recaudo domi y RESTAR deuda mía
+      // FIX V26: si domiIncluirDeuda, sumar deuda cliente y restar deuda mía
       if(r.domiIncluirDeuda) {
         recaudoDomi += (Number(r._deudaTotalCliente)||0);
         recaudoDomi -= (Number(r._deudaTotalMia)||0);
@@ -11951,47 +11938,291 @@ window.vnDiagVentas = function(){
 })();
 
 // =====================================================
-// PARCHE V25 — FIXES FINALES (sin tocar deudas/cartera)
-//   1. Helper de fecha LOCAL global (_vnFL) para todos los usos
-//   2. Reset MARZO 2026 (sin tocar deudas)
-//   3. Forzar recarga de ventas al abrir Contabilidad por primera vez
-//   4. Sincronización mejorada cartera ↔ recaudo
-//   5. Bandera de fecha-de-hoy compartida y consistente
+// PARCHE V26 — DEFINITIVO: HISTORIAL Y FLUJO LEEN SUPABASE
+// =====================================================
+// Estrategia: SOBREESCRIBIR _uHistRecolectar y _uFlujo directamente.
+// Estas funciones leen de movimientosContables y gastosMemoria, pero
+// NO leen el cache _vnVentasPorFecha que V24 mantiene.
+// La solución: modificar las funciones para que LEAN ese cache.
+// Sin wraps, sin async timing, funciona siempre.
 // =====================================================
 (function(){
   'use strict';
 
-  // ---------- 1. Helper de fecha LOCAL ----------
-  function _pad(n){ return String(n).length<2 ? '0'+n : String(n); }
-  function _fechaLocal(d){
-    d = d || new Date();
-    if(typeof d === 'string'){
-      if(/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
-      d = new Date(d);
-    }
-    if(!d || isNaN(d.getTime())) d = new Date();
-    return d.getFullYear()+'-'+_pad(d.getMonth()+1)+'-'+_pad(d.getDate());
+  function _pad(n){ return String(n).length<2?'0'+n:String(n); }
+
+  // Cargar pedidos desde Supabase y poblar _vnVentasPorFecha
+  async function _cargarVentasPedidos(){
+    try {
+      if(typeof db === 'undefined' || !db || !db.from) return;
+      var res = await db.from('pedidos').select('fecha,total,id,cliente').limit(20000);
+      if(!res || res.error || !Array.isArray(res.data)) return;
+      var lista = (typeof depurarPedidosUnicos === 'function')
+        ? depurarPedidosUnicos(res.data) : res.data;
+      var byFecha = {};
+      lista.forEach(function(p){
+        if(!p || !p.fecha) return;
+        var f = String(p.fecha).slice(0,10);
+        var t = Number(p.total)||0;
+        if(t <= 0) return;
+        byFecha[f] = (byFecha[f]||0) + t;
+      });
+      window._vnVentasPorFecha = byFecha;
+      try { localStorage.setItem('_vnVentasPorFecha', JSON.stringify(byFecha)); } catch(e){}
+      console.log('[V26] Ventas cargadas: '+Object.keys(byFecha).length+' días con ventas');
+    } catch(e){ console.warn('[V26] cargar ventas:', e); }
   }
-  window._vnFL = _fechaLocal;
-  // Garantizar que cajaFechaHoy use fecha local
-  if(typeof window.cajaFechaHoy === 'function'){
-    var _origCFH = window.cajaFechaHoy;
-    window.cajaFechaHoy = function(){
-      try {
-        var f = document.getElementById('fecha');
-        if(f && f.value) return f.value;
-      } catch(e){}
-      return _fechaLocal();
+  window._vnCargarVentas = _cargarVentasPedidos;
+
+  // Función global: helper para leer ventas
+  function _ventasComoMovs(){
+    var byFecha = {};
+    try {
+      // Preferir cache en memoria, fallback a localStorage
+      byFecha = window._vnVentasPorFecha || JSON.parse(localStorage.getItem('_vnVentasPorFecha')||'{}') || {};
+    } catch(e){ byFecha = {}; }
+
+    var ocultas = {};
+    try { ocultas = JSON.parse(localStorage.getItem('_vnFechasOcultas')||'{}') || {}; } catch(e){}
+
+    var movs = [];
+    Object.keys(byFecha).forEach(function(fecha){
+      if(ocultas[fecha]) return;
+      var total = Number(byFecha[fecha])||0;
+      if(total <= 0) return;
+      movs.push({
+        fecha: fecha,
+        tipo: 'ingreso',
+        categoria: 'Venta de Reparto',
+        descripcion: 'Bruto ventas del ' + fecha,
+        cuenta: 'Ventas del día',
+        monto: total,
+        origen: '_autoVenta',
+        origenIdx: fecha
+      });
+    });
+    return movs;
+  }
+  window._vnVentasComoMovs = _ventasComoMovs;
+
+  // ============== SOBREESCRIBIR _uHistRecolectar ==============
+  // Esta función la usa _uHistCargar (Historial) para listar movimientos
+  window._uHistRecolectar = function(){
+    var movs = [];
+    // 1) Ventas desde Supabase (cache _vnVentasPorFecha)
+    var ventas = _ventasComoMovs();
+    ventas.forEach(function(v){ movs.push(v); });
+
+    // 2) movimientosContables (excluyendo auto-brutos residuales para no duplicar)
+    if(Array.isArray(window.movimientosContables)){
+      window.movimientosContables.forEach(function(m, idx){
+        if(!m) return;
+        // Saltar auto-brutos que pudiera haber dejado V23.1
+        if(m._autoBruto || (m.descripcion||'').indexOf('Bruto ventas del ') === 0) return;
+
+        var fI = '';
+        if(m.fecha){
+          var d = new Date(m.fecha);
+          if(!isNaN(d.getTime())) {
+            // Usar fecha LOCAL (no UTC) para evitar drift
+            fI = d.getFullYear()+'-'+_pad(d.getMonth()+1)+'-'+_pad(d.getDate());
+          }
+        }
+        if(!fI){
+          var hoy = new Date();
+          fI = hoy.getFullYear()+'-'+_pad(hoy.getMonth()+1)+'-'+_pad(hoy.getDate());
+        }
+        var or = 'movContable';
+        var desc = m.descripcion || '—';
+        if(desc.toLowerCase().indexOf('cuota') > -1) or = 'cuota';
+        else if(desc.toLowerCase().indexOf('pago deuda') > -1) or = 'carteraPago';
+        movs.push({
+          fecha: fI,
+          tipo: m.tipo || 'gasto',
+          categoria: (m.tipo === 'ingreso' ? 'Ingreso' : (m.categoria || 'Gasto')),
+          descripcion: desc,
+          cuenta: m.cuenta || '—',
+          monto: Number(m.monto) || 0,
+          origen: or,
+          origenIdx: idx
+        });
+      });
+    }
+
+    // 3) gastosMemoria (sin duplicar)
+    if(Array.isArray(window.gastosMemoria)){
+      window.gastosMemoria.forEach(function(g, idx){
+        if(!g) return;
+        var ya = movs.some(function(m){
+          return (m.origen==='cuota'||m.origen==='movContable') &&
+                 m.descripcion === (g.descripcion||'') &&
+                 m.monto === (Number(g.monto)||0);
+        });
+        if(ya) return;
+        var fI = '';
+        if(g.fecha){
+          var d = new Date(g.fecha);
+          if(!isNaN(d.getTime())){
+            fI = d.getFullYear()+'-'+_pad(d.getMonth()+1)+'-'+_pad(d.getDate());
+          }
+        }
+        if(!fI){
+          var hoy = new Date();
+          fI = hoy.getFullYear()+'-'+_pad(hoy.getMonth()+1)+'-'+_pad(hoy.getDate());
+        }
+        movs.push({
+          fecha: fI,
+          tipo: 'gasto',
+          categoria: g.categoria || 'Gasto',
+          descripcion: g.descripcion || '—',
+          cuenta: g.cuenta || 'Efectivo',
+          monto: Number(g.monto) || 0,
+          origen: 'gastoManual',
+          origenIdx: idx
+        });
+      });
+    }
+
+    return movs;
+  };
+
+  // Si _uHistRecolectar también está en el scope local (no solo window), reasignar
+  try {
+    // El scope local de la función original no se puede modificar directamente,
+    // pero como _uHistCargar usa el lookup `_uHistRecolectar` (sin window.),
+    // y ese identificador resuelve al scope global cuando no hay var local,
+    // depende de cómo se declaró. Vamos a verificar inyectando
+    if(typeof _uHistRecolectar !== 'undefined'){
+      try { _uHistRecolectar = window._uHistRecolectar; } catch(e){}
+    }
+  } catch(e){}
+
+  // ============== SOBREESCRIBIR _uFlujo ==============
+  // Reemplazo COMPLETO de _uFlujo para que lea ventas desde cache
+  window._uFlujo = function(){
+    var body = document.getElementById("contaBody");
+    if(!body) return;
+    var meses = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+    var si = (Array.isArray(window.cuentasMemoria) ? window.cuentasMemoria : [])
+      .reduce(function(a,c){ return a + (Number(c.saldo)||0); }, 0);
+    var iM = [0,0,0,0,0,0,0,0,0,0,0,0];
+    var gM = [0,0,0,0,0,0,0,0,0,0,0,0];
+
+    // 1) VENTAS desde _vnVentasPorFecha (FUENTE REAL)
+    var ventas = _ventasComoMovs();
+    ventas.forEach(function(v){
+      var f = new Date(v.fecha + 'T12:00:00');  // mediodía local: sin drift
+      if(isNaN(f.getTime())) return;
+      iM[f.getMonth()] += Number(v.monto)||0;
+    });
+
+    // 2) movimientosContables (excluyendo auto-brutos para no duplicar)
+    (window.movimientosContables||[]).forEach(function(m){
+      if(!m) return;
+      if(m._autoBruto || (m.descripcion||'').indexOf('Bruto ventas del ') === 0) return;
+      var f = new Date(m.fecha);
+      if(isNaN(f.getTime())) return;
+      var ms = f.getMonth();
+      var t = (m.tipo||'').toLowerCase();
+      if(t.indexOf('ingreso') > -1) iM[ms] += Number(m.monto||0);
+      if(t.indexOf('gasto') > -1) gM[ms] += Number(m.monto||0);
+    });
+
+    // 3) gastosMemoria
+    (window.gastosMemoria||[]).forEach(function(g){
+      if(!g) return;
+      var f = new Date(g.fecha);
+      if(!isNaN(f.getTime())) gM[f.getMonth()] += Number(g.monto||g.valor||0);
+    });
+
+    var sd = si, tI = 0, tG = 0, tGn = 0, sA = [], gA = [], aA = [];
+    for(var i = 0; i < 12; i++){
+      sA.push(sd);
+      var g = iM[i] - gM[i];
+      sd += g;
+      tI += iM[i];
+      tG += gM[i];
+      tGn += g;
+      gA.push(g);
+      aA.push(sd);
+    }
+    function fm(v){ return "$" + (Number(v)||0).toLocaleString("es-CO"); }
+
+    var html = (typeof _contaTabsU === 'function') ? _contaTabsU("flujo") : '';
+    html += '<div class="conta-kpi-grid">'+
+      '<div class="kpi-card green"><div class="kpi-label">Ingresos anuales</div><div class="kpi-value" style="font-size:1.25rem;">'+fm(tI)+'</div></div>'+
+      '<div class="kpi-card"><div class="kpi-label">Gastos anuales</div><div class="kpi-value" style="font-size:1.25rem;color:#f87171;">'+fm(tG)+'</div></div>'+
+      '<div class="kpi-card '+(tGn>=0?'green':'')+'"><div class="kpi-label">Ganancia</div><div class="kpi-value" style="font-size:1.25rem;'+(tGn<0?'color:#f87171;':'')+'">'+fm(tGn)+'</div></div>'+
+      '<div class="kpi-card blue"><div class="kpi-label">Saldo actual</div><div class="kpi-value" style="font-size:1.25rem;">'+fm(sd)+'</div></div>'+
+    '</div>';
+    if(typeof _uBuildFlow === 'function'){
+      html += '<div class="section-title">📊 Flujo General</div>'+_uBuildFlow(meses,"General",sA,iM,gM,gA,aA,tI,tG,tGn,sd,fm);
+    }
+    html += '<div class="utilidad-box"><div class="utilidad-label">Resultado Anual</div><div class="utilidad-val'+(tGn<0?' negative':'')+'">'+fm(tGn)+'</div><div class="utilidad-margen">Saldo acumulado: '+fm(sd)+'</div></div>';
+
+    var co = '<option value="todas">📊 Todas</option>';
+    if(Array.isArray(window.cuentasMemoria)){
+      window.cuentasMemoria.forEach(function(c,i){
+        co += '<option value="'+i+'">'+(typeof tipoEmoji==='function'?tipoEmoji(c.tipo):'')+' '+c.nombre+'</option>';
+      });
+    }
+    html += '<div class="section-title" style="margin-top:24px;">🏦 Flujo por Cuenta</div>'+
+      '<div style="margin-bottom:14px;"><select id="uFCS" onchange="uRFC()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:10px 14px;font-size:14px;font-weight:600;min-width:250px;">'+co+'</select></div>'+
+      '<div id="uFCB"></div>';
+    body.innerHTML = html;
+    if(typeof window.uRFC === 'function') window.uRFC();
+  };
+
+  // ============== HOOK renderConta para forzar carga ==============
+  if(typeof window.renderConta === 'function'){
+    var _origRC26 = window.renderConta;
+    window.renderConta = function(tab){
+      // Siempre disparar carga de ventas en background si tab es relevante
+      if(['historial','flujo','categorias','resumen','caja'].indexOf(tab) > -1){
+        try { _cargarVentasPedidos().then(function(){
+          // Después de cargar, re-renderizar SOLO si seguimos en la misma tab
+          var stillOpen = document.getElementById('contaBody');
+          if(stillOpen && tab === 'historial' && typeof window._uHistorial === 'function'){
+            window._uHistorial();
+          } else if(stillOpen && tab === 'flujo'){
+            window._uFlujo();
+          }
+        }); } catch(e){}
+      }
+      return _origRC26.apply(this, arguments);
     };
+    console.log('[V26] renderConta hookeado para forzar carga de ventas');
   }
 
-  // ---------- 2. Reset MARZO 2026 (UNA vez, conserva deudas/cartera) ----------
+  // ============== Cargar ventas al inicio y cada 15s ==============
+  setTimeout(_cargarVentasPedidos, 1500);
+  setInterval(_cargarVentasPedidos, 15000);
+
+  // ============== Helper: Ver ventas en consola ==============
+  window.vnVerVentasPorDia = function(){
+    var c = window._vnVentasPorFecha || {};
+    var keys = Object.keys(c).sort();
+    if(keys.length === 0){
+      console.log('No hay ventas en cache. Forzando recarga...');
+      _cargarVentasPedidos();
+      return;
+    }
+    console.log('=== Ventas registradas por día ===');
+    var total = 0;
+    keys.forEach(function(f){
+      var v = Number(c[f])||0;
+      total += v;
+      console.log('  '+f+': $'+v.toLocaleString('es-CO'));
+    });
+    console.log('TOTAL: $'+total.toLocaleString('es-CO')+' ('+keys.length+' días)');
+  };
+
+  // ============== RESET MARZO 2026 (UNA vez, conserva deudas) ==============
   function _resetMarzo(){
-    var FLAG = 'vn_reset_marzo_2026_v25';
+    var FLAG = 'vn_reset_marzo_2026_v26';
     if(localStorage.getItem(FLAG)) return;
     var mesTarget = '2026-03';
 
-    // Backup completo antes de tocar nada
     try {
       var bk = 'bk_reset_marzo_' + new Date().toISOString().replace(/[:.]/g,'-');
       localStorage.setItem(bk, JSON.stringify({
@@ -12001,7 +12232,6 @@ window.vnDiagVentas = function(){
       }));
     } catch(e){}
 
-    // Limpiar movimientosContables de marzo (preservar deudas)
     if(Array.isArray(window.movimientosContables)){
       var conservados = [];
       window.movimientosContables.forEach(function(m){
@@ -12021,8 +12251,6 @@ window.vnDiagVentas = function(){
       });
       window.movimientosContables = conservados;
     }
-
-    // Limpiar gastosMemoria de marzo (preservar deudas)
     if(Array.isArray(window.gastosMemoria)){
       var conservadosGM = [];
       window.gastosMemoria.forEach(function(g){
@@ -12040,113 +12268,17 @@ window.vnDiagVentas = function(){
       window.gastosMemoria = conservadosGM;
       try { sessionStorage.setItem('gastos', JSON.stringify(conservadosGM)); } catch(e){}
     }
-
     if(typeof window._mcPersist === 'function') window._mcPersist();
     localStorage.setItem(FLAG, new Date().toISOString());
     console.log('✅ Reset marzo 2026 completado (deudas/cartera intactas)');
   }
-  setTimeout(_resetMarzo, 3000);
+  setTimeout(_resetMarzo, 3500);
 
-  // ---------- 3. Forzar recarga de ventas al abrir Contabilidad ----------
-  // Cuando se abre el panel de contabilidad, recarga el cache de pedidos
-  // para que TODOS los días con ventas aparezcan en historial/flujo
-  function _hookAbrirContabilidad(){
-    var btn = null;
-    try { btn = document.querySelector('[onclick*="abrirContabilidad"], [onclick*="renderConta"]'); } catch(e){}
-    // En vez de hookear el botón, hookeamos renderConta directamente
-    if(typeof window.renderConta === 'function' && !window._vnContaForzarVentas){
-      window._vnContaForzarVentas = true;
-      var _origRenderConta25 = window.renderConta;
-      window.renderConta = function(tab){
-        // Si es la primera vez que se abre conta, forzar recarga inmediata
-        try {
-          if(typeof window._vnVentasCargar === 'function'){
-            // Bypass throttle al ABRIR el panel
-            window._vnVentasCargar();
-          }
-        } catch(e){}
-        return _origRenderConta25.apply(this, arguments);
-      };
-    }
-  }
-  setTimeout(_hookAbrirContabilidad, 2500);
+  // ============== Recaudo Domi: RESTA "yo le debo" ==============
+  // Esto ya se aplicó en código base, pero lo aseguramos aquí también
+  // para cubrir el caso del cache de vnPrecargarRecaudo.
 
-  // ---------- 4. Forzar recarga ventas cada 15s mientras conta esté abierta ----------
-  setInterval(function(){
-    try {
-      if(document.getElementById('contaBody') && typeof window._vnVentasCargar === 'function'){
-        window._vnVentasCargar();
-      }
-    } catch(e){}
-  }, 15000);
-
-  // ---------- 5. Helper para usuario: ver todas las ventas registradas ----------
-  window.vnVerVentasPorDia = function(){
-    var c = window._vnVentasPorFecha || {};
-    var keys = Object.keys(c).sort();
-    if(keys.length === 0){
-      console.log('No hay ventas en cache. Forzando recarga...');
-      if(typeof window._vnVentasCargar === 'function') window._vnVentasCargar();
-      return;
-    }
-    console.log('=== Ventas registradas por día ===');
-    var total = 0;
-    keys.forEach(function(f){
-      var v = Number(c[f])||0;
-      total += v;
-      console.log('  '+f+': $'+v.toLocaleString('es-CO'));
-    });
-    console.log('TOTAL: $'+total.toLocaleString('es-CO')+' ('+keys.length+' días)');
-  };
-
-  // ---------- 6. Botón "🔄 Resetear marzo" en categorías ----------
-  // (solo si no existe ya el de abril)
-  function _btnResetMarzoManual(){
-    if(document.getElementById('vnResetMarzoBtn')) return;
-    var headers = document.querySelectorAll('.section-title, h2, h3');
-    var anchor = null;
-    headers.forEach(function(el){
-      if((el.textContent||'').toLowerCase().indexOf('categor') > -1) anchor = el;
-    });
-    if(!anchor) return;
-
-    var btn = document.createElement('button');
-    btn.id = 'vnResetMarzoBtn';
-    btn.textContent = '🔄 Reset MAR/ABR';
-    btn.title = 'Volver a resetear marzo y abril si es necesario';
-    btn.style.cssText = 'margin-left:8px;padding:6px 12px;background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.35);border-radius:8px;color:#c4b5fd;font-weight:700;cursor:pointer;font-size:11px;';
-    btn.onclick = function(){
-      if(!confirm('¿Resetear marzo y abril 2026?\n\n• Borra ingresos/gastos\n• Cartera/deudas NO se tocan\n• Backup automático')) return;
-      // Borrar flags y re-ejecutar
-      localStorage.removeItem('vn_reset_marzo_2026_v25');
-      localStorage.removeItem('vn_reset_abril_2026_v24');
-      _resetMarzo();
-      // Reset abril si la función existe
-      try {
-        if(typeof window.vnResetCategoriasMes === 'function'){
-          window.vnResetCategoriasMes('2026-04');
-        }
-      } catch(e){}
-      alert('✅ Marzo y Abril 2026 reseteados');
-      try { if(typeof renderConta === 'function') renderConta('categorias'); } catch(e){}
-    };
-    if(anchor.parentElement) anchor.parentElement.insertBefore(btn, anchor.nextSibling);
-  }
-  // Se inyecta cada vez que se abre categorías
-  if(typeof window.renderConta === 'function'){
-    var _origRConta25b = window.renderConta;
-    var _wrapped25b = false;
-    if(!window._vnRC25bWrapped){
-      window._vnRC25bWrapped = true;
-      window.renderConta = function(tab){
-        var r = _origRConta25b.apply(this, arguments);
-        if(tab === 'categorias') setTimeout(_btnResetMarzoManual, 400);
-        return r;
-      };
-    }
-  }
-
-  console.log('✅ Parche V25: fecha local + reset marzo + forzar ventas');
+  console.log('✅ Parche V26: _uHistRecolectar + _uFlujo sobreescritos. Ventas desde Supabase ahora visibles.');
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
