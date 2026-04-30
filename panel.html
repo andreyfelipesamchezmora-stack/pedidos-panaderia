@@ -11655,17 +11655,33 @@ window.vnDiagVentas = function(){
   function _doSetup(){
     console.log('🔧 V24 setup iniciado');
 
-  // Carga ventas de Supabase y actualiza el cache
+  // Carga ventas de Supabase y actualiza el cache (paginado: trae TODOS los pedidos)
   window._vnVentasCargar = async function(){
     try {
-      var res = await db.from('pedidos').select('fecha,total,id,cliente').limit(20000);
-      if(!res){ console.warn('[V24] pedidos: sin respuesta'); return; }
-      if(res.error){ console.warn('[V24] pedidos error:', res.error.message||res.error); return; }
-      if(!Array.isArray(res.data)){ console.warn('[V24] pedidos: data no es array', res.data); return; }
-      console.log('[V24] pedidos descargados:', res.data.length);
+      // PAGINAR: Supabase limita a 1000 por consulta. Iteramos hasta traer todo.
+      var todos = [];
+      var pagina = 0;
+      var tamPagina = 1000;
+      var seguir = true;
+      while(seguir && pagina < 50){ // máximo 50000 pedidos
+        var inicio = pagina * tamPagina;
+        var fin = inicio + tamPagina - 1;
+        var res = await db.from('pedidos')
+          .select('fecha,total,id,cliente')
+          .order('fecha', {ascending: false})
+          .range(inicio, fin);
+        if(!res){ console.warn('[V24] pedidos: sin respuesta'); return; }
+        if(res.error){ console.warn('[V24] pedidos error:', res.error.message||res.error); return; }
+        if(!Array.isArray(res.data)){ console.warn('[V24] pedidos: data no es array', res.data); return; }
+        todos = todos.concat(res.data);
+        // Si la página vino con menos de 1000, ya no hay más
+        if(res.data.length < tamPagina) seguir = false;
+        pagina++;
+      }
+      console.log('[V24] pedidos descargados (total paginado):', todos.length);
       var lista = (typeof depurarPedidosUnicos === 'function')
-        ? depurarPedidosUnicos(res.data)
-        : res.data;
+        ? depurarPedidosUnicos(todos)
+        : todos;
       var byFecha = {};
       lista.forEach(function(p){
         var f = (p && p.fecha) ? String(p.fecha).slice(0,10) : '';
@@ -11951,14 +11967,29 @@ window.vnDiagVentas = function(){
 
   function _pad(n){ return String(n).length<2?'0'+n:String(n); }
 
-  // Cargar pedidos desde Supabase y poblar _vnVentasPorFecha
+  // Cargar pedidos desde Supabase y poblar _vnVentasPorFecha (paginado)
   async function _cargarVentasPedidos(){
     try {
       if(typeof db === 'undefined' || !db || !db.from) return;
-      var res = await db.from('pedidos').select('fecha,total,id,cliente').limit(20000);
-      if(!res || res.error || !Array.isArray(res.data)) return;
+      // PAGINAR: Supabase limita a 1000 por consulta. Iteramos hasta traer todo.
+      var todos = [];
+      var pagina = 0;
+      var tamPagina = 1000;
+      var seguir = true;
+      while(seguir && pagina < 50){ // máximo 50000 pedidos
+        var inicio = pagina * tamPagina;
+        var fin = inicio + tamPagina - 1;
+        var res = await db.from('pedidos')
+          .select('fecha,total,id,cliente')
+          .order('fecha', {ascending: false})
+          .range(inicio, fin);
+        if(!res || res.error || !Array.isArray(res.data)) return;
+        todos = todos.concat(res.data);
+        if(res.data.length < tamPagina) seguir = false;
+        pagina++;
+      }
       var lista = (typeof depurarPedidosUnicos === 'function')
-        ? depurarPedidosUnicos(res.data) : res.data;
+        ? depurarPedidosUnicos(todos) : todos;
       var byFecha = {};
       lista.forEach(function(p){
         if(!p || !p.fecha) return;
@@ -11969,7 +12000,7 @@ window.vnDiagVentas = function(){
       });
       window._vnVentasPorFecha = byFecha;
       try { localStorage.setItem('_vnVentasPorFecha', JSON.stringify(byFecha)); } catch(e){}
-      console.log('[V26] Ventas cargadas: '+Object.keys(byFecha).length+' días con ventas');
+      console.log('[V26] Ventas cargadas: '+Object.keys(byFecha).length+' días con ventas (de '+todos.length+' pedidos)');
     } catch(e){ console.warn('[V26] cargar ventas:', e); }
   }
   window._vnCargarVentas = _cargarVentasPedidos;
