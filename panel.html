@@ -3609,6 +3609,7 @@ async function renderRecaudo(){
                       <input type="checkbox" class="recaudo-check" style="accent-color:#3b82f6;"
                         onclick="event.stopPropagation(); vnDeudaModal(${JSON.stringify(safe).replace(/"/g,'&quot;')}, 'mia'); this.checked=false;" title="Agregar deuda mía">
                       ${r._deudaTotalMia > 0 ? '<span style="font-size:10px;color:#93c5fd;font-weight:700;">$'+r._deudaTotalMia.toLocaleString('es-CO')+'</span>' : ''}
+                      ${r._deudaTotalMia > 0 ? `<label style="display:flex;align-items:center;gap:3px;margin-top:2px;cursor:pointer;" title="Incluir mi deuda en recaudo domi (resta del total)"><input id="rec_azuldomi_${safe}" type="checkbox" class="recaudo-check" style="accent-color:#3b82f6;width:13px;height:13px;" ${r.domiIncluirDeudaMia ? 'checked' : ''} onclick="event.stopPropagation();recaudoToggleAzulDomi(${JSON.stringify(safe).replace(/"/g,'&quot;')});"><span style="font-size:9px;color:#93c5fd;font-weight:700;">🏍️domi</span></label>` : ''}
                     </div>
                   </td>
                   <td><input id="rec_fal_${safe}" class="recaudo-money-input" type="text" inputmode="numeric"
@@ -5355,6 +5356,32 @@ function recaudoToggleDomiDeudaMia(nombre){
   let incluir = !!(cb && cb.checked);
   estado[nombre].domiIncluirDeudaMia = incluir;
   // Si se activa, también activar el recaudo domi normal (igual que domiIncluirDeuda)
+  if(incluir && cbDomi && !cbDomi.checked){
+    cbDomi.checked = true;
+    let cache = window._recaudoCache || window.recaudoCache;
+    if(cache && cache.rows){
+      let row = cache.rows.find(function(r){
+        return r.cliente.replace(/[^a-zA-Z0-9]/g,'_') === nombre;
+      });
+      if(row) estado[nombre].recaudoDomi = row.subtotal || 0;
+    }
+  }
+  recaudoGuardarEstado(estado);
+  setTimeout(function(){ renderRecaudo(); }, 300);
+}
+
+// Toggle azul domi: checkbox en columna "Yo le debo" para incluir deuda mía en recaudo domi (RESTA)
+function recaudoToggleAzulDomi(nombre){
+  let cb = document.getElementById('rec_azuldomi_' + nombre);
+  let cbDomi = document.getElementById('rec_domi_' + nombre);
+  let estado = recaudoLeerEstado();
+  if(!estado[nombre]) estado[nombre] = {};
+  let incluir = !!(cb && cb.checked);
+  estado[nombre].domiIncluirDeudaMia = incluir;
+  // Sincronizar con rec_domideudamia_ si existe
+  let cbOld = document.getElementById('rec_domideudamia_' + nombre);
+  if(cbOld) cbOld.checked = incluir;
+  // Si se activa, también activar el recaudo domi normal
   if(incluir && cbDomi && !cbDomi.checked){
     cbDomi.checked = true;
     let cache = window._recaudoCache || window.recaudoCache;
@@ -10490,12 +10517,19 @@ function dNorm(d, nombre){
   return d[nombre];
 }
 
+// Helper: fecha local ISO (evita drift UTC/local)
+function _dFechaLocal(){
+  var n=new Date();
+  return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');
+}
+
 // Agregar deuda
 window.vnDeudaAgregar = function(nombre, tipo, monto, nota){
   var d=dLeer(); dNorm(d, nombre);
   monto=Math.abs(Number(monto)||0); if(monto<=0) return;
   if(tipo==='cliente') d[nombre].sc+=monto; else d[nombre].sm+=monto;
-  d[nombre].h.push({id:'d'+Date.now(),fecha:new Date().toISOString().slice(0,10),hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),tipo:'deuda',sub:tipo,monto:monto,saldo:tipo==='cliente'?d[nombre].sc:d[nombre].sm,nota:nota||''});
+  var _fl=_dFechaLocal();
+  d[nombre].h.push({id:'d'+Date.now(),fecha:_fl,hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),tipo:'deuda',sub:tipo,monto:monto,saldo:tipo==='cliente'?d[nombre].sc:d[nombre].sm,nota:nota||''});
   dGuardar(d);
   if(Array.isArray(window.movimientosContables)){
     window.movimientosContables.push({tipo:'deuda',monto:monto,cuenta:'—',descripcion:(tipo==='cliente'?'Deuda de ':'Le debo a ')+nombre+(nota?' - '+nota:''),fecha:new Date().toISOString()});
@@ -10508,7 +10542,8 @@ window.vnDeudaPagar = function(nombre, tipo, monto, metodo, banco, ci, nota){
   var d=dLeer(); dNorm(d, nombre);
   monto=Math.abs(Number(monto)||0); if(monto<=0) return;
   if(tipo==='cliente') d[nombre].sc=Math.max(d[nombre].sc-monto,0); else d[nombre].sm=Math.max(d[nombre].sm-monto,0);
-  d[nombre].h.push({id:'p'+Date.now(),fecha:new Date().toISOString().slice(0,10),hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),tipo:'pago',sub:tipo,monto:monto,metodo:metodo||'',banco:banco||'',saldo:tipo==='cliente'?d[nombre].sc:d[nombre].sm,nota:nota||''});
+  var _fl=_dFechaLocal();
+  d[nombre].h.push({id:'p'+Date.now(),fecha:_fl,hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),tipo:'pago',sub:tipo,monto:monto,metodo:metodo||'',banco:banco||'',saldo:tipo==='cliente'?d[nombre].sc:d[nombre].sm,nota:nota||''});
   dGuardar(d);
   if(ci>=0 && Array.isArray(window.cuentasMemoria) && window.cuentasMemoria[ci]){
     window.cuentasMemoria[ci].saldo+=monto; if(typeof cuentasGuardar==='function') cuentasGuardar();
@@ -10529,7 +10564,7 @@ window.vnDeudaSetInicial = function(nombre, tipo, monto){
     localStorage.setItem(bk, localStorage.getItem('vn_deudas_v20')||'{}');
   } catch(e){}
   if(tipo==='cliente') d[nombre].sc=monto; else d[nombre].sm=monto;
-  d[nombre].h.push({id:'i'+Date.now(),fecha:new Date().toISOString().slice(0,10),hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),tipo:'saldo_ini',sub:tipo,monto:monto,saldo:monto,nota:'Saldo inicial'});
+  d[nombre].h.push({id:'i'+Date.now(),fecha:_dFechaLocal(),hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),tipo:'saldo_ini',sub:tipo,monto:monto,saldo:monto,nota:'Saldo inicial'});
   dGuardar(d);
 };
 
@@ -12196,10 +12231,16 @@ window.vnDiagVentas = function(){
       iM[f.getMonth()] += Number(v.monto)||0;
     });
 
-    // 2) movimientosContables (excluyendo auto-brutos para no duplicar)
+    // 2) movimientosContables (excluir auto-brutos SOLO si Supabase tiene data para esa fecha, evitar doble conteo)
+    var _vdFC = window._vnVentasPorFecha || {};
     (window.movimientosContables||[]).forEach(function(m){
       if(!m) return;
-      if(m._autoBruto || (m.descripcion||'').indexOf('Bruto ventas del ') === 0) return;
+      if(m._autoBruto || (m.descripcion||'').indexOf('Bruto ventas del ') === 0){
+        // Solo omitir si Supabase ya cubre esa fecha (evita doble conteo)
+        var _ab = m._autoBruto || '';
+        if(_ab && _vdFC[_ab]) return;
+        // Sin data de Supabase para esa fecha: incluir como respaldo
+      }
       var f = new Date(m.fecha);
       if(isNaN(f.getTime())) return;
       var ms = f.getMonth();
