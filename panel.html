@@ -3360,17 +3360,16 @@ async function renderRecaudo(){
     let salidas = 0;
     let deudasDescontadas = 0;
     let efectivoVentasTotal = 0;  // Efectivo real de ventas
- 
+    let dmHoyTotal = 0;  // yo le debo al cliente HOY → suma al efectivo
+    let dcHoyTotal = 0;  // cliente me debe HOY → resta del efectivo
+
     rows.forEach(function(r){
       bruto += r.subtotal;
       recaudoDomi += r.recaudoDomi;
       if(r.domiIncluirDeuda) {
         recaudoDomi += (Number(r._deudaTotalCliente)||0);
-        // FIX V26: si tengo deuda con el cliente (yo le debo), RESTA del recaudo domi
         recaudoDomi -= (Number(r._deudaTotalMia)||0);
       }
-      // FIX V27: si marcó "incluir deuda mía al recaudo domi", RESTA del recaudo domi
-      // (yo le doy al cliente lo que le debo, descontado del recaudo)
       if(r.domiIncluirDeudaMia) {
         recaudoDomi -= (Number(r._deudaTotalMia)||0);
       }
@@ -3379,14 +3378,12 @@ async function renderRecaudo(){
       faltantes += r.faltantes;
       salidas += r.salidas;
       deudasDescontadas += r.deudaMiaPagada;
+      dmHoyTotal += (Number(r._deudaMiaHoy)||0);
+      dcHoyTotal += (Number(r._deudaClienteHoy)||0);
 
-      // FIX V27: EFECTIVO EN MIS MANOS por fila
-      // = efectivoNeto SI no marcó recaudo domi (sino el camionero se llevó la plata)
-      // Solo cuenta efectivo del CLIENTE que físicamente recibí YO
+      // EFECTIVO EN MIS MANOS por fila
       var efEnMisManos = (r.recaudoDomi > 0) ? 0 : (Number(r.efectivoNeto)||0);
-      // Ajuste con deudas registradas HOY:
-      //  + dmHoy: si HOY registré que yo le debo al cliente, recibí más efectivo
-      //  - dcHoy: si HOY registré que cliente me debe, recibí menos efectivo
+      // Solo deudas registradas HOY afectan el efectivo del día
       efEnMisManos += (Number(r._deudaMiaHoy)||0);
       efEnMisManos -= (Number(r._deudaClienteHoy)||0);
       if(efEnMisManos < 0) efEnMisManos = 0;
@@ -3436,6 +3433,15 @@ async function renderRecaudo(){
  
     // ============ HTML ============
     // DESGLOSE COMPACTO ARRIBA (pequeño)
+    let _efDesglose = [];
+    if(faltantes > 0)  _efDesglose.push(`<span style="color:#f87171;">-${recaudoMoney(faltantes)} falt.</span>`);
+    if(salidas > 0)    _efDesglose.push(`<span style="color:#fca5a5;">-${recaudoMoney(salidas)} sal.</span>`);
+    if(dcHoyTotal > 0) _efDesglose.push(`<span style="color:#fca5a5;">-${recaudoMoney(dcHoyTotal)} d.cli hoy</span>`);
+    if(dmHoyTotal > 0) _efDesglose.push(`<span style="color:#86efac;">+${recaudoMoney(dmHoyTotal)} d.mía hoy</span>`);
+    let _efDesgloseHtml = _efDesglose.length > 0
+      ? `<div style="font-size:9px;line-height:1.5;margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;">${_efDesglose.join('')}</div>`
+      : '';
+
     let desgloseCompactoHtml = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:14px;">
         <div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:10px 12px;">
@@ -3444,6 +3450,7 @@ async function renderRecaudo(){
             <span style="font-size:10px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:0.03em;">Efectivo</span>
           </div>
           <div style="font-size:16px;font-weight:800;color:white;font-variant-numeric:tabular-nums;">${recaudoMoney(efectivoTotal)}</div>
+          ${_efDesgloseHtml}
         </div>
  
         <div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.2);border-radius:10px;padding:10px 12px;">
@@ -8886,16 +8893,15 @@ window.vnPrecargarRecaudo = async function(){
     var bruto = 0, recaudoDomi = 0, nequiVentas = 0, bancolombiaVentas = 0;
     var pagoDeudaEfectivo = 0, pagoDeudaNequi = 0, pagoDeudaBancolombia = 0;
     var faltantes = 0, salidas = 0, deudasDescontadas = 0, efectivoVentasTotal = 0;
- 
+    var dmHoyTotal = 0, dcHoyTotal = 0;
+
     rows.forEach(function(r){
       bruto += Number(r.subtotal)||0;
       recaudoDomi += Number(r.recaudoDomi)||0;
-      // FIX V26: si domiIncluirDeuda, sumar deuda cliente y restar deuda mía
       if(r.domiIncluirDeuda) {
         recaudoDomi += (Number(r._deudaTotalCliente)||0);
         recaudoDomi -= (Number(r._deudaTotalMia)||0);
       }
-      // FIX V27: si marcó incluir deuda mía al recaudo domi, RESTA
       if(r.domiIncluirDeudaMia) {
         recaudoDomi -= (Number(r._deudaTotalMia)||0);
       }
@@ -8904,8 +8910,11 @@ window.vnPrecargarRecaudo = async function(){
       faltantes += Number(r.faltantes)||0;
       salidas += Number(r.salidas)||0;
       deudasDescontadas += Number(r.deudaMiaPagada)||0;
+      dmHoyTotal += (Number(r._deudaMiaHoy)||0);
+      dcHoyTotal += (Number(r._deudaClienteHoy)||0);
 
-      // FIX V27: EFECTIVO en mis manos = solo el que NO se llevó el camionero
+      // EFECTIVO en mis manos = solo el que NO se llevó el camionero
+      // Solo deudas del DÍA afectan el efectivo: +dmHoy (yo le debo) -dcHoy (me debe)
       var efEnMisManos = (Number(r.recaudoDomi)||0) > 0 ? 0 : (Number(r.efectivoNeto)||0);
       efEnMisManos += (Number(r._deudaMiaHoy)||0);
       efEnMisManos -= (Number(r._deudaClienteHoy)||0);
@@ -8937,6 +8946,8 @@ window.vnPrecargarRecaudo = async function(){
         recaudoDomi: recaudoDomi,
         faltantes: faltantes,
         salidas: salidas,
+        dmHoyTotal: dmHoyTotal,
+        dcHoyTotal: dcHoyTotal,
         netoEfectivo: efectivoTotal,
         transferencias: transferenciasVentas,
         pagosDeudaTransf: pagosDeudaTransf,
@@ -12306,7 +12317,7 @@ window.vnDiagVentas = function(){
           if(stillOpen && tab === 'historial' && typeof window._uHistorial === 'function'){
             window._uHistorial();
           } else if(stillOpen && tab === 'flujo'){
-            window._uFlujo();
+            _origRC26.call(window, 'flujo');
           }
         }); } catch(e){}
       }
