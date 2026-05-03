@@ -1194,29 +1194,18 @@ var App = (function() {
 
 document.addEventListener('DOMContentLoaded', App.init);
 
-// =====================================================================
-//  SYNC v6 — Bulletproof (contabilidad.html ↔ Supabase)
-// =====================================================================
-//  Estrategia:
-//   1. PUSH: cada cambio local se sube INMEDIATAMENTE a Supabase
-//   2. PULL: polling agresivo cada 1s + Realtime (lo que llegue primero)
-//   3. MERGE INTELIGENTE: nunca sobrescribir, siempre combinar (por ID/clave)
-//   4. PROTECCIÓN: si Supabase está vacío y local tiene datos → SUBIR LOCAL
-//   5. PROTECCIÓN: si llega un dato remoto que tiene MENOS items que el local
-//      → NO reemplazar, solo agregar los nuevos
-//   6. BADGE VISIBLE: estado de sync y conteo de cambios
-//   7. BOTONES: forzar push (subir todo) y forzar pull (bajar todo)
-// =====================================================================
+// =====================================================
+//  SYNC MODULE v5 — contabilidad.html ↔ Supabase
+//  Estrategia: Polling cada 3s (garantía) + Realtime (velocidad)
+//  Push inmediato en cada escritura (sin debounce que pierda datos)
+//  Pull inicial completo al cargar la página
+// =====================================================
 (function () {
-  if (!db) {
-    console.error('[SYNC v6] db no disponible');
-    var b = document.getElementById('syncBadge');
-    if (b) b.innerHTML = '<span class="sync-dot" style="background:#f87171"></span> Sin Supabase';
-    return;
-  }
+  if (!db) return;
 
-  // ─── Tablas que sincronizamos ───────────────────────
+  // ─── Constantes ──────────────────────────────────
   var TABLAS = {
+    // localStorage key → Supabase tabla
     'mc_local':              'movimientos_contables',
     'gm_local':              'gastos_manuales',
     'conta_v2':              'conta_movimientos_v2',
@@ -1225,67 +1214,46 @@ document.addEventListener('DOMContentLoaded', App.init);
     'cuentasMemoria':        'cuentas_bancarias'
   };
 
-  // localStorage nativo (no pasa por interceptor → sin loops)
-  var _orig = localStorage.setItem.bind(localStorage);
-  var _lastTS = {};   // último updated_at por tabla
-  var _ownTS  = {};   // updated_at de los pushes propios (para ignorar nuestro propio eco)
+  // localStorage nativo — NO pasa por el interceptor → sin loops
+  var _orig   = localStorage.setItem.bind(localStorage);
+  var _lastTS = {};   // updated_at de última lectura por tabla Supabase
 
-  // ─── Generar clave única para deduplicar items ─────
-  function itemKey(m) {
-    if (!m || typeof m !== 'object') return JSON.stringify(m);
-    if (m.id) return 'id:' + m.id;
-    return [m.tipo||'', m.fecha||'', m.monto||'', String(m.descripcion||'').toLowerCase().trim()].join('|');
+  // ─── Push INMEDIATO a Supabase (con 1 reintento) ─
+  async function pushNow(tabla, datos) {
+    var payload = { id: 1, datos: datos, updated_at: new Date().toISOString() };
+    try {
+      var r = await db.from(tabla).upsert(payload, { onConflict: 'id' });
+      if (r && r.error) {
+        console.warn('[SYNC v6] push error en', tabla, '-', r.error.message || r.error);
+        // 1 reintento tras 1.5s
+        setTimeout(async function () {
+          try {
+            var r2 = await db.from(tabla).upsert(payload, { onConflict: 'id' });
+            if (r2 && r2.error) {
+              console.warn('[SYNC v6] reintento falló en', tabla, '-', r2.error.message || r2.error);
+            }
+          } catch (e2) {}
+        }, 1500);
+      }
+    } catch (e) {
+      console.warn('[SYNC v6] push catch en', tabla, '-', e);
+      setTimeout(async function () {
+        try { await db.from(tabla).upsert(payload, { onConflict: 'id' }); } catch (e2) {}
+      }, 1500);
+    }
   }
 
-  // ─── Merge inteligente: NUNCA pierde items ─────────
-  function mergeArr(loc, rem) {
-    var a = Array.isArray(loc) ? loc : [];
-    var b = Array.isArray(rem) ? rem : [];
-    var seen = {}, out = [];
-    a.concat(b).forEach(function (m) {
-      if (!m) return;
-      var k = itemKey(m);
-      if (!seen[k]) { seen[k] = true; out.push(m); }
-    });
-    return out.sort(function (x, y) {
-      return (Number(y.timestamp)||0) - (Number(x.timestamp)||0);
-    });
-  }
-
-  // ─── Push a Supabase (con timestamp único) ──────────
-  function pushNow(tabla, datos) {
-    var ts = new Date().toISOString();
-    _ownTS[tabla] = ts;   // recordamos para ignorar el eco
-    var payload = { id: 1, datos: datos, updated_at: ts };
-    db.from(tabla).upsert(payload, { onConflict: 'id' })
-      .then(function (r) {
-        if (r.error) {
-          console.warn('[SYNC v6] push error en', tabla, r.error.message);
-          // Reintentar 1 vez
-          setTimeout(function () {
-            db.from(tabla).upsert(payload, { onConflict: 'id' }).catch(function(){});
-          }, 2000);
-        } else {
-          _lastTS[tabla] = ts;   // ya está sincronizado a este TS
-        }
-      })
-      .catch(function (e) { console.warn('[SYNC v6] push catch:', e); });
-  }
-
-  // ─── Pull completo de una tabla ─────────────────────
+  // ─── Pull completo de una tabla ──────────────────
   async function pullFull(tabla) {
     try {
       var r = await db.from(tabla).select('datos, updated_at').eq('id', 1).maybeSingle();
       if (!r || !r.data) return null;
       _lastTS[tabla] = r.data.updated_at || '';
       return r.data.datos !== undefined ? r.data.datos : null;
-    } catch (e) {
-      console.warn('[SYNC v6] pullFull error:', e);
-      return null;
-    }
+    } catch (e) { return null; }
   }
 
-  // ─── Pull ligero (solo TS) ──────────────────────────
+  // ─── Pull ligero (solo updated_at) para polling ──
   async function pullTS(tabla) {
     try {
       var r = await db.from(tabla).select('updated_at').eq('id', 1).maybeSingle();
@@ -1293,220 +1261,146 @@ document.addEventListener('DOMContentLoaded', App.init);
     } catch (e) { return ''; }
   }
 
-  // ─── Aplicar datos remotos al localStorage local ───
+  // ─── Merge arrays por ID (nunca pierde entradas) ─
+  function mergeArr(loc, rem) {
+    var a = Array.isArray(loc) ? loc : [];
+    var b = Array.isArray(rem) ? rem : [];
+    var seen = {}, out = [];
+    a.concat(b).forEach(function (m) {
+      if (!m) return;
+      var k = m.id || (String(m.tipo||'')+'|'+String(m.fecha||'')+'|'+String(m.monto||'')+'|'+String(m.descripcion||''));
+      if (!seen[k]) { seen[k] = true; out.push(m); }
+    });
+    return out.sort(function (a, b) { return (b.timestamp||0)-(a.timestamp||0); });
+  }
+
+  // ─── Aplicar datos remotos a localStorage ────────
   function applyRemote(lsKey, remoteData) {
-    if (remoteData === null || remoteData === undefined) return false;
-
-    var loc = null;
-    try { loc = JSON.parse(localStorage.getItem(lsKey) || 'null'); } catch (e) {}
-
-    var changed = false;
-
-    // Para arrays: merge (combinar sin perder)
+    if (remoteData === null || remoteData === undefined) return;
     if (lsKey === 'mc_local' || lsKey === 'gm_local' || lsKey === 'conta_v2') {
-      var locArr = Array.isArray(loc) ? loc : [];
-      var remArr = Array.isArray(remoteData) ? remoteData : [];
-      var merged = mergeArr(locArr, remArr);
-
-      // ¿Hay cambios reales?
-      if (merged.length !== locArr.length) {
-        changed = true;
-      } else {
-        // Comparar contenido
-        for (var i = 0; i < merged.length; i++) {
-          if (itemKey(merged[i]) !== itemKey(locArr[i])) { changed = true; break; }
-        }
-      }
-
-      if (changed) {
-        _orig(lsKey, JSON.stringify(merged));
-        if (lsKey === 'gm_local') {
-          try { sessionStorage.setItem('gastos', JSON.stringify(merged)); } catch (e) {}
-        }
-      }
-
-      // Si el local tiene MÁS que el remoto, subir el local (nunca perder datos)
-      if (locArr.length > remArr.length) {
-        console.log('[SYNC v6] Local tiene más datos que remoto en', lsKey, ': subiendo local');
-        pushNow(TABLAS[lsKey], merged);
+      // Arrays: merge para no perder entradas locales nuevas
+      var loc = [];
+      try { loc = JSON.parse(localStorage.getItem(lsKey) || '[]'); } catch (e) {}
+      var merged = mergeArr(loc, remoteData);
+      _orig(lsKey, JSON.stringify(merged));
+      if (lsKey === 'gm_local') {
+        try { sessionStorage.setItem('gastos', JSON.stringify(merged)); } catch (e) {}
       }
     } else {
-      // Para objetos no-array: si el remoto es no-vacío, aplicar
-      var remIsEmpty = (remoteData === null || remoteData === undefined ||
-                       (Array.isArray(remoteData) && remoteData.length === 0) ||
-                       (typeof remoteData === 'object' && Object.keys(remoteData).length === 0));
-      if (!remIsEmpty) {
-        var prev = JSON.stringify(loc);
-        var next = JSON.stringify(remoteData);
-        if (prev !== next) {
-          _orig(lsKey, next);
-          changed = true;
-          if (lsKey === 'cuentasMemoria') {
-            try { window.cuentasMemoria = remoteData; } catch (e) {}
-          }
-        }
+      // Objetos/arrays simples: reemplazar directamente
+      _orig(lsKey, JSON.stringify(remoteData));
+      if (lsKey === 'cuentasMemoria') {
+        // Actualizar window.cuentasMemoria si existe
+        try { window.cuentasMemoria = remoteData; } catch (e) {}
       }
     }
-
-    return changed;
   }
 
-  // ─── Refrescar UI ───────────────────────────────────
+  // ─── Refresh UI activa ───────────────────────────
   function refreshUI() {
+    var s = document.querySelector('.sec.on');
+    if (!s) return;
     try {
-      var s = document.querySelector('.sec.on');
-      if (!s) return;
-      if (s.id === 'dashboard'  && typeof UI !== 'undefined' && UI.dash)       UI.dash();
-      if (s.id === 'historial'  && typeof UI !== 'undefined' && UI.hist)       UI.hist();
-      if (s.id === 'flujo'      && typeof UI !== 'undefined' && UI.flujo)      UI.flujo();
-      if (s.id === 'categorias' && typeof UI !== 'undefined' && UI.categorias) UI.categorias();
+      if (s.id === 'dashboard')  UI.dash();
+      if (s.id === 'historial')  UI.hist();
+      if (s.id === 'flujo')      UI.flujo();
+      if (s.id === 'categorias') UI.categorias();
     } catch (e) {}
   }
 
-  // ─── Badge visible ──────────────────────────────────
-  function badge(txt, mode) {
+  function badge(txt, ok) {
     var b = document.getElementById('syncBadge');
     if (!b) return;
-    var color = mode === 'err' ? '#f87171' : (mode === 'sync' ? '#fbbf24' : '#4ade80');
-    b.innerHTML = '<span class="sync-dot" style="background:' + color + '"></span> ' + txt;
+    var dot = ok === false ? ' style="background:#f87171"' : '';
+    b.innerHTML = '<span class="sync-dot"' + dot + '></span> ' + txt;
   }
 
-  // ─── Interceptor: cuando esta página guarda → push ─
+  // ─── Interceptor localStorage → push inmediato ───
+  // Cuando esta página escribe un dato, lo sube AHORA a Supabase
   localStorage.setItem = function (k, v) {
-    _orig(k, v);
+    _orig(k, v);   // siempre guardar local primero
     var tabla = TABLAS[k];
     if (!tabla) return;
-    try {
-      var datos = JSON.parse(v);
-      pushNow(tabla, datos);
-    } catch (e) {}
+    try { pushNow(tabla, JSON.parse(v)); } catch (e) {}
   };
 
-  // ─── PULL inicial completo (con merge) ──────────────
+  // ─── PULL COMPLETO INICIAL ────────────────────────
   async function pullAll() {
-    badge('Sincronizando…', 'sync');
-    var anyChange = false;
+    badge('Sincronizando…');
+    var changed = false;
     for (var lsKey in TABLAS) {
       var tabla = TABLAS[lsKey];
       try {
         var remote = await pullFull(tabla);
         if (remote !== null) {
-          if (applyRemote(lsKey, remote)) anyChange = true;
+          applyRemote(lsKey, remote);
+          changed = true;
         } else {
-          // Remoto vacío → subir local si existe
+          // No hay dato remoto → subir local si existe
           var loc = null;
           try { loc = JSON.parse(localStorage.getItem(lsKey) || 'null'); } catch (e) {}
           if (loc && (Array.isArray(loc) ? loc.length > 0 : Object.keys(loc||{}).length > 0)) {
-            console.log('[SYNC v6] Subiendo', lsKey, 'al remoto vacío');
             pushNow(tabla, loc);
           }
         }
       } catch (e) {}
     }
-    if (anyChange) refreshUI();
-    badge('En vivo ✓', 'ok');
-    console.log('[SYNC v6] Pull inicial completo');
+    if (changed) refreshUI();
+    badge('En vivo ✓', true);
   }
 
-  // ─── POLLING rápido cada 1s ─────────────────────────
+  // ─── POLLING cada 3 segundos ─────────────────────
+  // Compara updated_at: si cambió, descarga el dato completo
+  // Esto garantiza sync aunque el realtime no funcione
   async function poll() {
-    if (document.hidden) return;   // ahorrar batería
-    var anyChange = false;
     for (var lsKey in TABLAS) {
       var tabla = TABLAS[lsKey];
       try {
         var ts = await pullTS(tabla);
-        if (!ts) continue;
-        // Ignorar nuestro propio eco
-        if (ts === _ownTS[tabla]) {
-          _lastTS[tabla] = ts;
-          continue;
-        }
-        if (ts !== (_lastTS[tabla] || '')) {
+        if (ts && ts !== (_lastTS[tabla] || '')) {
+          // Hay dato nuevo → descargar
           var remote = await pullFull(tabla);
           if (remote !== null) {
-            if (applyRemote(lsKey, remote)) anyChange = true;
+            applyRemote(lsKey, remote);
+            refreshUI();
+            badge('Actualizado ✓', true);
           }
         }
       } catch (e) {}
     }
-    if (anyChange) {
-      refreshUI();
-      badge('Actualizado ✓', 'ok');
-    }
   }
 
-  // ─── REALTIME ───────────────────────────────────────
+  // ─── REALTIME (optimización de velocidad) ────────
+  // Si realtime funciona, actualiza en <1s sin esperar el poll de 3s
   function setupRealtime() {
     try {
-      var canalName = 'conta-rt-' + Date.now() + '-' + Math.random().toString(36).slice(2,7);
-      var ch = db.channel(canalName);
+      var ch = db.channel('conta-rt-v5');
       Object.keys(TABLAS).forEach(function (lsKey) {
         var tabla = TABLAS[lsKey];
         ch.on('postgres_changes',
           { event: '*', schema: 'public', table: tabla, filter: 'id=eq.1' },
           function (p) {
             if (!p.new || p.new.datos === undefined) return;
-            var nuevoTS = p.new.updated_at || '';
-            if (nuevoTS === _ownTS[tabla]) return;   // nuestro propio eco
-            _lastTS[tabla] = nuevoTS;
-            if (applyRemote(lsKey, p.new.datos)) {
-              refreshUI();
-              badge('En vivo ✓', 'ok');
-            }
+            _lastTS[tabla] = p.new.updated_at || '';
+            applyRemote(lsKey, p.new.datos);
+            refreshUI();
+            badge('En vivo ✓', true);
           });
       });
       ch.subscribe(function (status) {
-        if (status === 'SUBSCRIBED')    badge('En vivo ✓', 'ok');
-        if (status === 'CHANNEL_ERROR') badge('Polling activo', 'sync');
+        if (status === 'SUBSCRIBED')    badge('En vivo ✓', true);
+        if (status === 'CHANNEL_ERROR') badge('Polling activo', true);
       });
-    } catch (e) { badge('Polling activo', 'sync'); }
+    } catch (e) { badge('Polling activo', true); }
   }
 
-  // ─── BOTONES MANUALES (forzar) ──────────────────────
-  window.SyncForzarSubir = async function() {
-    badge('Forzando subida…', 'sync');
-    for (var lsKey in TABLAS) {
-      var tabla = TABLAS[lsKey];
-      try {
-        var loc = null;
-        try { loc = JSON.parse(localStorage.getItem(lsKey) || 'null'); } catch (e) {}
-        if (loc && (Array.isArray(loc) ? loc.length > 0 : Object.keys(loc||{}).length > 0)) {
-          pushNow(tabla, loc);
-          await new Promise(function(r){setTimeout(r,150);});
-        }
-      } catch (e) {}
-    }
-    badge('Subida forzada ✓', 'ok');
-    setTimeout(function(){ badge('En vivo ✓', 'ok'); }, 2000);
-  };
-
-  window.SyncForzarBajar = async function() {
-    badge('Forzando bajada…', 'sync');
-    var anyChange = false;
-    for (var lsKey in TABLAS) {
-      var tabla = TABLAS[lsKey];
-      try {
-        var remote = await pullFull(tabla);
-        if (remote !== null) {
-          if (applyRemote(lsKey, remote)) anyChange = true;
-        }
-      } catch (e) {}
-    }
-    if (anyChange) refreshUI();
-    badge('Bajada forzada ✓', 'ok');
-    setTimeout(function(){ badge('En vivo ✓', 'ok'); }, 2000);
-  };
-
-  // ─── INICIO ─────────────────────────────────────────
+  // ─── INICIO ──────────────────────────────────────
   function start() {
     pullAll()
       .then(function () { setupRealtime(); })
-      .catch(function (e) {
-        console.warn('[SYNC v6] error en pullAll:', e);
-        setupRealtime();
-      });
-    setInterval(poll, 1000);
+      .catch(function () { setupRealtime(); });
+    // Polling cada 3s como red de seguridad
+    setInterval(poll, 3000);
   }
 
   if (document.readyState === 'loading') {
@@ -1515,36 +1409,6 @@ document.addEventListener('DOMContentLoaded', App.init);
     start();
   }
 })();
-
-// ─── BOTONES VISIBLES PARA EL USUARIO ─────────────────
-(function() {
-  function inyectarBotones() {
-    if (document.getElementById('syncBtnRow')) return;
-    var topbar = document.querySelector('.topbar');
-    if (!topbar) {
-      setTimeout(inyectarBotones, 500);
-      return;
-    }
-    var div = document.createElement('div');
-    div.id = 'syncBtnRow';
-    div.style.cssText = 'display:flex;gap:6px;align-items:center;margin-left:8px;';
-    div.innerHTML = '\
-      <button onclick="SyncForzarSubir()" title="Forzar subida a la nube" style="padding:6px 10px;background:rgba(74,222,128,0.12);border:1px solid rgba(74,222,128,0.3);border-radius:8px;color:#4ade80;font-weight:700;cursor:pointer;font-size:11px;">⬆ Subir</button>\
-      <button onclick="SyncForzarBajar()" title="Forzar bajada de la nube" style="padding:6px 10px;background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:8px;color:#60a5fa;font-weight:700;cursor:pointer;font-size:11px;">⬇ Bajar</button>\
-      <span id="syncBadge" style="display:flex;align-items:center;gap:5px;padding:5px 10px;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.25);border-radius:8px;color:#4ade80;font-size:11px;font-weight:600;">\
-        <span class="sync-dot" style="width:7px;height:7px;border-radius:50%;background:#4ade80;display:inline-block;"></span> Iniciando…\
-      </span>';
-    var back = topbar.querySelector('.back');
-    if (back) topbar.insertBefore(div, back);
-    else topbar.appendChild(div);
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', inyectarBotones);
-  } else {
-    inyectarBotones();
-  }
-})();
-
 </script>
 </body>
 </html>
