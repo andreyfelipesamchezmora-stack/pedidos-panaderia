@@ -23,12 +23,14 @@ let movimientosContables = [];
     cuentasMemoria[cuentaIdx].saldo -= monto;
   }
 
+  var _fReg=(function(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)+'-'+(d.getDate()<10?'0':'')+d.getDate();})();
   movimientosContables.push({
     tipo,
     monto,
     cuenta: cuentasMemoria[cuentaIdx].nombre,
     descripcion,
-    fecha: new Date().toISOString()
+    fecha: _fReg,
+    timestamp: Date.now()
   });
 
   cuentasGuardar();
@@ -1111,6 +1113,7 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
           <path d="M12 17v4"></path>
         </svg>
         Contabilidad
+      <a href="contabilidad.html" target="_blank" class="panel-close" style="text-decoration:none;background:rgba(22,163,74,0.15);border-color:rgba(22,163,74,0.3);color:#4ade80;">📖 Página completa</a>
       <button class="panel-close" onclick="cerrarPanel('panelConta')">Cerrar</button>
     </div>
     <div class="panel-body" id="contaBody">
@@ -3102,7 +3105,8 @@ function agregarGasto(){
   let cuenta = Number(document.getElementById("gastoCuenta")?.value ?? -1);
   if(!desc||monto<=0){ alert("Completa descripción y valor"); return; }
   if(!Array.isArray(gastosMemoria)) gastosMemoria = [];
-  gastosMemoria.push({descripcion:desc, categoria:cat, monto, fecha:new Date().toISOString(), cuenta:(cuenta>=0&&cuentasMemoria[cuenta])?cuentasMemoria[cuenta].nombre:'Efectivo'});
+  var _fhoy=(function(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)+'-'+(d.getDate()<10?'0':'')+d.getDate();})();
+  gastosMemoria.push({descripcion:desc, categoria:cat, monto, fecha:_fhoy, cuenta:(cuenta>=0&&cuentasMemoria[cuenta])?cuentasMemoria[cuenta].nombre:'Efectivo', timestamp:Date.now()});
   // Descontar de la cuenta seleccionada
   if(cuenta >= 0 && cuentasMemoria[cuenta]){
     registrarMovimiento({
@@ -6165,7 +6169,8 @@ window.agregarIngresoExtra=function(){
   if(!desc||monto<=0){alert('Completa descripción y valor');return;}
   if(ci>=0&&cuentasMemoria&&cuentasMemoria[ci]){cuentasMemoria[ci].saldo+=monto;cuentasGuardar();}
   if(!Array.isArray(movimientosContables))movimientosContables=[];
-  movimientosContables.push({tipo:'ingreso',monto:monto,cuenta:(cuentasMemoria&&cuentasMemoria[ci])?cuentasMemoria[ci].nombre:'Efectivo',descripcion:desc,categoria:cat,fecha:new Date().toISOString()});
+  var _fi=(typeof window._fechaLocalISO==='function')?window._fechaLocalISO():(function(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1<10?'0':'')+(d.getMonth()+1)+'-'+(d.getDate()<10?'0':'')+d.getDate();})();
+  movimientosContables.push({tipo:'ingreso',monto:monto,cuenta:(cuentasMemoria&&cuentasMemoria[ci])?cuentasMemoria[ci].nombre:'Efectivo',descripcion:desc,categoria:cat,fecha:_fi,timestamp:Date.now()});
   if(typeof window._mcPersist==='function') window._mcPersist();
   document.getElementById('ingresoDesc').value='';document.getElementById('ingresoMonto').value='';
   window._ingresosCache=(window._ingresosCache||0)+monto;renderConta('resumen');
