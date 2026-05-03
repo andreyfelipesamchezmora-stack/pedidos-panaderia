@@ -2650,6 +2650,23 @@ if(idxEf2 >= 0) {
   cuentasGuardar();
 }
 
+// ✅ SYNC: agregar también a movimientosContables para ver el ingreso en contabilidad.html
+try {
+  if(!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
+  window.movimientosContables.push({
+    id: 'caja_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+    tipo: 'ingreso',
+    monto: valor,
+    cuenta: 'Efectivo',
+    descripcion: descripcion,
+    categoria: tipo || 'INGRESO EXTRA',
+    fecha: cajaFechaHoy(),
+    timestamp: Date.now(),
+    _origenCaja: true
+  });
+  if(typeof window._mcPersist === 'function') window._mcPersist();
+} catch(e) { console.warn('sync caja->conta:', e); }
+
     document.getElementById("cajaIngresoTipo").value="";
     document.getElementById("cajaIngresoDesc").value="";
     document.getElementById("cajaIngresoValor").value="";
@@ -11444,7 +11461,7 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
   var _lM=0,_lG=0;
   // Helper: persistencia local inmediata para movimientos/gastos
   window._mcPersist=function(){try{var m=window.movimientosContables;if(Array.isArray(m)){LS.set('mc_local',JSON.stringify(m));try{sub('movimientos_contables',m);}catch(se){}}}catch(e){}try{var g=window.gastosMemoria;if(Array.isArray(g)){LS.set('gm_local',JSON.stringify(g));SS.set('gastos',JSON.stringify(g));try{sub('gastos_manuales',g);}catch(se){}}}catch(e){}};
-  setInterval(function(){if(_s)return;var m=window.movimientosContables;if(Array.isArray(m)){try{LS.set('mc_local',JSON.stringify(m));}catch(e){}if(m.length>0&&m.length!==_lM){_lM=m.length;sub('movimientos_contables',m);}}var g=window.gastosMemoria;if(!Array.isArray(g))try{g=JSON.parse(SS.get('gastos')||'[]');}catch(e){g=[];}try{LS.set('gm_local',JSON.stringify(g));}catch(e){}if(g.length>0&&g.length!==_lG){_lG=g.length;sub('gastos_manuales',g);}},3000);
+  setInterval(function(){if(_s)return;var m=window.movimientosContables;if(Array.isArray(m)){try{LS.set('mc_local',JSON.stringify(m));}catch(e){}if(m.length>0&&m.length!==_lM){_lM=m.length;sub('movimientos_contables',m);}}var g=window.gastosMemoria;if(!Array.isArray(g))try{g=JSON.parse(SS.get('gastos')||'[]');}catch(e){g=[];}try{LS.set('gm_local',JSON.stringify(g));}catch(e){}if(g.length>0&&g.length!==_lG){_lG=g.length;sub('gastos_manuales',g);}},1000);
   function initRT(){try{['clientes_config','clientes_datos','cuentas_bancarias','transferencias','movimientos_contables','gastos_manuales','nomina_config','cartera_deudas','cartera_pagos','cuotas_obligaciones','categorias_contables','cuentas_por_pagar','observaciones_marquee','deudas_store_v20','conta_movimientos_v2','conta_categorias_v2'].forEach(function(t){db.channel('r-'+t).on('postgres_changes',{event:'*',schema:'public',table:t,filter:'id=eq.1'},function(p){if(p.new&&p.new.datos!==undefined){apl(t,p.new.datos);setTimeout(function(){try{
   if(t==='clientes_config'&&typeof cargar==='function')cargar();
   if(t==='observaciones_marquee'&&typeof actualizarMarquee==='function')actualizarMarquee();
@@ -11457,6 +11474,58 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
   function start(){setTimeout(function(){init().catch(function(e){console.error('Sync err:',e);});badge();},100);}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
   console.log('☁️ V12 iniciado');
+
+  // ─── POLLING RÁPIDO DE CAMBIOS REMOTOS (1s) ──────
+  // Detecta cambios hechos en otros navegadores/dispositivos
+  var _lastTSPoll = {};
+  async function pollFast(){
+    if(_s) return;
+    for(var l in MAP){
+      var t = MAP[l];
+      try {
+        var r = await db.from(t).select('updated_at').eq('id',1).maybeSingle();
+        if(!r || !r.data) continue;
+        var ts = r.data.updated_at || '';
+        if(ts && ts !== (_lastTSPoll[t]||'')){
+          _lastTSPoll[t] = ts;
+          // Descargar y aplicar
+          var d = await baj(t);
+          if(d !== null){
+            var h = Array.isArray(d) ? d.length>0 : (d && typeof d==='object' && Object.keys(d).length>0);
+            if(h){
+              apl(t, d);
+              // Re-renderizar UI activa si corresponde
+              setTimeout(function(t2){return function(){
+                try {
+                  if((t2==='movimientos_contables'||t2==='gastos_manuales'||t2==='conta_movimientos_v2')){
+                    var _cc=document.getElementById('panelConta');
+                    if(_cc&&_cc.classList.contains('open')&&typeof renderConta==='function'){
+                      var _activeTab=document.querySelector('#panelConta .ftab.active');
+                      var _tabName=_activeTab?_activeTab.textContent.toLowerCase():'resumen';
+                      if(_tabName.indexOf('histor')>-1)renderConta('historial');
+                      else if(_tabName.indexOf('flujo')>-1)renderConta('flujo');
+                      else renderConta('resumen');
+                    }
+                  }
+                  if(t2==='cartera_deudas'||t2==='deudas_store_v20'){
+                    var _cp=document.getElementById('panelCartera');
+                    if(_cp&&_cp.classList.contains('open')&&typeof renderCartera==='function')renderCartera();
+                  }
+                  if(t2==='cuentas_bancarias'){
+                    try{window.cuentasMemoria=JSON.parse(localStorage.getItem('cuentasMemoria')||'[]');}catch(ex){}
+                  }
+                  if(t2==='clientes_config'&&typeof cargar==='function')cargar();
+                  if(t2==='observaciones_marquee'&&typeof actualizarMarquee==='function')actualizarMarquee();
+                } catch(e){}
+              };}(t), 100);
+            }
+          }
+        }
+      } catch(e){}
+    }
+  }
+  setInterval(pollFast, 1000);
+  console.log('⚡ Polling rápido (1s) activo');
 })();
 
 // =====================================================
