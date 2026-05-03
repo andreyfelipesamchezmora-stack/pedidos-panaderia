@@ -959,6 +959,31 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
     border:1px solid #333; background:#1e1e1e; color:white;
     margin-bottom:10px; color-scheme:dark;
   ">
+
+  <!-- ✅ BOTONES DE SYNC SUPABASE -->
+  <div id="syncControlsPanel" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;padding:10px;background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.1);border-radius:10px;">
+    <div style="font-size:10px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">☁️ Sincronización</div>
+    <div style="display:flex;gap:6px;">
+      <button onclick="if(window.SyncForzarSubirPanel)SyncForzarSubirPanel();else alert('Sync cargando, espera 2s');"
+              title="Forzar subida de TODOS tus datos a la nube"
+              style="flex:1;padding:8px;background:rgba(74,222,128,0.15);border:1px solid rgba(74,222,128,0.4);border-radius:8px;color:#4ade80;font-weight:700;cursor:pointer;font-size:11px;font-family:inherit;">
+        ⬆ Subir
+      </button>
+      <button onclick="if(window.SyncForzarBajarPanel)SyncForzarBajarPanel();else alert('Sync cargando, espera 2s');"
+              title="Forzar bajada de TODOS los datos desde la nube"
+              style="flex:1;padding:8px;background:rgba(96,165,250,0.15);border:1px solid rgba(96,165,250,0.4);border-radius:8px;color:#60a5fa;font-weight:700;cursor:pointer;font-size:11px;font-family:inherit;">
+        ⬇ Bajar
+      </button>
+    </div>
+    <div id="syncBadgePanel" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:6px;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.3);border-radius:8px;color:#4ade80;font-size:11px;font-weight:700;">
+      <span id="syncDotPanel" style="width:8px;height:8px;border-radius:50%;background:#4ade80;display:inline-block;animation:vnPulsePanel 2s infinite;"></span>
+      <span id="syncTextPanel">Iniciando…</span>
+    </div>
+  </div>
+  <style>
+    @keyframes vnPulsePanel { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+  </style>
+
   <button onclick="nuevoCliente()">➕ Agregar Cliente</button>
 
   <!-- MODULE BUTTONS -->
@@ -2649,32 +2674,6 @@ if(idxEf2 >= 0) {
   cuentasMemoria[idxEf2].saldo += valor;
   cuentasGuardar();
 }
-
-// ✅ SYNC: agregar también a movimientosContables (para sync con contabilidad.html)
-try {
-  if(!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
-  // Evitar duplicados (si existe ya un mov con misma fecha+monto+desc)
-  var hoy = (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10);
-  var dupe = window.movimientosContables.find(function(m){
-    return m && m.tipo === 'ingreso' && Number(m.monto) === valor &&
-           (m.descripcion || '') === descripcion &&
-           String(m.fecha || '').slice(0,10) === hoy;
-  });
-  if(!dupe) {
-    window.movimientosContables.push({
-      id: 'caja_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
-      tipo: 'ingreso',
-      monto: valor,
-      cuenta: 'Efectivo',
-      descripcion: descripcion,
-      categoria: tipo || 'INGRESO EXTRA',
-      fecha: hoy,
-      timestamp: Date.now(),
-      _origenCaja: true
-    });
-    if(typeof window._mcPersist === 'function') window._mcPersist();
-  }
-} catch(e){ console.warn('sync caja->conta:', e); }
 
     document.getElementById("cajaIngresoTipo").value="";
     document.getElementById("cajaIngresoDesc").value="";
@@ -13132,195 +13131,165 @@ window.vnDiagVentas = function(){
 })();
 
 // =====================================================================
-//  SYNC v6 — PANEL ↔ Supabase (compatible con contabilidad.html)
-// =====================================================================
-//  Garantiza que cuando alguien cambia algo en otro navegador/dispositivo,
-//  ESTE panel se entere en máximo 1 segundo. Sin perder datos locales.
+//  MÓDULO SYNC PANEL — Botones ⬆ Subir / ⬇ Bajar
+//  Sincroniza Recaudo, Cartera, Nómina, CXP, etc. entre navegadores
 // =====================================================================
 (function () {
   if (typeof db === 'undefined' || !db) {
-    console.warn('[SYNC v6 panel] Supabase db no disponible');
+    console.warn('[SYNC PANEL] db no disponible');
     return;
   }
 
-  // Tablas que importan para mostrar al usuario en tiempo real
+  // Tablas que sincronizamos (igual que el MAP del sync V12)
   var TABLAS = {
-    'mc_local':            'movimientos_contables',
-    'gm_local':            'gastos_manuales',
-    'conta_v2':            'conta_movimientos_v2',
-    'conta_categorias_v2': 'conta_categorias_v2',
-    'cuotas_obligaciones': 'cuotas_obligaciones',
-    'cuentasMemoria':      'cuentas_bancarias',
-    'cartera_deudas':      'cartera_deudas',
-    'vn_deudas_v20':       'deudas_store_v20',
-    'cuentas_por_pagar':   'cuentas_por_pagar',
-    'nomina_data':         'nomina_config',
-    'obs_marquee':         'observaciones_marquee'
+    'clientes':                'clientes_config',
+    'clientesDatos':           'clientes_datos',
+    'cuentasMemoria':          'cuentas_bancarias',
+    'transferenciasMem':       'transferencias',
+    'cuotas_obligaciones':     'cuotas_obligaciones',
+    'contabilidad_categorias': 'categorias_contables',
+    'cartera_deudas':          'cartera_deudas',
+    'cartera_pagos_historial': 'cartera_pagos',
+    'obs_marquee':             'observaciones_marquee',
+    'nomina_data':             'nomina_config',
+    'cuentas_por_pagar':       'cuentas_por_pagar',
+    'vn_deudas_v20':           'deudas_store_v20',
+    'conta_v2':                'conta_movimientos_v2',
+    'conta_categorias_v2':     'conta_categorias_v2',
+    'mc_local':                'movimientos_contables',
+    'gm_local':                'gastos_manuales'
   };
 
-  var _lastTS = {};
-  var _ownTS  = {};
-
-  function itemKey(m) {
-    if (!m || typeof m !== 'object') return JSON.stringify(m);
-    if (m.id) return 'id:' + m.id;
-    return [m.tipo||'', m.fecha||'', m.monto||'', String(m.descripcion||'').toLowerCase().trim()].join('|');
+  // ─── BADGE en sidebar ────────────────────────────
+  function setBadge(text, color) {
+    var b = document.getElementById('syncBadgePanel');
+    var d = document.getElementById('syncDotPanel');
+    var t = document.getElementById('syncTextPanel');
+    if (!b || !d || !t) return;
+    color = color || 'verde';
+    var colors = {
+      'verde':    {bg:'rgba(74,222,128,0.1)',  bd:'rgba(74,222,128,0.3)',  fg:'#4ade80', dot:'#4ade80'},
+      'amarillo': {bg:'rgba(251,191,36,0.12)', bd:'rgba(251,191,36,0.3)',  fg:'#fbbf24', dot:'#fbbf24'},
+      'rojo':     {bg:'rgba(248,113,113,0.12)',bd:'rgba(248,113,113,0.3)', fg:'#f87171', dot:'#f87171'}
+    };
+    var c = colors[color] || colors.verde;
+    b.style.background = c.bg;
+    b.style.borderColor = c.bd;
+    b.style.color = c.fg;
+    d.style.background = c.dot;
+    t.textContent = text;
   }
 
-  function mergeArr(loc, rem) {
-    var a = Array.isArray(loc) ? loc : [];
-    var b = Array.isArray(rem) ? rem : [];
-    var seen = {}, out = [];
-    a.concat(b).forEach(function (m) {
-      if (!m) return;
-      var k = itemKey(m);
-      if (!seen[k]) { seen[k] = true; out.push(m); }
-    });
-    return out.sort(function (x, y) {
-      return (Number(y.timestamp)||0) - (Number(x.timestamp)||0);
-    });
-  }
-
-  async function pullTS(tabla) {
+  // ─── PUSH async (sin .catch que rompe SDK v2) ────
+  async function pushTabla(tabla, datos) {
     try {
-      var r = await db.from(tabla).select('updated_at').eq('id', 1).maybeSingle();
-      return (r && r.data) ? (r.data.updated_at || '') : '';
-    } catch (e) { return ''; }
+      var payload = { id:1, datos:datos, updated_at: new Date().toISOString() };
+      var r = await db.from(tabla).upsert(payload, { onConflict: 'id' });
+      if (r && r.error) {
+        console.warn('[SYNC PANEL] push error en', tabla, r.error.message || r.error);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.warn('[SYNC PANEL] push catch en', tabla, e);
+      return false;
+    }
   }
 
-  async function pullFull(tabla) {
+  // ─── PULL async ──────────────────────────────────
+  async function pullTabla(tabla) {
     try {
       var r = await db.from(tabla).select('datos, updated_at').eq('id', 1).maybeSingle();
       if (!r || !r.data) return null;
-      _lastTS[tabla] = r.data.updated_at || '';
       return r.data.datos !== undefined ? r.data.datos : null;
     } catch (e) { return null; }
   }
 
-  function applyRemoteToLocal(lsKey, remoteData) {
-    if (remoteData === null || remoteData === undefined) return false;
-    var loc = null;
-    try { loc = JSON.parse(localStorage.getItem(lsKey) || 'null'); } catch (e) {}
-    var changed = false;
+  // ─── Aplicar dato remoto al localStorage del panel ─
+  function aplicarRemoto(lsKey, remoto) {
+    if (remoto === null || remoto === undefined) return false;
+    try {
+      var prev = localStorage.getItem(lsKey);
+      var nuevo = JSON.stringify(remoto);
+      if (prev === nuevo) return false;
+      localStorage.setItem(lsKey, nuevo);
 
-    // Para arrays principales: merge sin perder
-    if (lsKey === 'mc_local' || lsKey === 'gm_local' || lsKey === 'conta_v2') {
-      var locArr = Array.isArray(loc) ? loc : [];
-      var remArr = Array.isArray(remoteData) ? remoteData : [];
-      var merged = mergeArr(locArr, remArr);
-
-      var prevStr = JSON.stringify(locArr);
-      var newStr = JSON.stringify(merged);
-      if (prevStr !== newStr) {
-        localStorage.setItem(lsKey, newStr);
-        changed = true;
-        // Actualizar variables globales
-        if (lsKey === 'mc_local') {
-          window.movimientosContables = merged;
-        }
-        if (lsKey === 'gm_local') {
-          window.gastosMemoria = merged;
-          try { sessionStorage.setItem('gastos', newStr); } catch (e) {}
-        }
+      // Reflejar en variables globales (cada caso)
+      if (lsKey === 'clientes' && Array.isArray(remoto)) {
+        try { window.clientes = remoto; } catch(e) {}
       }
-    } else {
-      // Para objetos
-      var prevStr = JSON.stringify(loc);
-      var nextStr = JSON.stringify(remoteData);
-      if (prevStr !== nextStr) {
-        localStorage.setItem(lsKey, nextStr);
-        changed = true;
-        if (lsKey === 'cuentasMemoria') {
-          try { window.cuentasMemoria = remoteData; } catch (e) {}
-        }
+      if (lsKey === 'cuentasMemoria' && Array.isArray(remoto)) {
+        try { window.cuentasMemoria = remoto; } catch(e) {}
       }
+      if (lsKey === 'transferenciasMem') {
+        try { window.transferenciasMem = remoto; } catch(e) {}
+      }
+      if (lsKey === 'mc_local' && Array.isArray(remoto)) {
+        try { window.movimientosContables = remoto; } catch(e) {}
+      }
+      if (lsKey === 'gm_local' && Array.isArray(remoto)) {
+        try {
+          window.gastosMemoria = remoto;
+          sessionStorage.setItem('gastos', JSON.stringify(remoto));
+        } catch(e) {}
+      }
+      return true;
+    } catch (e) {
+      console.warn('[SYNC PANEL] aplicarRemoto error:', e);
+      return false;
     }
-
-    return changed;
   }
 
-  function refrescarUIActiva(lsKey) {
+  // ─── Refrescar UI activa después de bajar ──────────
+  function refrescarUI(claves) {
     try {
-      // Contabilidad
-      if (lsKey === 'mc_local' || lsKey === 'gm_local' || lsKey === 'conta_v2' || lsKey === 'cuotas_obligaciones') {
-        var pc = document.getElementById('panelConta');
-        if (pc && pc.classList.contains('open') && typeof renderConta === 'function') {
-          var activeTab = document.querySelector('#panelConta .ftab.active');
-          var tabName = activeTab ? activeTab.textContent.toLowerCase() : 'resumen';
-          if (tabName.indexOf('histor') > -1) renderConta('historial');
-          else if (tabName.indexOf('flujo') > -1) renderConta('flujo');
-          else if (tabName.indexOf('categ') > -1) renderConta('categorias');
-          else renderConta('resumen');
-        }
+      // Recaudo abierto
+      var pRec = document.getElementById('panelRecaudo');
+      if (pRec && pRec.classList.contains('open') && typeof renderRecaudo === 'function') {
+        renderRecaudo();
       }
-      // Cartera
-      if (lsKey === 'cartera_deudas' || lsKey === 'vn_deudas_v20') {
+      // Cartera abierta
+      if (claves.indexOf('cartera_deudas') > -1 || claves.indexOf('vn_deudas_v20') > -1 || claves.indexOf('cartera_pagos_historial') > -1) {
         var pCart = document.getElementById('panelCartera');
         if (pCart && pCart.classList.contains('open') && typeof renderCartera === 'function') {
           renderCartera();
         }
       }
-      // Cuentas bancarias
-      if (lsKey === 'cuentasMemoria') {
-        var pc = document.getElementById('panelConta');
-        if (pc && pc.classList.contains('open') && typeof renderConta === 'function') {
-          renderConta('cuentas');
-        }
+      // Nómina
+      if (claves.indexOf('nomina_data') > -1) {
+        var pNom = document.querySelector('#panelNomina, [id*="nomina"]');
+        if (pNom && typeof window.nominaRender === 'function') window.nominaRender();
+        else if (pNom && typeof window.renderNomina === 'function') window.renderNomina();
       }
       // Cuentas por pagar
-      if (lsKey === 'cuentas_por_pagar' && typeof window.cuentasPorPagarRender === 'function') {
-        window.cuentasPorPagarRender();
+      if (claves.indexOf('cuentas_por_pagar') > -1) {
+        if (typeof window.cuentasPorPagarRender === 'function') window.cuentasPorPagarRender();
+        else if (typeof window.renderCuentasPorPagar === 'function') window.renderCuentasPorPagar();
       }
-      // Nómina
-      if (lsKey === 'nomina_data' && typeof window.nominaRender === 'function') {
-        window.nominaRender();
+      // Contabilidad abierta
+      var pConta = document.getElementById('panelConta');
+      if (pConta && pConta.classList.contains('open') && typeof renderConta === 'function') {
+        var activeTab = document.querySelector('#panelConta .ftab.active');
+        var tabName = activeTab ? activeTab.textContent.toLowerCase() : 'resumen';
+        if (tabName.indexOf('histor') > -1) renderConta('historial');
+        else if (tabName.indexOf('flujo') > -1) renderConta('flujo');
+        else if (tabName.indexOf('cuent') > -1) renderConta('cuentas');
+        else if (tabName.indexOf('categ') > -1) renderConta('categorias');
+        else renderConta('resumen');
       }
+      // Lista de clientes (panel principal)
+      if (claves.indexOf('clientes') > -1 && typeof cargar === 'function') cargar();
       // Marquee
-      if (lsKey === 'obs_marquee' && typeof actualizarMarquee === 'function') {
-        actualizarMarquee();
-      }
-    } catch (e) {}
+      if (claves.indexOf('obs_marquee') > -1 && typeof actualizarMarquee === 'function') actualizarMarquee();
+    } catch (e) { console.warn('refrescarUI:', e); }
   }
 
-  // POLL agresivo cada 1 segundo
-  async function pollFast() {
-    if (document.hidden) return;
-    var anyChange = false;
-    var changedKeys = [];
-    for (var lsKey in TABLAS) {
-      var tabla = TABLAS[lsKey];
-      try {
-        var ts = await pullTS(tabla);
-        if (!ts) continue;
-        if (ts === _ownTS[tabla]) {
-          _lastTS[tabla] = ts;
-          continue;
-        }
-        if (ts !== (_lastTS[tabla] || '')) {
-          var remote = await pullFull(tabla);
-          if (remote !== null) {
-            if (applyRemoteToLocal(lsKey, remote)) {
-              anyChange = true;
-              changedKeys.push(lsKey);
-            }
-          }
-        }
-      } catch (e) {}
-    }
-    if (anyChange) {
-      changedKeys.forEach(refrescarUIActiva);
-    }
-  }
+  // ─── BOTÓN ⬆ Subir ──────────────────────────────
+  window.SyncForzarSubirPanel = async function () {
+    setBadge('Subiendo a la nube…', 'amarillo');
+    var subidos = 0, fallidos = 0;
+    var hoy = (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10);
 
-  // Iniciar después de que el panel esté listo
-  setTimeout(function () {
-    setInterval(pollFast, 1000);
-    console.log('⚡ SYNC v6 panel — polling 1s activo');
-  }, 2500);
-
-  // BOTONES manuales globales
-  window.SyncForzarSubirPanel = async function() {
-    console.log('[SYNC v6] Forzando subida...');
     for (var lsKey in TABLAS) {
       var tabla = TABLAS[lsKey];
       try {
@@ -13328,34 +13297,188 @@ window.vnDiagVentas = function(){
         if (!raw) continue;
         var datos = JSON.parse(raw);
         if (!datos) continue;
+        // Saltar arrays/objetos vacíos
         if (Array.isArray(datos) && datos.length === 0) continue;
-        if (typeof datos === 'object' && Object.keys(datos).length === 0) continue;
-        var ts = new Date().toISOString();
-        _ownTS[tabla] = ts;
-        await db.from(tabla).upsert({ id:1, datos:datos, updated_at:ts }, { onConflict:'id' });
-        console.log('  ✅ subido', lsKey);
-      } catch (e) { console.warn('  ❌', lsKey, e); }
+        if (typeof datos === 'object' && !Array.isArray(datos) && Object.keys(datos).length === 0) continue;
+
+        var ok = await pushTabla(tabla, datos);
+        if (ok) subidos++;
+        else fallidos++;
+        await new Promise(function (r) { setTimeout(r, 150); });
+      } catch (e) { fallidos++; }
     }
-    alert('✅ Subida forzada completa');
+
+    // También subir el recaudo del día (que va en otra tabla)
+    try {
+      var recRaw = localStorage.getItem('recaudo_' + hoy);
+      if (recRaw) {
+        var recData = JSON.parse(recRaw);
+        if (recData && Object.keys(recData).length > 0) {
+          await db.from('recaudo_diario').upsert({
+            fecha: hoy,
+            datos: recData,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'fecha' });
+          subidos++;
+        }
+      }
+    } catch (e) { console.warn('Error subiendo recaudo del día:', e); }
+
+    if (fallidos > 0) {
+      setBadge('✅ ' + subidos + ' OK · ⚠ ' + fallidos + ' fallaron', 'amarillo');
+      console.warn('[SYNC PANEL] Subida con errores. Revisa políticas RLS de las tablas que fallaron.');
+    } else {
+      setBadge('✅ ' + subidos + ' tablas subidas', 'verde');
+    }
+    setTimeout(function () { setBadge('En vivo · Supabase', 'verde'); }, 3500);
   };
 
-  window.SyncForzarBajarPanel = async function() {
-    console.log('[SYNC v6] Forzando bajada...');
+  // ─── BOTÓN ⬇ Bajar ──────────────────────────────
+  window.SyncForzarBajarPanel = async function () {
+    setBadge('Bajando de la nube…', 'amarillo');
+    var bajados = 0;
+    var clavesCambio = [];
+
     for (var lsKey in TABLAS) {
       var tabla = TABLAS[lsKey];
       try {
-        var remote = await pullFull(tabla);
-        if (remote !== null) {
-          applyRemoteToLocal(lsKey, remote);
-          refrescarUIActiva(lsKey);
-          console.log('  ✅ bajado', lsKey);
+        var remoto = await pullTabla(tabla);
+        if (remoto !== null) {
+          if (aplicarRemoto(lsKey, remoto)) {
+            bajados++;
+            clavesCambio.push(lsKey);
+          }
         }
-      } catch (e) { console.warn('  ❌', lsKey, e); }
+      } catch (e) {}
     }
-    alert('✅ Bajada forzada completa');
+
+    // También bajar el recaudo del día
+    try {
+      var hoy = (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10);
+      var rRec = await db.from('recaudo_diario').select('datos').eq('fecha', hoy).maybeSingle();
+      if (rRec && rRec.data && rRec.data.datos) {
+        localStorage.setItem('recaudo_' + hoy, JSON.stringify(rRec.data.datos));
+        clavesCambio.push('recaudo_' + hoy);
+      }
+    } catch (e) {}
+
+    refrescarUI(clavesCambio);
+    setBadge('✅ ' + bajados + ' tablas bajadas', 'verde');
+    setTimeout(function () { setBadge('En vivo · Supabase', 'verde'); }, 3500);
   };
 
-  console.log('✅ SYNC v6 PANEL cargado — usar SyncForzarSubirPanel() o SyncForzarBajarPanel() en consola');
+  // Estado inicial del badge después de cargar
+  setTimeout(function () {
+    setBadge('En vivo · Supabase', 'verde');
+  }, 1500);
+
+  // Ocultar el badge viejo flotante (vnSB) si aparece
+  setInterval(function () {
+    var v = document.getElementById('vnSB');
+    if (v) v.style.display = 'none';
+  }, 2000);
+
+  // ─────────────────────────────────────────────────────
+  // 🚀 AUTO-SUBIR AL CERRAR PESTAÑA / CAMBIAR DE TAB
+  // ─────────────────────────────────────────────────────
+  // Cuando el usuario cierra la pestaña, recarga, o cambia a otra app,
+  // subimos TODOS los datos pendientes a Supabase usando sendBeacon
+  // (no se cancela aunque la pestaña ya esté cerrándose).
+  // ─────────────────────────────────────────────────────
+
+  function _ssBuildPayload(tabla, datos) {
+    return JSON.stringify({
+      id: 1,
+      datos: datos,
+      updated_at: new Date().toISOString()
+    });
+  }
+
+  function _ssSubirPorBeacon(tabla, payloadStr) {
+    try {
+      // sendBeacon solo soporta POST, no UPSERT directo de Supabase.
+      // Truco: usar el endpoint REST con el header Prefer=resolution=merge-duplicates
+      // que actúa como upsert.
+      var url = SUPABASE_URL + '/rest/v1/' + tabla + '?on_conflict=id';
+      var blob = new Blob([payloadStr], { type: 'application/json' });
+      // sendBeacon NO puede mandar headers custom, así que usamos fetch con keepalive
+      // que SÍ permite headers y se ejecuta aunque la pestaña se cierre.
+      fetch(url, {
+        method: 'POST',
+        keepalive: true,
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': 'Bearer ' + SUPABASE_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates'
+        },
+        body: payloadStr
+      }).catch(function(){});
+    } catch (e) {}
+  }
+
+  function _ssAutoSubirTodo() {
+    try {
+      for (var lsKey in TABLAS) {
+        var tabla = TABLAS[lsKey];
+        try {
+          var raw = localStorage.getItem(lsKey);
+          if (!raw) continue;
+          var datos = JSON.parse(raw);
+          if (!datos) continue;
+          if (Array.isArray(datos) && datos.length === 0) continue;
+          if (typeof datos === 'object' && !Array.isArray(datos) && Object.keys(datos).length === 0) continue;
+          _ssSubirPorBeacon(tabla, _ssBuildPayload(tabla, datos));
+        } catch (e) {}
+      }
+      // Recaudo del día (tabla con fecha como key)
+      try {
+        var hoy = (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10);
+        var recRaw = localStorage.getItem('recaudo_' + hoy);
+        if (recRaw) {
+          var recData = JSON.parse(recRaw);
+          if (recData && Object.keys(recData).length > 0) {
+            var url = SUPABASE_URL + '/rest/v1/recaudo_diario?on_conflict=fecha';
+            var payload = JSON.stringify({
+              fecha: hoy,
+              datos: recData,
+              updated_at: new Date().toISOString()
+            });
+            fetch(url, {
+              method: 'POST',
+              keepalive: true,
+              headers: {
+                'apikey': SUPABASE_KEY,
+                'Authorization': 'Bearer ' + SUPABASE_KEY,
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates'
+              },
+              body: payload
+            }).catch(function(){});
+          }
+        }
+      } catch (e) {}
+      console.log('[SYNC PANEL] Auto-subida disparada antes de cerrar');
+    } catch (e) { console.warn('[SYNC PANEL] auto-subir error:', e); }
+  }
+
+  // beforeunload: cuando el usuario está cerrando la pestaña / navegando fuera
+  window.addEventListener('beforeunload', _ssAutoSubirTodo);
+
+  // pagehide: más confiable en móviles y al cambiar de tab
+  window.addEventListener('pagehide', _ssAutoSubirTodo);
+
+  // visibilitychange: cuando el usuario cambia a otra pestaña/app
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') {
+      _ssAutoSubirTodo();
+    }
+  });
+
+  // ─────────────────────────────────────────────────────
+
+  console.log('✅ SYNC PANEL cargado — botones ⬆ Subir / ⬇ Bajar disponibles en sidebar');
+  console.log('✅ AUTO-SUBIR al cerrar pestaña activado');
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
