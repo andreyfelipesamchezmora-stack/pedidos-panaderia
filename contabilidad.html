@@ -1177,8 +1177,10 @@ document.addEventListener('DOMContentLoaded', App.init);
 
 // =====================================================
 //  SYNC MODULE — contabilidad.html ↔ Supabase
-//  Sincroniza conta_v2 y conta_categorias_v2 de forma
-//  bidireccional e independiente del panel principal.
+//  - Merge inteligente por ID (nunca pierde datos)
+//  - Push inmediato en cada escritura
+//  - Realtime bidireccional sin loop
+//  - Sin delays innecesarios
 // =====================================================
 (function () {
   if (!db) return;
@@ -1188,18 +1190,17 @@ document.addEventListener('DOMContentLoaded', App.init);
   var K_MOVS = 'conta_v2';
   var K_CATS = 'conta_categorias_v2';
 
-  var _pushing = {};  // evita loops infinitos
+  var _pushing = {};      // anti-loop: evita push mientras llega realtime
+  var _lsOrig = localStorage.setItem.bind(localStorage);  // LS nativo sin override
 
-  // ── Push a Supabase ─────────────────────────────
+  // ── Push inmediato a Supabase ────────────────────
   function push(tabla, datos) {
     if (_pushing[tabla]) return;
     _pushing[tabla] = true;
-    try {
-      db.from(tabla)
-        .upsert({ id: 1, datos: datos, updated_at: new Date().toISOString() }, { onConflict: 'id' })
-        .then(function () { _pushing[tabla] = false; })
-        .catch(function () { _pushing[tabla] = false; });
-    } catch (e) { _pushing[tabla] = false; }
+    db.from(tabla)
+      .upsert({ id: 1, datos: datos, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+      .then(function () { setTimeout(function(){ _pushing[tabla] = false; }, 300); })
+      .catch(function () { _pushing[tabla] = false; });
   }
 
   // ── Pull de Supabase ─────────────────────────────
@@ -1210,19 +1211,35 @@ document.addEventListener('DOMContentLoaded', App.init);
     } catch (e) { return null; }
   }
 
-  // ── Interceptar localStorage.setItem solo para nuestras claves ──
-  var _lsOrig = localStorage.setItem.bind(localStorage);
+  // ── Merge de arrays por ID (nunca pierde entradas) ──
+  // Combina local + remoto, sin duplicados por id
+  function mergeByID(local, remote) {
+    if (!Array.isArray(local))  local  = [];
+    if (!Array.isArray(remote)) remote = [];
+    var seen = {};
+    var result = [];
+    local.concat(remote).forEach(function (m) {
+      if (!m) return;
+      var key = m.id || (m.tipo+'|'+m.fecha+'|'+m.monto+'|'+m.descripcion);
+      if (seen[key]) return;
+      seen[key] = true;
+      result.push(m);
+    });
+    // Ordenar por timestamp descendente
+    result.sort(function (a, b) { return (b.timestamp||0) - (a.timestamp||0); });
+    return result;
+  }
+
+  // ── Interceptar localStorage para push automático ──
   localStorage.setItem = function (k, v) {
-    _lsOrig(k, v);  // siempre escribir local primero
-    if (k === K_MOVS) {
-      try { push(T_MOVS, JSON.parse(v)); } catch (e) {}
-    }
-    if (k === K_CATS) {
-      try { push(T_CATS, JSON.parse(v)); } catch (e) {}
-    }
+    _lsOrig(k, v);
+    if (_pushing[T_MOVS] && k === K_MOVS) return;  // evitar eco del realtime
+    if (_pushing[T_CATS] && k === K_CATS) return;
+    if (k === K_MOVS) { try { push(T_MOVS, JSON.parse(v)); } catch (e) {} }
+    if (k === K_CATS) { try { push(T_CATS, JSON.parse(v)); } catch (e) {} }
   };
 
-  // ── Actualizar UI según sección activa ──────────
+  // ── Refresh UI activa ────────────────────────────
   function refreshUI() {
     var sec = document.querySelector('.sec.on');
     if (!sec) return;
@@ -1232,88 +1249,112 @@ document.addEventListener('DOMContentLoaded', App.init);
     if (sec.id === 'categorias') UI.categorias();
   }
 
-  function setBadge(txt) {
+  function setBadge(txt, ok) {
     var b = document.getElementById('syncBadge');
-    if (b) b.innerHTML = '<span class="sync-dot"></span> ' + txt;
+    if (!b) return;
+    var dot = ok === false
+      ? '<span class="sync-dot" style="background:var(--red)"></span>'
+      : '<span class="sync-dot"></span>';
+    b.innerHTML = dot + ' ' + txt;
   }
 
-  // ── Init: pull inicial + realtime ───────────────
+  // ── INIT: pull + merge + push si hay diferencia ──
   async function init() {
     setBadge('Sincronizando…');
 
-    // ── conta_v2 (movimientos manuales) ──
+    // ── 1. Movimientos manuales (conta_v2) ──────────
     try {
       var remoteMovs = await pull(T_MOVS);
       var localMovs  = [];
       try { localMovs = JSON.parse(localStorage.getItem(K_MOVS) || '[]'); } catch (e) {}
-      if (!Array.isArray(localMovs)) localMovs = [];
 
-      if (Array.isArray(remoteMovs) && remoteMovs.length > 0) {
-        if (remoteMovs.length >= localMovs.length) {
-          // Supabase tiene más → sobrescribir local (sin triggear push)
-          _lsOrig(K_MOVS, JSON.stringify(remoteMovs));
-        } else {
-          // Local tiene más → subir a Supabase
-          push(T_MOVS, localMovs);
-        }
-      } else if (localMovs.length > 0) {
-        // Supabase vacío → subir local
-        push(T_MOVS, localMovs);
+      var merged = mergeByID(localMovs, remoteMovs);
+
+      // Solo actuar si el merge difiere de lo que tenemos
+      var localLen  = localMovs.length;
+      var remoteLen = Array.isArray(remoteMovs) ? remoteMovs.length : 0;
+      var mergedLen = merged.length;
+
+      if (mergedLen > localLen) {
+        // Hay entradas nuevas en remoto → actualizar local sin triggear push
+        _pushing[T_MOVS] = true;
+        _lsOrig(K_MOVS, JSON.stringify(merged));
+        setTimeout(function () { _pushing[T_MOVS] = false; }, 300);
       }
-    } catch (e) {}
+      if (mergedLen > remoteLen) {
+        // Hay entradas nuevas en local → subir a Supabase
+        push(T_MOVS, merged);
+      }
+    } catch (e) { console.warn('[ContaSync] movs:', e); }
 
-    // ── conta_categorias_v2 (categorías) ──
+    // ── 2. Categorías (conta_categorias_v2) ─────────
     try {
       var remoteCats = await pull(T_CATS);
       var localCats  = null;
       try { localCats = JSON.parse(localStorage.getItem(K_CATS) || 'null'); } catch (e) {}
 
-      var remoteHasData = remoteCats && typeof remoteCats === 'object'
-                          && Array.isArray(remoteCats.ingresos) && remoteCats.ingresos.length > 0;
+      var remoteOk = remoteCats && Array.isArray(remoteCats.ingresos) && remoteCats.ingresos.length > 0;
 
-      if (remoteHasData) {
-        if (!localCats) {
-          // Supabase tiene cats, local no → descargar
-          _lsOrig(K_CATS, JSON.stringify(remoteCats));
-        }
-        // Si ambos tienen, no sobreescribir (local es fuente de verdad en este dispositivo)
+      if (remoteOk && !localCats) {
+        // Supabase tiene, local no → descargar
+        _pushing[T_CATS] = true;
+        _lsOrig(K_CATS, JSON.stringify(remoteCats));
+        setTimeout(function () { _pushing[T_CATS] = false; }, 300);
+      } else if (localCats && !remoteOk) {
+        // Local tiene, Supabase no → subir
+        push(T_CATS, localCats);
       } else if (localCats) {
-        // Local tiene cats, Supabase no → subir
+        // Ambos tienen → mantener local y asegurar Supabase actualizado
         push(T_CATS, localCats);
       }
-    } catch (e) {}
+    } catch (e) { console.warn('[ContaSync] cats:', e); }
 
     refreshUI();
-    setBadge('Supabase ✓');
+    setBadge('Supabase ✓', true);
 
-    // ── Realtime: escuchar cambios de otros dispositivos ──
+    // ── 3. Realtime: cambios de otros dispositivos ──
     try {
-      db.channel('conta-html-sync')
+      db.channel('conta-html-rt')
         .on('postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: T_MOVS, filter: 'id=eq.1' },
+          { event: '*', schema: 'public', table: T_MOVS, filter: 'id=eq.1' },
           function (p) {
             if (!p.new || p.new.datos === undefined) return;
-            // Escribir sin triggear push de vuelta (_lsOrig en lugar de localStorage.setItem)
-            try { _lsOrig(K_MOVS, JSON.stringify(p.new.datos)); } catch (e) {}
+            var incoming = p.new.datos;
+            // Merge con local para no perder cambios recientes en este dispositivo
+            var cur = [];
+            try { cur = JSON.parse(localStorage.getItem(K_MOVS) || '[]'); } catch (e) {}
+            var merged2 = mergeByID(cur, incoming);
+            _pushing[T_MOVS] = true;
+            _lsOrig(K_MOVS, JSON.stringify(merged2));
+            setTimeout(function () { _pushing[T_MOVS] = false; }, 300);
             refreshUI();
-            setBadge('Actualizado en tiempo real ✓');
+            setBadge('Actualizado ✓', true);
           }
         )
         .on('postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: T_CATS, filter: 'id=eq.1' },
+          { event: '*', schema: 'public', table: T_CATS, filter: 'id=eq.1' },
           function (p) {
             if (!p.new || p.new.datos === undefined) return;
-            try { _lsOrig(K_CATS, JSON.stringify(p.new.datos)); } catch (e) {}
+            _pushing[T_CATS] = true;
+            _lsOrig(K_CATS, JSON.stringify(p.new.datos));
+            setTimeout(function () { _pushing[T_CATS] = false; }, 300);
             var sec = document.querySelector('.sec.on');
             if (sec && sec.id === 'categorias') UI.categorias();
           }
         )
-        .subscribe();
-    } catch (e) {}
+        .subscribe(function (status) {
+          if (status === 'SUBSCRIBED') setBadge('En vivo ✓', true);
+          if (status === 'CHANNEL_ERROR') setBadge('Sin conexión', false);
+        });
+    } catch (e) { setBadge('Error RT', false); }
   }
 
-  // Arrancar sync 2s después de que la UI cargue
-  setTimeout(init, 2000);
+  // Arrancar inmediatamente al cargar la página
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
 </script>
 </body>
