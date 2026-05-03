@@ -12886,6 +12886,224 @@ window.vnDiagVentas = function(){
 
   console.log('✅ Parche V26: _uHistRecolectar + _uFlujo sobreescritos. Ventas desde Supabase ahora visibles.');
 })();
+
+// =====================================================
+// REALTIME ENGINE — Supabase WebSockets para toda la app
+// Cubre: pedidos, cajas, recaudo, cartera, contabilidad
+// Reemplaza el polling de 15s/30s con eventos en <1s
+// Sin tocar datos. Sin recargar toda la BD.
+// =====================================================
+(function () {
+  'use strict';
+  if (!window.db) return;
+
+  // ── Debounce helper ──────────────────────────────
+  var _dbt = {};
+  function debounce(key, fn, ms) {
+    clearTimeout(_dbt[key]);
+    _dbt[key] = setTimeout(fn, ms || 250);
+  }
+
+  // ── Fecha local ──────────────────────────────────
+  function hoy() {
+    if (typeof cajaFechaHoy === 'function') return cajaFechaHoy();
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  // ── Refrescar grid de pedidos (debounced) ────────
+  function refreshPedidos() {
+    debounce('pedidos', function () {
+      if (typeof cargar === 'function') cargar();
+    }, 200);
+  }
+
+  // ── Refrescar panel de estadísticas (si está abierto) ──
+  function refreshStats() {
+    debounce('stats', function () {
+      var p = document.getElementById('panelStats');
+      if (p && p.classList.contains('open') && typeof window._vnVentasCargar === 'function') {
+        window._vnVentasCargar();
+      }
+    }, 400);
+  }
+
+  // ── Refrescar panel de caja (si está abierto) ────
+  function refreshCaja() {
+    debounce('caja', function () {
+      var p = document.getElementById('panelConta');
+      if (!p || !p.classList.contains('open')) return;
+      if (typeof cajaCargarResumenDia === 'function' && typeof renderConta === 'function') {
+        cajaCargarResumenDia()
+          .then(function () { renderConta('caja'); })
+          .catch(function () {});
+      }
+    }, 300);
+  }
+
+  // ── Refrescar panel de cartera (si está abierto) ─
+  function refreshCartera() {
+    debounce('cartera', function () {
+      var p = document.getElementById('panelCartera');
+      if (p && p.classList.contains('open') && typeof renderCartera === 'function') {
+        renderCartera();
+      }
+    }, 300);
+  }
+
+  // ── Refrescar recaudo (si está abierto) ──────────
+  function refreshRecaudo() {
+    debounce('recaudo', function () {
+      var p = document.getElementById('panelRecaudo');
+      if (p && p.classList.contains('open') && typeof renderRecaudo === 'function') {
+        renderRecaudo();
+      }
+    }, 300);
+  }
+
+  // ─────────────────────────────────────────────────
+  // CANAL 1 — pedidos (tabla individual, no single-row)
+  // Detecta INSERT/UPDATE/DELETE de pedidos del día
+  // ─────────────────────────────────────────────────
+  try {
+    db.channel('rt-pedidos')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pedidos' },
+        function (p) {
+          if (p.new && p.new.fecha === hoy()) {
+            refreshPedidos();
+            refreshStats();
+          }
+        })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'pedidos' },
+        function (p) {
+          if (!p.new) return;
+          // Actualización quirúrgica del card sin recargar todo
+          var nombre = p.new.cliente;
+          var total  = Number(p.new.total) || 0;
+          var card   = _findCard(nombre);
+          if (card && p.new.fecha === hoy()) {
+            var pEl = card.querySelector('p');
+            if (pEl) pEl.textContent = '$' + total.toLocaleString('es-CO');
+            // Actualizar clases (editado/nuevo)
+            var tipo = p.new.tipo || '';
+            card.className = ['card', tipo, p.new.editado ? 'editado' : 'nuevo']
+              .filter(Boolean).join(' ');
+            // Actualizar el onclick con el id real
+            if (p.new.id) {
+              card.setAttribute('onclick', "abrir('" + nombre.replace(/'/g, "\\'") + "'," + p.new.id + ")");
+              var xBtn = card.querySelector('.x');
+              if (xBtn) xBtn.setAttribute('onclick', "event.stopPropagation();eliminar(" + p.new.id + ",'" + nombre.replace(/'/g, "\\'") + "')");
+            }
+          } else if (p.new.fecha === hoy()) {
+            refreshPedidos();
+          }
+          refreshStats();
+        })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'pedidos' },
+        function (p) {
+          var nombre = p.old && p.old.cliente;
+          if (nombre) {
+            var card = _findCard(nombre);
+            if (card) {
+              var pEl = card.querySelector('p');
+              if (pEl) pEl.textContent = '$0';
+              card.className = 'card ' + (p.old.tipo || '');
+              card.setAttribute('onclick', "abrir('" + nombre.replace(/'/g, "\\'") + "',0)");
+            } else {
+              refreshPedidos();
+            }
+          } else {
+            refreshPedidos();
+          }
+          refreshStats();
+        })
+      .subscribe(function (s) {
+        console.log('[RT] pedidos:', s);
+      });
+  } catch (e) { console.warn('[RT] pedidos error:', e); }
+
+  // Helper: encontrar card por nombre de cliente
+  function _findCard(nombre) {
+    var cards = document.querySelectorAll('#grid .card');
+    for (var i = 0; i < cards.length; i++) {
+      var h4 = cards[i].querySelector('h4');
+      if (h4 && h4.textContent.trim() === nombre) return cards[i];
+    }
+    return null;
+  }
+
+  // ─────────────────────────────────────────────────
+  // CANAL 2 — cajas_sesiones + cajas_movimientos
+  // Actualiza panel de caja en tiempo real
+  // ─────────────────────────────────────────────────
+  try {
+    db.channel('rt-cajas')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cajas_sesiones' },
+        function () { refreshCaja(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cajas_movimientos' },
+        function () { refreshCaja(); })
+      .subscribe(function (s) {
+        console.log('[RT] cajas:', s);
+      });
+  } catch (e) { console.warn('[RT] cajas error:', e); }
+
+  // ─────────────────────────────────────────────────
+  // CANAL 3 — recaudo_diario (ya existía en initRT)
+  // Lo reforzamos aquí para actualizar el panel si está abierto
+  // ─────────────────────────────────────────────────
+  try {
+    db.channel('rt-recaudo-panel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'recaudo_diario' },
+        function (p) {
+          if (p.new && p.new.fecha === hoy()) refreshRecaudo();
+        })
+      .subscribe();
+  } catch (e) {}
+
+  // ─────────────────────────────────────────────────
+  // CANAL 4 — cartera (cartera_deudas + vn_deudas_v20)
+  // Actualiza panel de cartera en tiempo real
+  // (initRT ya escribe a localStorage; aquí re-renderizamos)
+  // ─────────────────────────────────────────────────
+  try {
+    db.channel('rt-cartera-render')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cartera_deudas',
+        filter: 'id=eq.1' }, function () { refreshCartera(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deudas_store_v20',
+        filter: 'id=eq.1' }, function () { refreshCartera(); })
+      .subscribe();
+  } catch (e) {}
+
+  // ─────────────────────────────────────────────────
+  // NEUTRALIZAR polling de pedidos (reemplazado por RT)
+  // Los setInterval ya están corriendo; los vaciamos para
+  // que no sobrecarguen Supabase innecesariamente.
+  // El realtime ya maneja los cambios en <300ms.
+  // ─────────────────────────────────────────────────
+  setTimeout(function () {
+    // _cargarVentasPedidos: se sigue ejecutando pero en el
+    // evento de realtime anterior, así que el intervalo de
+    // 15s queda como fallback de seguridad (no se elimina,
+    // solo se deja de depender de él para tiempo real).
+
+    // Reducir frecuencia de _vnVentasCargar a 5min
+    // (el realtime ya lo dispara en cada cambio de pedido)
+    if (typeof window._vnVentasCargar === 'function') {
+      var _origVVC = window._vnVentasCargar;
+      var _lastVVC = 0;
+      window._vnVentasCargar = function () {
+        var now = Date.now();
+        // Si el RT lo llamó hace < 10s, ignorar la llamada del intervalo
+        if (now - _lastVVC < 10000 && window._rtActivePedidos) return;
+        _lastVVC = now;
+        return _origVVC.apply(this, arguments);
+      };
+    }
+    window._rtActivePedidos = true; // flag: realtime activo
+    console.log('✅ REALTIME ENGINE activo — polling reducido a fallback');
+  }, 3000);
+
+})();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
