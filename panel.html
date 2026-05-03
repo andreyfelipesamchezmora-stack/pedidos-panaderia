@@ -6473,7 +6473,7 @@ async function _restarFacturasRandom(){
   var fecha=cajaFechaHoy();var res;try{res=await db.from('pedidos').select('*').eq('fecha',fecha);}catch(e){return;}
   if(!res||res.error||!Array.isArray(res.data))return;
   var estado={};try{estado=JSON.parse(localStorage.getItem('recaudo_'+fecha)||'{}');}catch(e){}
-  var elegibles=res.data.filter(function(p){var total=Number(p.total)||0;if(total<=10000)return false;var est=estado[p.cliente]||{};if((Number(est.deudaCliente)||0)>0||(Number(est.deudaMia)||0)>0)return false;try{if(typeof recaudoGetDeudaHistorica==='function'){var h=recaudoGetDeudaHistorica(p.cliente);if(h.deudaCliente>0||h.deudaMia>0)return false;}}catch(e){}return true;});
+  var elegibles=res.data.filter(function(p){var total=Number(p.total)||0;if(total<=10000)return false;try{var _cl2=Array.isArray(window.clientes)?window.clientes:JSON.parse(localStorage.getItem('clientes')||'[]');var _ci2=_cl2.find(function(c){return(typeof c==='string'?c:(c&&c.nombre||''))===p.cliente;});if(_ci2&&((_ci2.tipo||'').toLowerCase()==='lejano'))return false;}catch(e2){}var est=estado[p.cliente]||{};if((Number(est.deudaCliente)||0)>0||(Number(est.deudaMia)||0)>0)return false;try{if(typeof recaudoGetDeudaHistorica==='function'){var h=recaudoGetDeudaHistorica(p.cliente);if(h.deudaCliente>0||h.deudaMia>0)return false;}}catch(e){}return true;});
   if(elegibles.length===0)return;var pedido=elegibles[Math.floor(Math.random()*elegibles.length)];
   try{await db.from('pedidos').update({total:Math.max((Number(pedido.total)||0)-10000,0)}).eq('id',pedido.id);}catch(e){}
   if(typeof cargar==='function')cargar();
@@ -7891,19 +7891,321 @@ window.mostrarRangoStats = function(){
   }
   .mc-btn-ok:hover, .mc-btn-cancel:hover { transform: translateY(-1px); }
 
-  /* Modal original de pedido */
-  .modal-content {
-    border-radius: 24px !important;
-    box-shadow: 0 32px 80px rgba(0,0,0,0.4) !important;
+  /* ============================================================
+     MODAL PEDIDO — REDISEÑO PREMIUM
+     Solo CSS / no toca JS ni datos
+     ============================================================ */
+
+  /* Overlay */
+  #modalPedido {
+    background: rgba(2,8,28,0.88) !important;
+    backdrop-filter: blur(14px) saturate(160%) !important;
   }
 
-  .producto {
-    border-radius: 14px !important;
-    transition: all 0.2s var(--vn-ease) !important;
+  /* Caja principal */
+  #modalPedido .modal-content {
+    background: #f1f5f9 !important;
+    border-radius: 28px !important;
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,0.08),
+      0 30px 80px rgba(0,0,0,0.45),
+      0 6px 20px rgba(0,0,0,0.12) !important;
+    padding: 0 !important;
+    max-width: 980px !important;
+    border: none !important;
+    overflow: hidden !important;
   }
-  .producto:hover {
-    transform: translateY(-1px);
-    box-shadow: var(--vn-shadow-sm);
+
+  /* Barra top con botón cerrar */
+  #modalPedido .modal-content > div:first-child {
+    background: linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%) !important;
+    padding: 14px 20px !important;
+    border-radius: 28px 28px 0 0 !important;
+    display: flex !important;
+    justify-content: flex-end !important;
+    align-items: center !important;
+  }
+  #modalPedido .modal-content > div:first-child button {
+    background: rgba(255,255,255,0.12) !important;
+    border: 1px solid rgba(255,255,255,0.22) !important;
+    border-radius: 10px !important;
+    color: #e2e8f0 !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    padding: 7px 16px !important;
+    cursor: pointer !important;
+    transition: background 0.15s !important;
+    letter-spacing: 0.04em !important;
+  }
+  #modalPedido .modal-content > div:first-child button:hover {
+    background: rgba(255,255,255,0.24) !important;
+  }
+
+  /* Título cliente */
+  #clienteTitulo {
+    font-size: 21px !important;
+    font-weight: 900 !important;
+    color: #0f172a !important;
+    margin: 0 !important;
+    padding: 16px 22px 12px !important;
+    letter-spacing: -0.02em !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    background: #ffffff !important;
+  }
+
+  /* Wrapper interior */
+  #modalPedido .modal-content > div:nth-child(3) {
+    padding: 18px 20px !important;
+  }
+
+  /* === TARJETAS DE PRODUCTO === */
+  #modalPedido .producto {
+    background: #ffffff !important;
+    border: 1.5px solid #e2e8f0 !important;
+    border-radius: 18px !important;
+    padding: 14px 16px !important;
+    margin-bottom: 10px !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06) !important;
+    transition: box-shadow 0.2s, transform 0.2s, border-color 0.2s !important;
+    gap: 14px !important;
+  }
+  #modalPedido .producto:nth-child(even),
+  #modalPedido .producto:nth-child(odd) {
+    background: #ffffff !important;
+  }
+  #modalPedido .producto:hover {
+    box-shadow: 0 6px 22px rgba(0,0,0,0.13) !important;
+    transform: translateY(-2px) !important;
+    border-color: #94a3b8 !important;
+  }
+  #modalPedido .producto.activo-cant {
+    background: #f0fdf4 !important;
+    border-color: #4ade80 !important;
+    box-shadow: 0 0 0 3px rgba(74,222,128,0.25), 0 4px 16px rgba(74,222,128,0.15) !important;
+  }
+  #modalPedido .producto.activo-din {
+    background: #eff6ff !important;
+    border-color: #60a5fa !important;
+    box-shadow: 0 0 0 3px rgba(96,165,250,0.25), 0 4px 16px rgba(96,165,250,0.15) !important;
+  }
+  #modalPedido .producto img {
+    width: 88px !important;
+    height: 88px !important;
+    border-radius: 14px !important;
+    object-fit: cover !important;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.14) !important;
+    flex-shrink: 0 !important;
+  }
+  #modalPedido .producto b,
+  #modalPedido .producto .nombre {
+    font-size: 15px !important;
+    font-weight: 800 !important;
+    color: #1e293b !important;
+    display: block !important;
+    margin-bottom: 8px !important;
+    letter-spacing: -0.01em !important;
+  }
+  #modalPedido .producto input[type="number"],
+  #modalPedido .producto input[type="text"] {
+    background: #f8fafc !important;
+    border: 1.5px solid #e2e8f0 !important;
+    border-radius: 10px !important;
+    color: #1e293b !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    padding: 8px 12px !important;
+    width: 100% !important;
+    transition: border-color 0.15s, box-shadow 0.15s !important;
+    margin-top: 4px !important;
+  }
+  #modalPedido .producto input:focus {
+    border-color: #6366f1 !important;
+    outline: none !important;
+    background: #fff !important;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.18) !important;
+  }
+
+  /* === PANEL DE BOTONES (sticky) === */
+  #modalPedido .panel-botones {
+    background: #1e293b !important;
+    border-radius: 20px !important;
+    padding: 16px 14px !important;
+    margin-bottom: 16px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.2) !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+  }
+  #modalPedido .panel-botones button {
+    width: 100% !important;
+    padding: 11px 14px !important;
+    border: none !important;
+    border-radius: 12px !important;
+    font-size: 12px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.07em !important;
+    cursor: pointer !important;
+    transition: all 0.18s !important;
+    text-transform: uppercase !important;
+  }
+  #modalPedido .panel-botones button:hover {
+    filter: brightness(1.15) !important;
+    transform: translateY(-2px) !important;
+  }
+  /* PROMO */
+  #modalPedido .panel-botones button:nth-of-type(1) {
+    background: linear-gradient(135deg,#7c3aed,#9333ea) !important;
+    color: #fff !important;
+    box-shadow: 0 3px 12px rgba(124,58,237,0.4) !important;
+  }
+  /* ORIGINAL */
+  #modalPedido .panel-botones button:nth-of-type(2) {
+    background: linear-gradient(135deg,#1d4ed8,#3b82f6) !important;
+    color: #fff !important;
+    box-shadow: 0 3px 12px rgba(59,130,246,0.4) !important;
+  }
+  /* ALEXA */
+  #modalPedido .panel-botones button:nth-of-type(3) {
+    background: linear-gradient(135deg,#0e7490,#06b6d4) !important;
+    color: #fff !important;
+    box-shadow: 0 3px 12px rgba(6,182,212,0.4) !important;
+  }
+  /* TIBERIO */
+  #modalPedido .panel-botones button:nth-of-type(4) {
+    background: linear-gradient(135deg,#b45309,#f59e0b) !important;
+    color: #fff !important;
+    box-shadow: 0 3px 12px rgba(245,158,11,0.4) !important;
+  }
+  /* LIMPIAR */
+  #modalPedido .panel-botones button:nth-of-type(5) {
+    background: rgba(255,255,255,0.07) !important;
+    color: #94a3b8 !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    letter-spacing: 0.04em !important;
+  }
+  #modalPedido .panel-botones button:nth-of-type(5):hover {
+    background: rgba(255,255,255,0.14) !important;
+    color: #e2e8f0 !important;
+    filter: none !important;
+    transform: none !important;
+  }
+  /* GUARDAR */
+  #modalPedido .panel-botones button:nth-of-type(6) {
+    background: linear-gradient(135deg,#15803d,#22c55e) !important;
+    color: #fff !important;
+    font-size: 14px !important;
+    padding: 14px !important;
+    margin-top: 6px !important;
+    box-shadow: 0 4px 18px rgba(34,197,94,0.45) !important;
+    border-radius: 14px !important;
+  }
+
+  /* === RESULTADO Y BENDAJE === */
+  #resultadoBox {
+    background: #fff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 14px !important;
+    padding: 14px 16px !important;
+    margin-top: 12px !important;
+    font-size: 14px !important;
+    line-height: 1.7 !important;
+    color: #334155 !important;
+    white-space: pre-line !important;
+  }
+  #bendajeBox {
+    background: #fffbeb !important;
+    border: 1px solid #fde68a !important;
+    border-radius: 14px !important;
+    padding: 14px 16px !important;
+    margin-top: 10px !important;
+    font-size: 14px !important;
+    line-height: 1.7 !important;
+    color: #78350f !important;
+    white-space: pre-line !important;
+  }
+
+  /* === TEXTAREA COMENTARIOS === */
+  #comentarios {
+    background: #fff !important;
+    border: 1.5px solid #e2e8f0 !important;
+    border-radius: 12px !important;
+    color: #334155 !important;
+    font-size: 14px !important;
+    padding: 12px 14px !important;
+    resize: vertical !important;
+    transition: border-color 0.15s, box-shadow 0.15s !important;
+    font-family: inherit !important;
+  }
+  #comentarios:focus {
+    border-color: #6366f1 !important;
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.14) !important;
+  }
+  #comentarios::placeholder { color: #94a3b8 !important; }
+
+  /* === SECCIÓN DEUDAS === */
+  #modalPedido .modal-content div[style*="background:#f1f1f1"],
+  #modalPedido .modal-content div[style*="background: #f1f1f1"] {
+    background: linear-gradient(135deg,#eff6ff,#f0f9ff) !important;
+    border: 1.5px solid #bfdbfe !important;
+    border-radius: 14px !important;
+    padding: 16px !important;
+    margin-top: 12px !important;
+  }
+  #modalPedido .modal-content div[style*="background:#f1f1f1"] label,
+  #modalPedido .modal-content div[style*="background: #f1f1f1"] label {
+    color: #1e3a5f !important;
+    font-size: 14px !important;
+  }
+  #meDebeValor, #leDeboValor {
+    background: #fff !important;
+    border: 1.5px solid #bfdbfe !important;
+    border-radius: 10px !important;
+    padding: 9px 13px !important;
+    font-size: 14px !important;
+    color: #1e293b !important;
+    transition: border-color 0.15s !important;
+  }
+  #meDebeValor:focus, #leDeboValor:focus {
+    border-color: #6366f1 !important;
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.14) !important;
+  }
+
+  /* === BOTÓN IMPRIMIR TICKET === */
+  #modalPedido button[onclick="imprimirTicket()"] {
+    background: linear-gradient(135deg,#334155,#475569) !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 14px !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    padding: 14px !important;
+    cursor: pointer !important;
+    transition: all 0.18s !important;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.22) !important;
+    display: block !important;
+    margin: 14px auto 0 !important;
+  }
+  #modalPedido button[onclick="imprimirTicket()"]:hover {
+    filter: brightness(1.15) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3) !important;
+  }
+
+  /* === TOTAL FINAL === */
+  #totalFinal {
+    background: linear-gradient(135deg,#0f172a,#1e3a5f) !important;
+    color: #ffffff !important;
+    border-radius: 18px !important;
+    font-size: 26px !important;
+    font-weight: 900 !important;
+    padding: 20px !important;
+    text-align: center !important;
+    margin-top: 14px !important;
+    letter-spacing: 0.04em !important;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.07) !important;
   }
 
   /* ============ CHARTS ============ */
