@@ -1232,8 +1232,10 @@ document.addEventListener('DOMContentLoaded', App.init);
   // Los handlers de realtime usan _orig → no pasan por aquí → sin loop
   localStorage.setItem = function (k, v) {
     _orig(k, v);
-    if (k === K_MOVS) { try { syncUp(T_MOVS, JSON.parse(v)); } catch (e) {} }
-    if (k === K_CATS) { try { syncUp(T_CATS, JSON.parse(v)); } catch (e) {} }
+    if (k === K_MOVS)                { try { syncUp(T_MOVS,               JSON.parse(v)); } catch (e) {} }
+    if (k === K_CATS)                { try { syncUp(T_CATS,               JSON.parse(v)); } catch (e) {} }
+    if (k === 'cuotas_obligaciones') { try { syncUp('cuotas_obligaciones',JSON.parse(v)); } catch (e) {} }
+    if (k === 'cuentasMemoria')      { try { syncUp('cuentas_bancarias',  JSON.parse(v)); } catch (e) {} }
   };
 
   function refreshUI() {
@@ -1296,6 +1298,29 @@ document.addEventListener('DOMContentLoaded', App.init);
       else if (lCats)      { syncUp(T_CATS, lCats); }
     } catch (e) {}
 
+    // 5 — cuotas_obligaciones (Cuotas tab)
+    try {
+      var rCuo = await syncDown('cuotas_obligaciones');
+      if (Array.isArray(rCuo) && rCuo.length > 0) {
+        var lCuo = []; try { lCuo = JSON.parse(localStorage.getItem('cuotas_obligaciones') || '[]'); } catch (e) {}
+        if (rCuo.length >= lCuo.length) _orig('cuotas_obligaciones', JSON.stringify(rCuo));
+        else syncUp('cuotas_obligaciones', lCuo);
+      } else {
+        var lCuo2 = []; try { lCuo2 = JSON.parse(localStorage.getItem('cuotas_obligaciones') || '[]'); } catch (e) {}
+        if (lCuo2.length > 0) syncUp('cuotas_obligaciones', lCuo2);
+      }
+    } catch (e) {}
+
+    // 6 — cuentasMemoria (saldos de cuentas bancarias)
+    try {
+      var rCuen = await syncDown('cuentas_bancarias');
+      if (Array.isArray(rCuen) && rCuen.length > 0) {
+        var lCuen = []; try { lCuen = JSON.parse(localStorage.getItem('cuentasMemoria') || '[]'); } catch (e) {}
+        if (rCuen.length >= lCuen.length) _orig('cuentasMemoria', JSON.stringify(rCuen));
+        else syncUp('cuentas_bancarias', lCuen);
+      }
+    } catch (e) {}
+
     refreshUI();
     badge('Supabase ✓', true);
 
@@ -1337,6 +1362,23 @@ document.addEventListener('DOMContentLoaded', App.init);
             _orig(K_CATS, JSON.stringify(p.new.datos));
             var s = document.querySelector('.sec.on');
             if (s && s.id === 'categorias') UI.categorias();
+          })
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'cuotas_obligaciones', filter: 'id=eq.1' },
+          function (p) {
+            if (!p.new || !p.new.datos) return;
+            _orig('cuotas_obligaciones', JSON.stringify(p.new.datos));
+            var s = document.querySelector('.sec.on');
+            if (s && s.id === 'cuotas') {
+              var sec = document.getElementById('cuotas');
+              if (sec) UI.showSec('cuotas');
+            }
+          })
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'cuentas_bancarias', filter: 'id=eq.1' },
+          function (p) {
+            if (!p.new || !p.new.datos) return;
+            _orig('cuentasMemoria', JSON.stringify(p.new.datos));
           })
         .subscribe(function (status) {
           if (status === 'SUBSCRIBED') badge('En vivo ✓', true);
