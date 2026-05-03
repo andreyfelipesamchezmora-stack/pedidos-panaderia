@@ -1174,6 +1174,147 @@ var App = (function() {
 })();
 
 document.addEventListener('DOMContentLoaded', App.init);
+
+// =====================================================
+//  SYNC MODULE — contabilidad.html ↔ Supabase
+//  Sincroniza conta_v2 y conta_categorias_v2 de forma
+//  bidireccional e independiente del panel principal.
+// =====================================================
+(function () {
+  if (!db) return;
+
+  var T_MOVS = 'conta_movimientos_v2';
+  var T_CATS = 'conta_categorias_v2';
+  var K_MOVS = 'conta_v2';
+  var K_CATS = 'conta_categorias_v2';
+
+  var _pushing = {};  // evita loops infinitos
+
+  // ── Push a Supabase ─────────────────────────────
+  function push(tabla, datos) {
+    if (_pushing[tabla]) return;
+    _pushing[tabla] = true;
+    try {
+      db.from(tabla)
+        .upsert({ id: 1, datos: datos, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+        .then(function () { _pushing[tabla] = false; })
+        .catch(function () { _pushing[tabla] = false; });
+    } catch (e) { _pushing[tabla] = false; }
+  }
+
+  // ── Pull de Supabase ─────────────────────────────
+  async function pull(tabla) {
+    try {
+      var r = await db.from(tabla).select('datos').eq('id', 1).maybeSingle();
+      return (r && r.data && r.data.datos !== undefined) ? r.data.datos : null;
+    } catch (e) { return null; }
+  }
+
+  // ── Interceptar localStorage.setItem solo para nuestras claves ──
+  var _lsOrig = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = function (k, v) {
+    _lsOrig(k, v);  // siempre escribir local primero
+    if (k === K_MOVS) {
+      try { push(T_MOVS, JSON.parse(v)); } catch (e) {}
+    }
+    if (k === K_CATS) {
+      try { push(T_CATS, JSON.parse(v)); } catch (e) {}
+    }
+  };
+
+  // ── Actualizar UI según sección activa ──────────
+  function refreshUI() {
+    var sec = document.querySelector('.sec.on');
+    if (!sec) return;
+    if (sec.id === 'dashboard')  UI.dash();
+    if (sec.id === 'historial')  UI.hist();
+    if (sec.id === 'flujo')      UI.flujo();
+    if (sec.id === 'categorias') UI.categorias();
+  }
+
+  function setBadge(txt) {
+    var b = document.getElementById('syncBadge');
+    if (b) b.innerHTML = '<span class="sync-dot"></span> ' + txt;
+  }
+
+  // ── Init: pull inicial + realtime ───────────────
+  async function init() {
+    setBadge('Sincronizando…');
+
+    // ── conta_v2 (movimientos manuales) ──
+    try {
+      var remoteMovs = await pull(T_MOVS);
+      var localMovs  = [];
+      try { localMovs = JSON.parse(localStorage.getItem(K_MOVS) || '[]'); } catch (e) {}
+      if (!Array.isArray(localMovs)) localMovs = [];
+
+      if (Array.isArray(remoteMovs) && remoteMovs.length > 0) {
+        if (remoteMovs.length >= localMovs.length) {
+          // Supabase tiene más → sobrescribir local (sin triggear push)
+          _lsOrig(K_MOVS, JSON.stringify(remoteMovs));
+        } else {
+          // Local tiene más → subir a Supabase
+          push(T_MOVS, localMovs);
+        }
+      } else if (localMovs.length > 0) {
+        // Supabase vacío → subir local
+        push(T_MOVS, localMovs);
+      }
+    } catch (e) {}
+
+    // ── conta_categorias_v2 (categorías) ──
+    try {
+      var remoteCats = await pull(T_CATS);
+      var localCats  = null;
+      try { localCats = JSON.parse(localStorage.getItem(K_CATS) || 'null'); } catch (e) {}
+
+      var remoteHasData = remoteCats && typeof remoteCats === 'object'
+                          && Array.isArray(remoteCats.ingresos) && remoteCats.ingresos.length > 0;
+
+      if (remoteHasData) {
+        if (!localCats) {
+          // Supabase tiene cats, local no → descargar
+          _lsOrig(K_CATS, JSON.stringify(remoteCats));
+        }
+        // Si ambos tienen, no sobreescribir (local es fuente de verdad en este dispositivo)
+      } else if (localCats) {
+        // Local tiene cats, Supabase no → subir
+        push(T_CATS, localCats);
+      }
+    } catch (e) {}
+
+    refreshUI();
+    setBadge('Supabase ✓');
+
+    // ── Realtime: escuchar cambios de otros dispositivos ──
+    try {
+      db.channel('conta-html-sync')
+        .on('postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: T_MOVS, filter: 'id=eq.1' },
+          function (p) {
+            if (!p.new || p.new.datos === undefined) return;
+            // Escribir sin triggear push de vuelta (_lsOrig en lugar de localStorage.setItem)
+            try { _lsOrig(K_MOVS, JSON.stringify(p.new.datos)); } catch (e) {}
+            refreshUI();
+            setBadge('Actualizado en tiempo real ✓');
+          }
+        )
+        .on('postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: T_CATS, filter: 'id=eq.1' },
+          function (p) {
+            if (!p.new || p.new.datos === undefined) return;
+            try { _lsOrig(K_CATS, JSON.stringify(p.new.datos)); } catch (e) {}
+            var sec = document.querySelector('.sec.on');
+            if (sec && sec.id === 'categorias') UI.categorias();
+          }
+        )
+        .subscribe();
+    } catch (e) {}
+  }
+
+  // Arrancar sync 2s después de que la UI cargue
+  setTimeout(init, 2000);
+})();
 </script>
 </body>
 </html>
