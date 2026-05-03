@@ -2650,22 +2650,31 @@ if(idxEf2 >= 0) {
   cuentasGuardar();
 }
 
-// ✅ SYNC: agregar también a movimientosContables para ver el ingreso en contabilidad.html
+// ✅ SYNC: agregar también a movimientosContables (para sync con contabilidad.html)
 try {
   if(!Array.isArray(window.movimientosContables)) window.movimientosContables = [];
-  window.movimientosContables.push({
-    id: 'caja_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
-    tipo: 'ingreso',
-    monto: valor,
-    cuenta: 'Efectivo',
-    descripcion: descripcion,
-    categoria: tipo || 'INGRESO EXTRA',
-    fecha: cajaFechaHoy(),
-    timestamp: Date.now(),
-    _origenCaja: true
+  // Evitar duplicados (si existe ya un mov con misma fecha+monto+desc)
+  var hoy = (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10);
+  var dupe = window.movimientosContables.find(function(m){
+    return m && m.tipo === 'ingreso' && Number(m.monto) === valor &&
+           (m.descripcion || '') === descripcion &&
+           String(m.fecha || '').slice(0,10) === hoy;
   });
-  if(typeof window._mcPersist === 'function') window._mcPersist();
-} catch(e) { console.warn('sync caja->conta:', e); }
+  if(!dupe) {
+    window.movimientosContables.push({
+      id: 'caja_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+      tipo: 'ingreso',
+      monto: valor,
+      cuenta: 'Efectivo',
+      descripcion: descripcion,
+      categoria: tipo || 'INGRESO EXTRA',
+      fecha: hoy,
+      timestamp: Date.now(),
+      _origenCaja: true
+    });
+    if(typeof window._mcPersist === 'function') window._mcPersist();
+  }
+} catch(e){ console.warn('sync caja->conta:', e); }
 
     document.getElementById("cajaIngresoTipo").value="";
     document.getElementById("cajaIngresoDesc").value="";
@@ -11461,7 +11470,7 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
   var _lM=0,_lG=0;
   // Helper: persistencia local inmediata para movimientos/gastos
   window._mcPersist=function(){try{var m=window.movimientosContables;if(Array.isArray(m)){LS.set('mc_local',JSON.stringify(m));try{sub('movimientos_contables',m);}catch(se){}}}catch(e){}try{var g=window.gastosMemoria;if(Array.isArray(g)){LS.set('gm_local',JSON.stringify(g));SS.set('gastos',JSON.stringify(g));try{sub('gastos_manuales',g);}catch(se){}}}catch(e){}};
-  setInterval(function(){if(_s)return;var m=window.movimientosContables;if(Array.isArray(m)){try{LS.set('mc_local',JSON.stringify(m));}catch(e){}if(m.length>0&&m.length!==_lM){_lM=m.length;sub('movimientos_contables',m);}}var g=window.gastosMemoria;if(!Array.isArray(g))try{g=JSON.parse(SS.get('gastos')||'[]');}catch(e){g=[];}try{LS.set('gm_local',JSON.stringify(g));}catch(e){}if(g.length>0&&g.length!==_lG){_lG=g.length;sub('gastos_manuales',g);}},1000);
+  setInterval(function(){if(_s)return;var m=window.movimientosContables;if(Array.isArray(m)){try{LS.set('mc_local',JSON.stringify(m));}catch(e){}if(m.length>0&&m.length!==_lM){_lM=m.length;sub('movimientos_contables',m);}}var g=window.gastosMemoria;if(!Array.isArray(g))try{g=JSON.parse(SS.get('gastos')||'[]');}catch(e){g=[];}try{LS.set('gm_local',JSON.stringify(g));}catch(e){}if(g.length>0&&g.length!==_lG){_lG=g.length;sub('gastos_manuales',g);}},3000);
   function initRT(){try{['clientes_config','clientes_datos','cuentas_bancarias','transferencias','movimientos_contables','gastos_manuales','nomina_config','cartera_deudas','cartera_pagos','cuotas_obligaciones','categorias_contables','cuentas_por_pagar','observaciones_marquee','deudas_store_v20','conta_movimientos_v2','conta_categorias_v2'].forEach(function(t){db.channel('r-'+t).on('postgres_changes',{event:'*',schema:'public',table:t,filter:'id=eq.1'},function(p){if(p.new&&p.new.datos!==undefined){apl(t,p.new.datos);setTimeout(function(){try{
   if(t==='clientes_config'&&typeof cargar==='function')cargar();
   if(t==='observaciones_marquee'&&typeof actualizarMarquee==='function')actualizarMarquee();
@@ -11474,58 +11483,6 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
   function start(){setTimeout(function(){init().catch(function(e){console.error('Sync err:',e);});badge();},100);}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
   console.log('☁️ V12 iniciado');
-
-  // ─── POLLING RÁPIDO DE CAMBIOS REMOTOS (1s) ──────
-  // Detecta cambios hechos en otros navegadores/dispositivos
-  var _lastTSPoll = {};
-  async function pollFast(){
-    if(_s) return;
-    for(var l in MAP){
-      var t = MAP[l];
-      try {
-        var r = await db.from(t).select('updated_at').eq('id',1).maybeSingle();
-        if(!r || !r.data) continue;
-        var ts = r.data.updated_at || '';
-        if(ts && ts !== (_lastTSPoll[t]||'')){
-          _lastTSPoll[t] = ts;
-          // Descargar y aplicar
-          var d = await baj(t);
-          if(d !== null){
-            var h = Array.isArray(d) ? d.length>0 : (d && typeof d==='object' && Object.keys(d).length>0);
-            if(h){
-              apl(t, d);
-              // Re-renderizar UI activa si corresponde
-              setTimeout(function(t2){return function(){
-                try {
-                  if((t2==='movimientos_contables'||t2==='gastos_manuales'||t2==='conta_movimientos_v2')){
-                    var _cc=document.getElementById('panelConta');
-                    if(_cc&&_cc.classList.contains('open')&&typeof renderConta==='function'){
-                      var _activeTab=document.querySelector('#panelConta .ftab.active');
-                      var _tabName=_activeTab?_activeTab.textContent.toLowerCase():'resumen';
-                      if(_tabName.indexOf('histor')>-1)renderConta('historial');
-                      else if(_tabName.indexOf('flujo')>-1)renderConta('flujo');
-                      else renderConta('resumen');
-                    }
-                  }
-                  if(t2==='cartera_deudas'||t2==='deudas_store_v20'){
-                    var _cp=document.getElementById('panelCartera');
-                    if(_cp&&_cp.classList.contains('open')&&typeof renderCartera==='function')renderCartera();
-                  }
-                  if(t2==='cuentas_bancarias'){
-                    try{window.cuentasMemoria=JSON.parse(localStorage.getItem('cuentasMemoria')||'[]');}catch(ex){}
-                  }
-                  if(t2==='clientes_config'&&typeof cargar==='function')cargar();
-                  if(t2==='observaciones_marquee'&&typeof actualizarMarquee==='function')actualizarMarquee();
-                } catch(e){}
-              };}(t), 100);
-            }
-          }
-        }
-      } catch(e){}
-    }
-  }
-  setInterval(pollFast, 1000);
-  console.log('⚡ Polling rápido (1s) activo');
 })();
 
 // =====================================================
@@ -13172,6 +13129,233 @@ window.vnDiagVentas = function(){
     console.log('✅ REALTIME ENGINE activo — polling reducido a fallback');
   }, 3000);
 
+})();
+
+// =====================================================================
+//  SYNC v6 — PANEL ↔ Supabase (compatible con contabilidad.html)
+// =====================================================================
+//  Garantiza que cuando alguien cambia algo en otro navegador/dispositivo,
+//  ESTE panel se entere en máximo 1 segundo. Sin perder datos locales.
+// =====================================================================
+(function () {
+  if (typeof db === 'undefined' || !db) {
+    console.warn('[SYNC v6 panel] Supabase db no disponible');
+    return;
+  }
+
+  // Tablas que importan para mostrar al usuario en tiempo real
+  var TABLAS = {
+    'mc_local':            'movimientos_contables',
+    'gm_local':            'gastos_manuales',
+    'conta_v2':            'conta_movimientos_v2',
+    'conta_categorias_v2': 'conta_categorias_v2',
+    'cuotas_obligaciones': 'cuotas_obligaciones',
+    'cuentasMemoria':      'cuentas_bancarias',
+    'cartera_deudas':      'cartera_deudas',
+    'vn_deudas_v20':       'deudas_store_v20',
+    'cuentas_por_pagar':   'cuentas_por_pagar',
+    'nomina_data':         'nomina_config',
+    'obs_marquee':         'observaciones_marquee'
+  };
+
+  var _lastTS = {};
+  var _ownTS  = {};
+
+  function itemKey(m) {
+    if (!m || typeof m !== 'object') return JSON.stringify(m);
+    if (m.id) return 'id:' + m.id;
+    return [m.tipo||'', m.fecha||'', m.monto||'', String(m.descripcion||'').toLowerCase().trim()].join('|');
+  }
+
+  function mergeArr(loc, rem) {
+    var a = Array.isArray(loc) ? loc : [];
+    var b = Array.isArray(rem) ? rem : [];
+    var seen = {}, out = [];
+    a.concat(b).forEach(function (m) {
+      if (!m) return;
+      var k = itemKey(m);
+      if (!seen[k]) { seen[k] = true; out.push(m); }
+    });
+    return out.sort(function (x, y) {
+      return (Number(y.timestamp)||0) - (Number(x.timestamp)||0);
+    });
+  }
+
+  async function pullTS(tabla) {
+    try {
+      var r = await db.from(tabla).select('updated_at').eq('id', 1).maybeSingle();
+      return (r && r.data) ? (r.data.updated_at || '') : '';
+    } catch (e) { return ''; }
+  }
+
+  async function pullFull(tabla) {
+    try {
+      var r = await db.from(tabla).select('datos, updated_at').eq('id', 1).maybeSingle();
+      if (!r || !r.data) return null;
+      _lastTS[tabla] = r.data.updated_at || '';
+      return r.data.datos !== undefined ? r.data.datos : null;
+    } catch (e) { return null; }
+  }
+
+  function applyRemoteToLocal(lsKey, remoteData) {
+    if (remoteData === null || remoteData === undefined) return false;
+    var loc = null;
+    try { loc = JSON.parse(localStorage.getItem(lsKey) || 'null'); } catch (e) {}
+    var changed = false;
+
+    // Para arrays principales: merge sin perder
+    if (lsKey === 'mc_local' || lsKey === 'gm_local' || lsKey === 'conta_v2') {
+      var locArr = Array.isArray(loc) ? loc : [];
+      var remArr = Array.isArray(remoteData) ? remoteData : [];
+      var merged = mergeArr(locArr, remArr);
+
+      var prevStr = JSON.stringify(locArr);
+      var newStr = JSON.stringify(merged);
+      if (prevStr !== newStr) {
+        localStorage.setItem(lsKey, newStr);
+        changed = true;
+        // Actualizar variables globales
+        if (lsKey === 'mc_local') {
+          window.movimientosContables = merged;
+        }
+        if (lsKey === 'gm_local') {
+          window.gastosMemoria = merged;
+          try { sessionStorage.setItem('gastos', newStr); } catch (e) {}
+        }
+      }
+    } else {
+      // Para objetos
+      var prevStr = JSON.stringify(loc);
+      var nextStr = JSON.stringify(remoteData);
+      if (prevStr !== nextStr) {
+        localStorage.setItem(lsKey, nextStr);
+        changed = true;
+        if (lsKey === 'cuentasMemoria') {
+          try { window.cuentasMemoria = remoteData; } catch (e) {}
+        }
+      }
+    }
+
+    return changed;
+  }
+
+  function refrescarUIActiva(lsKey) {
+    try {
+      // Contabilidad
+      if (lsKey === 'mc_local' || lsKey === 'gm_local' || lsKey === 'conta_v2' || lsKey === 'cuotas_obligaciones') {
+        var pc = document.getElementById('panelConta');
+        if (pc && pc.classList.contains('open') && typeof renderConta === 'function') {
+          var activeTab = document.querySelector('#panelConta .ftab.active');
+          var tabName = activeTab ? activeTab.textContent.toLowerCase() : 'resumen';
+          if (tabName.indexOf('histor') > -1) renderConta('historial');
+          else if (tabName.indexOf('flujo') > -1) renderConta('flujo');
+          else if (tabName.indexOf('categ') > -1) renderConta('categorias');
+          else renderConta('resumen');
+        }
+      }
+      // Cartera
+      if (lsKey === 'cartera_deudas' || lsKey === 'vn_deudas_v20') {
+        var pCart = document.getElementById('panelCartera');
+        if (pCart && pCart.classList.contains('open') && typeof renderCartera === 'function') {
+          renderCartera();
+        }
+      }
+      // Cuentas bancarias
+      if (lsKey === 'cuentasMemoria') {
+        var pc = document.getElementById('panelConta');
+        if (pc && pc.classList.contains('open') && typeof renderConta === 'function') {
+          renderConta('cuentas');
+        }
+      }
+      // Cuentas por pagar
+      if (lsKey === 'cuentas_por_pagar' && typeof window.cuentasPorPagarRender === 'function') {
+        window.cuentasPorPagarRender();
+      }
+      // Nómina
+      if (lsKey === 'nomina_data' && typeof window.nominaRender === 'function') {
+        window.nominaRender();
+      }
+      // Marquee
+      if (lsKey === 'obs_marquee' && typeof actualizarMarquee === 'function') {
+        actualizarMarquee();
+      }
+    } catch (e) {}
+  }
+
+  // POLL agresivo cada 1 segundo
+  async function pollFast() {
+    if (document.hidden) return;
+    var anyChange = false;
+    var changedKeys = [];
+    for (var lsKey in TABLAS) {
+      var tabla = TABLAS[lsKey];
+      try {
+        var ts = await pullTS(tabla);
+        if (!ts) continue;
+        if (ts === _ownTS[tabla]) {
+          _lastTS[tabla] = ts;
+          continue;
+        }
+        if (ts !== (_lastTS[tabla] || '')) {
+          var remote = await pullFull(tabla);
+          if (remote !== null) {
+            if (applyRemoteToLocal(lsKey, remote)) {
+              anyChange = true;
+              changedKeys.push(lsKey);
+            }
+          }
+        }
+      } catch (e) {}
+    }
+    if (anyChange) {
+      changedKeys.forEach(refrescarUIActiva);
+    }
+  }
+
+  // Iniciar después de que el panel esté listo
+  setTimeout(function () {
+    setInterval(pollFast, 1000);
+    console.log('⚡ SYNC v6 panel — polling 1s activo');
+  }, 2500);
+
+  // BOTONES manuales globales
+  window.SyncForzarSubirPanel = async function() {
+    console.log('[SYNC v6] Forzando subida...');
+    for (var lsKey in TABLAS) {
+      var tabla = TABLAS[lsKey];
+      try {
+        var raw = localStorage.getItem(lsKey);
+        if (!raw) continue;
+        var datos = JSON.parse(raw);
+        if (!datos) continue;
+        if (Array.isArray(datos) && datos.length === 0) continue;
+        if (typeof datos === 'object' && Object.keys(datos).length === 0) continue;
+        var ts = new Date().toISOString();
+        _ownTS[tabla] = ts;
+        await db.from(tabla).upsert({ id:1, datos:datos, updated_at:ts }, { onConflict:'id' });
+        console.log('  ✅ subido', lsKey);
+      } catch (e) { console.warn('  ❌', lsKey, e); }
+    }
+    alert('✅ Subida forzada completa');
+  };
+
+  window.SyncForzarBajarPanel = async function() {
+    console.log('[SYNC v6] Forzando bajada...');
+    for (var lsKey in TABLAS) {
+      var tabla = TABLAS[lsKey];
+      try {
+        var remote = await pullFull(tabla);
+        if (remote !== null) {
+          applyRemoteToLocal(lsKey, remote);
+          refrescarUIActiva(lsKey);
+          console.log('  ✅ bajado', lsKey);
+        }
+      } catch (e) { console.warn('  ❌', lsKey, e); }
+    }
+    alert('✅ Bajada forzada completa');
+  };
+
+  console.log('✅ SYNC v6 PANEL cargado — usar SyncForzarSubirPanel() o SyncForzarBajarPanel() en consola');
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
