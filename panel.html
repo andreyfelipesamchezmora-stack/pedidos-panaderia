@@ -6400,19 +6400,17 @@ function _uOpsCaja(){
 // =====================================================
 // \u2500\u2500 Estilos del marquee \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 (function(){
-  var s=document.createElement('style');
+  var s=document.getElementById('obsMarqueeStyles')||document.createElement('style');
   s.id='obsMarqueeStyles';
-  s.textContent=[
-    '#obsMarquee{position:relative;width:100%;overflow:hidden;background:linear-gradient(90deg,#fbbf24,#f59e0b,#d97706);border-radius:10px;margin-bottom:10px;min-height:0;}',
-    '#obsMarquee.visible{min-height:36px;}',
-    '.obs-marquee-track{display:inline-flex;gap:100px;white-space:nowrap;padding:8px 24px;align-items:center;will-change:transform;}',
-    '.obs-item{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#1a1a1a;flex-shrink:0;}',
-    '.obs-item .obs-nombre{background:rgba(0,0,0,0.15);padding:2px 8px;border-radius:6px;font-weight:800;font-size:12px;}',
-    '.obs-item .obs-del{background:rgba(0,0,0,0.18);border:none;color:#7c2d12;cursor:pointer;font-size:13px;font-weight:900;border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;line-height:1;transition:background .15s;}',
-    '.obs-item .obs-del:hover{background:rgba(0,0,0,0.35);}',
-    '@keyframes obsScroll{from{transform:translateX(0)}to{transform:translateX(var(--obs-half,0px))}}'
-  ].join('');
-  document.head.appendChild(s);
+  s.textContent=
+    '#obsMarquee{position:relative;width:100%;overflow:hidden;background:linear-gradient(90deg,#fbbf24,#f59e0b,#d97706);border-radius:10px;margin-bottom:10px;min-height:0;}'+
+    '#obsMarquee.visible{min-height:36px;}'+
+    '.obs-marquee-track{display:inline-block;white-space:nowrap;padding:8px 0;line-height:36px;will-change:transform;}'+
+    '.obs-item{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#1a1a1a;margin:0 48px;}'+
+    '.obs-item .obs-nombre{background:rgba(0,0,0,0.15);padding:2px 8px;border-radius:6px;font-weight:800;font-size:12px;}'+
+    '.obs-item .obs-del{background:rgba(0,0,0,0.18);border:none;color:#7c2d12;cursor:pointer;font-size:14px;font-weight:900;border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;line-height:1;transition:background .15s;}'+
+    '.obs-item .obs-del:hover{background:rgba(0,0,0,0.4);}';
+  if(!s.parentNode)document.head.appendChild(s);
 })();
 
 // \u2500\u2500 Funci\u00f3n principal del marquee \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -6429,9 +6427,6 @@ window.actualizarMarquee = function(){
   }
   var marquee=document.getElementById('obsMarquee');
   if(!marquee)return;
-
-  // Cancelar animaci\u00f3n JS anterior (si qued\u00f3 alguna)
-  if(window._obsAnimId){cancelAnimationFrame(window._obsAnimId);window._obsAnimId=null;}
 
   // Leer y fusionar obs_marquee con observaciones del recaudo del d\u00eda
   var obs=[];
@@ -6465,33 +6460,49 @@ window.actualizarMarquee = function(){
 
   marquee.classList.add('visible');
 
-  // Construir HTML de items
+  // HTML de items (UNA sola copia \u2014 sin duplicaci\u00f3n)
   var itemsHTML=obs.map(function(o,i){
     return '<span class="obs-item">'
       +'<span class="obs-nombre">'+o.nombre+'</span>'
-      +'<span class="obs-texto">'+o.texto+'</span>'
-      +'<button class="obs-del" onclick="event.stopPropagation();eliminarObsMarquee('+i+')" title="Eliminar observaci\u00f3n">\u00d7</button>'
+      +'<span class="obs-texto"> '+o.texto+'</span>'
+      +'<button class="obs-del" onclick="event.stopPropagation();eliminarObsMarquee('+i+')" title="Eliminar">\u00d7</button>'
       +'</span>';
   }).join('');
 
-  // Renderizar con el contenido DUPLICADO para loop seamless
-  marquee.innerHTML='<div class="obs-marquee-track" id="_obsTrack">'+itemsHTML+itemsHTML+'</div>';
+  marquee.innerHTML='<div class="obs-marquee-track" id="_obsTrack">'+itemsHTML+'</div>';
 
-  // Calcular duraci\u00f3n tras un frame para que el browser mida scrollWidth
+  // Esperar 2 frames para que el browser mida el ancho real del track
   requestAnimationFrame(function(){
     requestAnimationFrame(function(){
       var track=document.getElementById('_obsTrack');
       if(!track)return;
-      // Ancho de UNA copia (la mitad del total)
-      var halfW=Math.round(track.scrollWidth/2);
-      if(halfW<=0)return;
-      // Velocidad: 90px/s \u2192 ajusta aqu\u00ed si quieres m\u00e1s lento/r\u00e1pido
-      var speed=90;
-      var duration=(halfW/speed).toFixed(2);
-      // Inyectar variable CSS y aplicar animaci\u00f3n
-      track.style.setProperty('--obs-half','-'+halfW+'px');
-      track.style.animation='obsScroll '+duration+'s linear infinite';
-      // Pausar al hover sin cancelar
+
+      var cW=marquee.offsetWidth;   // ancho visible del contenedor
+      var tW=track.scrollWidth;     // ancho total del contenido
+
+      if(cW<=0||tW<=0)return;
+
+      // Recorrido total: entra desde la derecha (cW) + sale por la izquierda (tW)
+      var totalPx=cW+tW;
+      var speed=100; // px/s \u2014 sube para m\u00e1s r\u00e1pido, baja para m\u00e1s lento
+      var dur=(totalPx/speed).toFixed(2);
+
+      // Keyframes con p\u00edxeles exactos: empieza FUERA A LA DERECHA, termina FUERA A LA IZQUIERDA
+      // El reset del loop (saltar de -tW a +cW) ocurre fuera de pantalla \u2192 invisible
+      var kfId='_obsKF';
+      var old=document.getElementById(kfId);
+      if(old)old.remove();
+      var kfStyle=document.createElement('style');
+      kfStyle.id=kfId;
+      kfStyle.textContent='@keyframes _obsScroll{from{transform:translateX('+cW+'px)}to{transform:translateX(-'+tW+'px)}}';
+      document.head.appendChild(kfStyle);
+
+      // Aplicar animaci\u00f3n \u2014 force reflow antes para reiniciar limpiamente
+      track.style.animation='none';
+      void track.offsetWidth; // reflow
+      track.style.animation='_obsScroll '+dur+'s linear infinite';
+
+      // Hover: pausar / reanudar sin reiniciar
       marquee.onmouseenter=function(){track.style.animationPlayState='paused';};
       marquee.onmouseleave=function(){track.style.animationPlayState='running';};
     });
