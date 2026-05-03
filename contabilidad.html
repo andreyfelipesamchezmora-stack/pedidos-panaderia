@@ -193,8 +193,35 @@ html, body { height:100%;font-family:var(--font);background:var(--bg);color:var(
     </svg>
     Contabilidad
   </div>
-  <a href="panel (34).html" class="back">← Panel</a>
+
+  <!-- ✅ BOTONES DE SYNC -->
+  <div id="syncControls" style="display:flex;gap:8px;align-items:center;margin-left:auto;">
+    <button onclick="if(window.SyncForzarSubir)SyncForzarSubir();else alert('Sync no cargado todavía, espera 2 segundos');"
+            title="Forzar subida de TODOS tus datos a la nube"
+            style="padding:7px 12px;background:rgba(74,222,128,0.15);border:1px solid rgba(74,222,128,0.4);border-radius:8px;color:#4ade80;font-weight:700;cursor:pointer;font-size:12px;font-family:inherit;">
+      ⬆ Subir
+    </button>
+    <button onclick="if(window.SyncForzarBajar)SyncForzarBajar();else alert('Sync no cargado todavía, espera 2 segundos');"
+            title="Forzar bajada de TODOS los datos desde la nube"
+            style="padding:7px 12px;background:rgba(96,165,250,0.15);border:1px solid rgba(96,165,250,0.4);border-radius:8px;color:#60a5fa;font-weight:700;cursor:pointer;font-size:12px;font-family:inherit;">
+      ⬇ Bajar
+    </button>
+    <span id="syncBadge"
+          style="display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.3);border-radius:8px;color:#4ade80;font-size:12px;font-weight:700;">
+      <span class="sync-dot" style="width:8px;height:8px;border-radius:50%;background:#4ade80;display:inline-block;animation:pulse 2s infinite;"></span>
+      Iniciando…
+    </span>
+  </div>
+
+  <a href="panel (34).html" class="back" style="margin-left:8px;">← Panel</a>
 </div>
+
+<style>
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+</style>
 
 <!-- Tabs -->
 <nav class="tabs">
@@ -1393,6 +1420,47 @@ document.addEventListener('DOMContentLoaded', App.init);
       });
     } catch (e) { badge('Polling activo', true); }
   }
+
+  // ─── FUNCIONES GLOBALES PARA BOTONES ─────────────
+  window.SyncForzarSubir = async function() {
+    badge('Subiendo a la nube…', false);
+    var subidos = 0;
+    for (var lsKey in TABLAS) {
+      var tabla = TABLAS[lsKey];
+      try {
+        var raw = localStorage.getItem(lsKey);
+        if (!raw) continue;
+        var datos = JSON.parse(raw);
+        if (!datos) continue;
+        if (Array.isArray(datos) && datos.length === 0) continue;
+        if (typeof datos === 'object' && !Array.isArray(datos) && Object.keys(datos).length === 0) continue;
+        await pushNow(tabla, datos);
+        subidos++;
+        await new Promise(function(r){setTimeout(r, 200);});
+      } catch (e) { console.warn('Error subiendo', lsKey, e); }
+    }
+    badge('✅ Subida forzada (' + subidos + ' tablas)', true);
+    setTimeout(function(){ badge('En vivo ✓', true); }, 3000);
+  };
+
+  window.SyncForzarBajar = async function() {
+    badge('Bajando de la nube…', false);
+    var bajados = 0, cambios = false;
+    for (var lsKey in TABLAS) {
+      var tabla = TABLAS[lsKey];
+      try {
+        var remote = await pullFull(tabla);
+        if (remote !== null) {
+          applyRemote(lsKey, remote);
+          bajados++;
+          cambios = true;
+        }
+      } catch (e) { console.warn('Error bajando', lsKey, e); }
+    }
+    if (cambios) refreshUI();
+    badge('✅ Bajada forzada (' + bajados + ' tablas)', true);
+    setTimeout(function(){ badge('En vivo ✓', true); }, 3000);
+  };
 
   // ─── INICIO ──────────────────────────────────────
   function start() {
