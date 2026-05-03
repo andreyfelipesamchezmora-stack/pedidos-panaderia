@@ -360,8 +360,25 @@ html, body { height:100%;font-family:var(--font);background:var(--bg);color:var(
   </div>
 </div>
 
+<!-- ✅ SUPABASE CLIENT (necesario para sync) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 'use strict';
+
+// =====================================================
+//  SUPABASE CLIENT — credenciales del panel
+// =====================================================
+var SUPABASE_URL = "https://vswostjubcxjotpqnzhk.supabase.co";
+var SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzd29zdGp1YmN4am90cHFuemhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyOTAyNDksImV4cCI6MjA4Nzg2NjI0OX0.VIWMJWyubtKj7QCoOybia_Fv2S4sjxFelQz9x1tZKBo";
+var db = null;
+try {
+  if (typeof supabase !== 'undefined' && supabase.createClient) {
+    db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    console.log('✅ Supabase conectado');
+  } else {
+    console.error('❌ Supabase JS no cargado');
+  }
+} catch (e) { console.error('❌ Error Supabase:', e); }
 
 // =====================================================
 //  CATDATA MODULE — Categorías persistentes
@@ -1296,7 +1313,12 @@ document.addEventListener('DOMContentLoaded', App.init);
     _orig(k, v);   // siempre guardar local primero
     var tabla = TABLAS[k];
     if (!tabla) return;
-    try { pushNow(tabla, JSON.parse(v)); } catch (e) {}
+    try {
+      var datos = JSON.parse(v);
+      pushNow(tabla, datos);
+      // Marcar como propio para evitar re-aplicar el mismo dato
+      _lastTS[tabla] = new Date().toISOString();
+    } catch (e) {}
   };
 
   // ─── PULL COMPLETO INICIAL ────────────────────────
@@ -1324,10 +1346,11 @@ document.addEventListener('DOMContentLoaded', App.init);
     badge('En vivo ✓', true);
   }
 
-  // ─── POLLING cada 3 segundos ─────────────────────
+  // ─── POLLING cada 1 segundo (rápido) ─────────────
   // Compara updated_at: si cambió, descarga el dato completo
   // Esto garantiza sync aunque el realtime no funcione
   async function poll() {
+    var anyChange = false;
     for (var lsKey in TABLAS) {
       var tabla = TABLAS[lsKey];
       try {
@@ -1337,26 +1360,32 @@ document.addEventListener('DOMContentLoaded', App.init);
           var remote = await pullFull(tabla);
           if (remote !== null) {
             applyRemote(lsKey, remote);
-            refreshUI();
-            badge('Actualizado ✓', true);
+            anyChange = true;
           }
         }
       } catch (e) {}
     }
+    if (anyChange) {
+      refreshUI();
+      badge('En vivo ✓', true);
+    }
   }
 
   // ─── REALTIME (optimización de velocidad) ────────
-  // Si realtime funciona, actualiza en <1s sin esperar el poll de 3s
+  // Si realtime funciona, actualiza en <1s sin esperar el poll
   function setupRealtime() {
     try {
-      var ch = db.channel('conta-rt-v5');
+      var ch = db.channel('conta-rt-v5-' + Date.now());  // canal único por sesión
       Object.keys(TABLAS).forEach(function (lsKey) {
         var tabla = TABLAS[lsKey];
         ch.on('postgres_changes',
           { event: '*', schema: 'public', table: tabla, filter: 'id=eq.1' },
           function (p) {
             if (!p.new || p.new.datos === undefined) return;
-            _lastTS[tabla] = p.new.updated_at || '';
+            // Si el TS es el mismo que el último que escribimos, ignoramos (es nuestro propio cambio)
+            var nuevoTS = p.new.updated_at || '';
+            if (nuevoTS && nuevoTS === _lastTS[tabla]) return;
+            _lastTS[tabla] = nuevoTS;
             applyRemote(lsKey, p.new.datos);
             refreshUI();
             badge('En vivo ✓', true);
@@ -1374,8 +1403,8 @@ document.addEventListener('DOMContentLoaded', App.init);
     pullAll()
       .then(function () { setupRealtime(); })
       .catch(function () { setupRealtime(); });
-    // Polling cada 3s como red de seguridad
-    setInterval(poll, 3000);
+    // Polling cada 1s para máxima rapidez
+    setInterval(poll, 1000);
   }
 
   if (document.readyState === 'loading') {
