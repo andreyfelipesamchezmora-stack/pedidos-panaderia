@@ -1476,6 +1476,59 @@ document.addEventListener('DOMContentLoaded', App.init);
   } else {
     start();
   }
+
+  // ─────────────────────────────────────────────────────
+  // 🚀 AUTO-SUBIR AL CERRAR PESTAÑA / CAMBIAR DE TAB
+  // ─────────────────────────────────────────────────────
+  function _ssSubirPorBeacon(tabla, datos) {
+    try {
+      var url = SUPABASE_URL + '/rest/v1/' + tabla + '?on_conflict=id';
+      var payload = JSON.stringify({
+        id: 1,
+        datos: datos,
+        updated_at: new Date().toISOString()
+      });
+      // fetch con keepalive: se completa aunque la pestaña se cierre
+      fetch(url, {
+        method: 'POST',
+        keepalive: true,
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': 'Bearer ' + SUPABASE_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates'
+        },
+        body: payload
+      }).catch(function () {});
+    } catch (e) {}
+  }
+
+  function _ssAutoSubirTodo() {
+    try {
+      for (var lsKey in TABLAS) {
+        var tabla = TABLAS[lsKey];
+        try {
+          var raw = localStorage.getItem(lsKey);
+          if (!raw) continue;
+          var datos = JSON.parse(raw);
+          if (!datos) continue;
+          if (Array.isArray(datos) && datos.length === 0) continue;
+          if (typeof datos === 'object' && !Array.isArray(datos) && Object.keys(datos).length === 0) continue;
+          _ssSubirPorBeacon(tabla, datos);
+        } catch (e) {}
+      }
+      console.log('[SYNC v5] Auto-subida disparada antes de cerrar');
+    } catch (e) {}
+  }
+
+  window.addEventListener('beforeunload', _ssAutoSubirTodo);
+  window.addEventListener('pagehide', _ssAutoSubirTodo);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') {
+      _ssAutoSubirTodo();
+    }
+  });
+  console.log('✅ AUTO-SUBIR al cerrar pestaña activado');
 })();
 </script>
 </body>
