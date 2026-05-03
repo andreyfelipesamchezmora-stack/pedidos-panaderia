@@ -1258,55 +1258,62 @@ document.addEventListener('DOMContentLoaded', App.init);
     b.innerHTML = dot + ' ' + txt;
   }
 
-  // ── INIT: pull + merge + push si hay diferencia ──
+  // ── INIT: pull todas las fuentes + merge + push ──
   async function init() {
     setBadge('Sincronizando…');
 
-    // ── 1. Movimientos manuales (conta_v2) ──────────
+    // ── 1. mc_local ← movimientos_contables (ingresos brutos del panel) ──
+    // CRÍTICO: sin esto, contabilidad.html no ve los ingresos en otro browser
+    try {
+      var rMC = await pull('movimientos_contables');
+      if (Array.isArray(rMC) && rMC.length > 0) {
+        var localMC = [];
+        try { localMC = JSON.parse(localStorage.getItem('mc_local') || '[]'); } catch (e) {}
+        var mergedMC = mergeByID(localMC, rMC);
+        _lsOrig('mc_local', JSON.stringify(mergedMC));
+      }
+    } catch (e) { console.warn('[ContaSync] mc_local:', e); }
+
+    // ── 2. gm_local ← gastos_manuales (gastos del panel) ──
+    try {
+      var rGM = await pull('gastos_manuales');
+      if (Array.isArray(rGM) && rGM.length > 0) {
+        var localGM = [];
+        try { localGM = JSON.parse(localStorage.getItem('gm_local') || '[]'); } catch (e) {}
+        var mergedGM = mergeByID(localGM, rGM);
+        _lsOrig('gm_local', JSON.stringify(mergedGM));
+        try { sessionStorage.setItem('gastos', JSON.stringify(mergedGM)); } catch (e) {}
+      }
+    } catch (e) { console.warn('[ContaSync] gm_local:', e); }
+
+    // ── 3. conta_v2 ← conta_movimientos_v2 (movimientos manuales de esta app) ──
     try {
       var remoteMovs = await pull(T_MOVS);
       var localMovs  = [];
       try { localMovs = JSON.parse(localStorage.getItem(K_MOVS) || '[]'); } catch (e) {}
-
-      var merged = mergeByID(localMovs, remoteMovs);
-
-      // Solo actuar si el merge difiere de lo que tenemos
+      var merged    = mergeByID(localMovs, remoteMovs);
       var localLen  = localMovs.length;
       var remoteLen = Array.isArray(remoteMovs) ? remoteMovs.length : 0;
       var mergedLen = merged.length;
-
       if (mergedLen > localLen) {
-        // Hay entradas nuevas en remoto → actualizar local sin triggear push
         _pushing[T_MOVS] = true;
         _lsOrig(K_MOVS, JSON.stringify(merged));
         setTimeout(function () { _pushing[T_MOVS] = false; }, 300);
       }
-      if (mergedLen > remoteLen) {
-        // Hay entradas nuevas en local → subir a Supabase
-        push(T_MOVS, merged);
-      }
-    } catch (e) { console.warn('[ContaSync] movs:', e); }
+      if (mergedLen > remoteLen) { push(T_MOVS, merged); }
+    } catch (e) { console.warn('[ContaSync] conta_v2:', e); }
 
-    // ── 2. Categorías (conta_categorias_v2) ─────────
+    // ── 4. conta_categorias_v2 ─────────────────────
     try {
       var remoteCats = await pull(T_CATS);
       var localCats  = null;
       try { localCats = JSON.parse(localStorage.getItem(K_CATS) || 'null'); } catch (e) {}
-
       var remoteOk = remoteCats && Array.isArray(remoteCats.ingresos) && remoteCats.ingresos.length > 0;
-
       if (remoteOk && !localCats) {
-        // Supabase tiene, local no → descargar
         _pushing[T_CATS] = true;
         _lsOrig(K_CATS, JSON.stringify(remoteCats));
         setTimeout(function () { _pushing[T_CATS] = false; }, 300);
-      } else if (localCats && !remoteOk) {
-        // Local tiene, Supabase no → subir
-        push(T_CATS, localCats);
-      } else if (localCats) {
-        // Ambos tienen → mantener local y asegurar Supabase actualizado
-        push(T_CATS, localCats);
-      }
+      } else if (localCats) { push(T_CATS, localCats); }
     } catch (e) { console.warn('[ContaSync] cats:', e); }
 
     refreshUI();
@@ -1315,6 +1322,31 @@ document.addEventListener('DOMContentLoaded', App.init);
     // ── 3. Realtime: cambios de otros dispositivos ──
     try {
       db.channel('conta-html-rt')
+        // Ingresos brutos y gastos del panel (mc_local / gm_local)
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'movimientos_contables', filter: 'id=eq.1' },
+          function (p) {
+            if (!p.new || p.new.datos === undefined) return;
+            var cur = [];
+            try { cur = JSON.parse(localStorage.getItem('mc_local') || '[]'); } catch (e) {}
+            var m2 = mergeByID(cur, p.new.datos);
+            _lsOrig('mc_local', JSON.stringify(m2));
+            refreshUI();
+          }
+        )
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'gastos_manuales', filter: 'id=eq.1' },
+          function (p) {
+            if (!p.new || p.new.datos === undefined) return;
+            var cur = [];
+            try { cur = JSON.parse(localStorage.getItem('gm_local') || '[]'); } catch (e) {}
+            var m2 = mergeByID(cur, p.new.datos);
+            _lsOrig('gm_local', JSON.stringify(m2));
+            try { sessionStorage.setItem('gastos', JSON.stringify(m2)); } catch (e) {}
+            refreshUI();
+          }
+        )
+        // Movimientos manuales de contabilidad.html
         .on('postgres_changes',
           { event: '*', schema: 'public', table: T_MOVS, filter: 'id=eq.1' },
           function (p) {
