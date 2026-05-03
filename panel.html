@@ -6398,25 +6398,151 @@ function _uOpsCaja(){
 // =====================================================
 // MARQUESINA
 // =====================================================
-var _mS=document.createElement('style');_mS.textContent='#obsMarquee{position:relative;width:100%;overflow:hidden;background:linear-gradient(90deg,#fbbf24,#f59e0b,#d97706);border-radius:10px;margin-bottom:10px;min-height:0;}#obsMarquee.visible{min-height:36px;}.obs-marquee-track{display:inline-flex;gap:80px;white-space:nowrap;padding:8px 20px;align-items:center;will-change:transform;}.obs-item{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#1a1a1a;}.obs-item .obs-nombre{background:rgba(0,0,0,0.15);padding:2px 8px;border-radius:6px;font-weight:800;font-size:12px;}.obs-item .obs-del{background:rgba(0,0,0,0.12);border:none;color:#7c2d12;cursor:pointer;font-size:14px;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;}';document.head.appendChild(_mS);
+// \u2500\u2500 Estilos del marquee \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+(function(){
+  var s=document.createElement('style');
+  s.id='obsMarqueeStyles';
+  s.textContent=[
+    '#obsMarquee{position:relative;width:100%;overflow:hidden;background:linear-gradient(90deg,#fbbf24,#f59e0b,#d97706);border-radius:10px;margin-bottom:10px;min-height:0;}',
+    '#obsMarquee.visible{min-height:36px;}',
+    '.obs-marquee-track{display:inline-flex;gap:100px;white-space:nowrap;padding:8px 24px;align-items:center;will-change:transform;}',
+    '.obs-item{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#1a1a1a;flex-shrink:0;}',
+    '.obs-item .obs-nombre{background:rgba(0,0,0,0.15);padding:2px 8px;border-radius:6px;font-weight:800;font-size:12px;}',
+    '.obs-item .obs-del{background:rgba(0,0,0,0.18);border:none;color:#7c2d12;cursor:pointer;font-size:13px;font-weight:900;border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;line-height:1;transition:background .15s;}',
+    '.obs-item .obs-del:hover{background:rgba(0,0,0,0.35);}',
+    '@keyframes obsScroll{from{transform:translateX(0)}to{transform:translateX(var(--obs-half,0px))}}'
+  ].join('');
+  document.head.appendChild(s);
+})();
 
-window.actualizarMarquee=function(){
-  if(!document.getElementById('obsMarquee')){var main=document.querySelector('.main');if(!main)return;var sr=main.querySelector('input[placeholder*="Buscar"]');if(!sr)return;var m=document.createElement('div');m.id='obsMarquee';sr.parentNode.insertBefore(m,sr);}
-  var marquee=document.getElementById('obsMarquee');if(!marquee)return;
-  var obs=[];try{obs=JSON.parse(localStorage.getItem('obs_marquee')||'[]');}catch(e){}
-  try{var fk='recaudo_'+cajaFechaHoy();var est=JSON.parse(localStorage.getItem(fk)||'{}');Object.keys(est).forEach(function(n){if(n.startsWith('__'))return;var o=est[n];if(o&&o.observacion&&o.observacion.trim()){var ya=obs.find(function(x){return x.nombre===n;});if(!ya)obs.push({nombre:n,texto:o.observacion.trim()});else ya.texto=o.observacion.trim();}});}catch(e){}
-  var v={},u=[];obs.forEach(function(o){var k=(o.nombre||'').replace(/_/g,' ').replace(/\s+/g,' ').trim().toUpperCase();if(!k)return;if(!v[k]){v[k]=true;u.push({nombre:(o.nombre||'').replace(/_/g,' ').replace(/\s+/g,' ').trim(),texto:o.texto||''});}});obs=u;localStorage.setItem('obs_marquee',JSON.stringify(obs));
+// \u2500\u2500 Funci\u00f3n principal del marquee \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+window.actualizarMarquee = function(){
+  // Crear el contenedor si no existe
+  if(!document.getElementById('obsMarquee')){
+    var main=document.querySelector('.main');
+    if(!main)return;
+    var sr=main.querySelector('input[placeholder*="Buscar"]');
+    if(!sr)return;
+    var m=document.createElement('div');
+    m.id='obsMarquee';
+    sr.parentNode.insertBefore(m,sr);
+  }
+  var marquee=document.getElementById('obsMarquee');
+  if(!marquee)return;
+
+  // Cancelar animaci\u00f3n JS anterior (si qued\u00f3 alguna)
+  if(window._obsAnimId){cancelAnimationFrame(window._obsAnimId);window._obsAnimId=null;}
+
+  // Leer y fusionar obs_marquee con observaciones del recaudo del d\u00eda
+  var obs=[];
+  try{obs=JSON.parse(localStorage.getItem('obs_marquee')||'[]');}catch(e){}
+  try{
+    var fk='recaudo_'+cajaFechaHoy();
+    var est=JSON.parse(localStorage.getItem(fk)||'{}');
+    Object.keys(est).forEach(function(n){
+      if(n.startsWith('__'))return;
+      var o=est[n];
+      if(o&&o.observacion&&o.observacion.trim()){
+        var ya=obs.find(function(x){return x.nombre===n;});
+        if(!ya)obs.push({nombre:n,texto:o.observacion.trim()});
+        else ya.texto=o.observacion.trim();
+      }
+    });
+  }catch(e){}
+
+  // Deduplicar por nombre (case-insensitive)
+  var seen={},deduped=[];
+  obs.forEach(function(o){
+    var k=(o.nombre||'').replace(/_/g,' ').replace(/\s+/g,' ').trim().toUpperCase();
+    if(!k||seen[k])return;
+    seen[k]=true;
+    deduped.push({nombre:(o.nombre||'').replace(/_/g,' ').replace(/\s+/g,' ').trim(),texto:o.texto||''});
+  });
+  obs=deduped;
+  localStorage.setItem('obs_marquee',JSON.stringify(obs));
+
   if(obs.length===0){marquee.classList.remove('visible');marquee.innerHTML='';return;}
+
   marquee.classList.add('visible');
-  marquee.innerHTML='<div class="obs-marquee-track">'+obs.map(function(o,i){return'<span class="obs-item"><span class="obs-nombre">'+o.nombre+'</span><span class="obs-texto">'+o.texto+'</span><button class="obs-del" onclick="event.stopPropagation();eliminarObsMarquee('+i+')">\u00d7</button></span>';}).join('')+'</div>';
-  var track=marquee.querySelector('.obs-marquee-track');if(!track)return;
-  var cW=marquee.offsetWidth,tW=track.scrollWidth,sP=cW,eP=-tW,sp=50,pos=sP,st=null;
-  function anim(ts){if(!st)st=ts;pos=sP-((ts-st)/1000)*sp;if(pos<eP){st=null;pos=sP;}track.style.transform='translateX('+pos+'px)';window._obsAnimId=requestAnimationFrame(anim);}
-  if(window._obsAnimId)cancelAnimationFrame(window._obsAnimId);window._obsAnimId=requestAnimationFrame(anim);
-  marquee.onmouseenter=function(){if(window._obsAnimId)cancelAnimationFrame(window._obsAnimId);};marquee.onmouseleave=function(){window._obsAnimId=requestAnimationFrame(anim);};
+
+  // Construir HTML de items
+  var itemsHTML=obs.map(function(o,i){
+    return '<span class="obs-item">'
+      +'<span class="obs-nombre">'+o.nombre+'</span>'
+      +'<span class="obs-texto">'+o.texto+'</span>'
+      +'<button class="obs-del" onclick="event.stopPropagation();eliminarObsMarquee('+i+')" title="Eliminar observaci\u00f3n">\u00d7</button>'
+      +'</span>';
+  }).join('');
+
+  // Renderizar con el contenido DUPLICADO para loop seamless
+  marquee.innerHTML='<div class="obs-marquee-track" id="_obsTrack">'+itemsHTML+itemsHTML+'</div>';
+
+  // Calcular duraci\u00f3n tras un frame para que el browser mida scrollWidth
+  requestAnimationFrame(function(){
+    requestAnimationFrame(function(){
+      var track=document.getElementById('_obsTrack');
+      if(!track)return;
+      // Ancho de UNA copia (la mitad del total)
+      var halfW=Math.round(track.scrollWidth/2);
+      if(halfW<=0)return;
+      // Velocidad: 90px/s \u2192 ajusta aqu\u00ed si quieres m\u00e1s lento/r\u00e1pido
+      var speed=90;
+      var duration=(halfW/speed).toFixed(2);
+      // Inyectar variable CSS y aplicar animaci\u00f3n
+      track.style.setProperty('--obs-half','-'+halfW+'px');
+      track.style.animation='obsScroll '+duration+'s linear infinite';
+      // Pausar al hover sin cancelar
+      marquee.onmouseenter=function(){track.style.animationPlayState='paused';};
+      marquee.onmouseleave=function(){track.style.animationPlayState='running';};
+    });
+  });
 };
-window.eliminarObsMarquee=function(i){var obs=[];try{obs=JSON.parse(localStorage.getItem('obs_marquee')||'[]');}catch(e){}if(i>=0&&i<obs.length){try{var fk='recaudo_'+cajaFechaHoy();var e=JSON.parse(localStorage.getItem(fk)||'{}');if(e[obs[i].nombre]){e[obs[i].nombre].observacion='';localStorage.setItem(fk,JSON.stringify(e));}}catch(x){}obs.splice(i,1);localStorage.setItem('obs_marquee',JSON.stringify(obs));}actualizarMarquee();};
-setTimeout(actualizarMarquee,1000);setInterval(actualizarMarquee,30000);
+
+// \u2500\u2500 Eliminar observaci\u00f3n: limpia marquee + localStorage + campo DOM \u2500\u2500
+window.eliminarObsMarquee=function(i){
+  var obs=[];
+  try{obs=JSON.parse(localStorage.getItem('obs_marquee')||'[]');}catch(e){}
+  if(i<0||i>=obs.length)return;
+  var nombre=obs[i].nombre;
+
+  // 1. Borrar del recaudo en localStorage
+  try{
+    var fk='recaudo_'+cajaFechaHoy();
+    var estado=JSON.parse(localStorage.getItem(fk)||'{}');
+    if(estado[nombre]){
+      estado[nombre].observacion='';
+      localStorage.setItem(fk,JSON.stringify(estado));
+    }
+  }catch(x){}
+
+  // 2. Limpiar el campo visible en el recaudo (si est\u00e1 en pantalla)
+  try{
+    var inp=document.getElementById('rec_obs_'+nombre);
+    if(inp){inp.value='';inp.dispatchEvent(new Event('input'));}
+  }catch(x2){}
+
+  // 3. Limpiar comentario en clientesDatos (persistencia del modal de pedido)
+  try{
+    var cd={};try{cd=JSON.parse(localStorage.getItem('clientesDatos')||'{}');}catch(e){}
+    if(cd[nombre]){cd[nombre].comentario='';localStorage.setItem('clientesDatos',JSON.stringify(cd));}
+  }catch(x3){}
+
+  // 4. Si el modal de pedido est\u00e1 abierto para ese cliente, limpiar el textarea al instante
+  try{
+    if(window.actualCliente===nombre){
+      var com=document.getElementById('comentarios');
+      if(com)com.value='';
+    }
+  }catch(x4){}
+
+  // 5. Quitar del array y guardar
+  obs.splice(i,1);
+  localStorage.setItem('obs_marquee',JSON.stringify(obs));
+  actualizarMarquee();
+};
+
+setTimeout(actualizarMarquee,1000);
+setInterval(actualizarMarquee,30000);
 
 // =====================================================
 // RENDER RECAUDO — ÚNICO (panel ancho + monedas + botón camo + exportar)
@@ -6441,7 +6567,34 @@ window.quitarMonedaSimple=function(i){var k='monedas_'+cajaFechaHoy();var mm=[];
 
 // Observaciones en recaudo
 var _bgf=window.recaudoGuardarFila;
-window.recaudoGuardarFila=function(n){if(typeof _bgf==='function')_bgf(n);var oi=document.getElementById('rec_obs_'+n);if(oi&&oi.value.trim()){var obs=[];try{obs=JSON.parse(localStorage.getItem('obs_marquee')||'[]');}catch(e){}obs=obs.filter(function(x){return x.nombre!==n;});obs.push({nombre:n,texto:oi.value.trim()});localStorage.setItem('obs_marquee',JSON.stringify(obs));actualizarMarquee();}};
+window.recaudoGuardarFila=function(n){
+  if(typeof _bgf==='function')_bgf(n);
+  var oi=document.getElementById('rec_obs_'+n);
+  var texto=(oi?oi.value:'').trim();
+
+  // 1. Actualizar obs_marquee
+  var obs=[];try{obs=JSON.parse(localStorage.getItem('obs_marquee')||'[]');}catch(e){}
+  obs=obs.filter(function(x){return x.nombre!==n;});
+  if(texto)obs.push({nombre:n,texto:texto});
+  localStorage.setItem('obs_marquee',JSON.stringify(obs));
+  actualizarMarquee();
+
+  // 2. Sincronizar con clientesDatos (campo comentario del modal de pedido)
+  try{
+    var cd={};try{cd=JSON.parse(localStorage.getItem('clientesDatos')||'{}');}catch(e2){}
+    if(!cd[n])cd[n]={};
+    cd[n].comentario=texto;
+    localStorage.setItem('clientesDatos',JSON.stringify(cd));
+  }catch(e3){}
+
+  // 3. Si el modal de pedido está abierto para este mismo cliente, reflejar al instante
+  try{
+    if(window.actualCliente===n){
+      var com=document.getElementById('comentarios');
+      if(com)com.value=texto;
+    }
+  }catch(e4){}
+};
 
 // =====================================================
 // PAGO DEUDA EFECTIVO — ARREGLAR TOTAL "PAGOS DEUDA"
@@ -6510,7 +6663,18 @@ var _bA=window.abrir;window.abrir=async function(n,id){if(typeof _bA==='function
   if(mdv) mdv.value = (d.meDebeValor && Number(d.meDebeValor)>0) ? d.meDebeValor : (h.deudaCliente>0 ? h.deudaCliente : '');
   if(ld) ld.checked = d.leDebo ? true : (!d.meDebeCheck && h.deudaMia>0);
   if(md) md.checked = d.meDebeCheck ? true : (!d.leDebo && h.deudaCliente>0);
-  if(com&&d.comentario) com.value=d.comentario;
+  if(com){
+    if(d.comentario){
+      com.value=d.comentario;
+    } else {
+      // Si no hay comentario guardado, cargar la observación del recaudo como texto inicial
+      try{
+        var _obsArr=JSON.parse(localStorage.getItem('obs_marquee')||'[]');
+        var _obsEntry=_obsArr.find(function(x){return x.nombre===n;});
+        if(_obsEntry&&_obsEntry.texto) com.value=_obsEntry.texto;
+      }catch(eo){}
+    }
+  }
   if(typeof calcular==='function')calcular();
 },300);};
 
