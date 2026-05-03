@@ -6,50 +6,50 @@
 <title>Contabilidad — Panel PRO</title>
 <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
 <style>
-/* ─── Reset & tokens ──────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --font: 'Satoshi', system-ui, sans-serif;
-  --bg:       #0f172a;
-  --surface:  #1e293b;
-  --surface2: #162032;
-  --border:   rgba(255,255,255,.08);
-  --text:     #e2e8f0;
-  --muted:    #94a3b8;
-  --green:    #4ade80;
-  --red:      #f87171;
-  --yellow:   #fbbf24;
-  --blue:     #60a5fa;
-  --r:        14px;
+  --font:    'Satoshi', system-ui, sans-serif;
+  --bg:      #0f172a;
+  --surface: #1e293b;
+  --sur2:    #162032;
+  --border:  rgba(255,255,255,.08);
+  --text:    #e2e8f0;
+  --muted:   #94a3b8;
+  --green:   #4ade80;
+  --red:     #f87171;
+  --yellow:  #fbbf24;
+  --blue:    #60a5fa;
+  --r:       14px;
 }
 html, body { height: 100%; font-family: var(--font); background: var(--bg); color: var(--text); font-size: 15px; }
 
-/* ─── Layout ─────────────────────────────── */
+/* ── Topbar ──────────────────────────────── */
 .topbar {
   display: flex; align-items: center; gap: 14px;
-  padding: 14px 24px;
+  padding: 13px 24px;
   background: rgba(0,0,0,.45); border-bottom: 1px solid var(--border);
   position: sticky; top: 0; z-index: 30; backdrop-filter: blur(8px);
 }
-.topbar-brand { font-size: 17px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px; }
-.topbar-brand svg { color: var(--yellow); }
-.back-link {
+.brand { font-size: 17px; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px; }
+.brand svg { color: var(--yellow); }
+.back {
   margin-left: auto; font-size: 13px; font-weight: 600; color: var(--muted);
   text-decoration: none; padding: 7px 14px;
   background: rgba(255,255,255,.05); border: 1px solid var(--border); border-radius: 10px;
   transition: .15s;
 }
-.back-link:hover { color: var(--text); background: rgba(255,255,255,.1); }
+.back:hover { color: var(--text); background: rgba(255,255,255,.09); }
 
-/* ─── Tabs ───────────────────────────────── */
-.tabs-nav {
+/* ── Tabs ────────────────────────────────── */
+.tabs {
   display: flex; gap: 2px; padding: 0 24px;
   border-bottom: 1px solid var(--border);
-  background: rgba(0,0,0,.2); overflow-x: auto; scrollbar-width: none;
+  background: rgba(0,0,0,.2);
+  overflow-x: auto; scrollbar-width: none;
 }
-.tabs-nav::-webkit-scrollbar { display: none; }
+.tabs::-webkit-scrollbar { display: none; }
 .tab {
-  padding: 14px 22px; background: none; border: none;
+  padding: 13px 22px; background: none; border: none;
   border-bottom: 2px solid transparent; color: var(--muted);
   font-family: var(--font); font-size: 14px; font-weight: 600;
   cursor: pointer; white-space: nowrap; transition: .15s;
@@ -57,182 +57,152 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 .tab:hover { color: var(--text); }
 .tab.active { color: #fff; border-bottom-color: var(--yellow); }
 
-/* ─── Sections ───────────────────────────── */
-.section { display: none; padding: 28px 24px; max-width: 900px; margin: 0 auto; }
-.section.active { display: block; }
+/* ── Sections ────────────────────────────── */
+.sec { display: none; padding: 28px 24px; max-width: 920px; margin: 0 auto; animation: fadeIn .2s; }
+.sec.on { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-/* ─── KPI Dashboard ──────────────────────── */
+/* ── KPI cards ───────────────────────────── */
 .kpi-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 28px; }
-@media(max-width:560px){ .kpi-row { grid-template-columns: 1fr; } }
-.kpi-card {
+@media(max-width:540px){ .kpi-row { grid-template-columns: 1fr; } }
+.kpi {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r); padding: 22px 24px;
 }
-.kpi-card.g { border-left: 3px solid var(--green); }
-.kpi-card.r { border-left: 3px solid var(--red); }
-.kpi-card.b { border-left: 3px solid var(--blue); }
-.kpi-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; color: var(--muted); margin-bottom: 8px; }
-.kpi-value { font-size: 1.75rem; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
-.kpi-value.neg { color: var(--red); }
-.kpi-value.pos { color: var(--green); }
+.kpi.g { border-left: 3px solid var(--green); }
+.kpi.r { border-left: 3px solid var(--red); }
+.kpi.b { border-left: 3px solid var(--blue); }
+.kpi-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; color: var(--muted); margin-bottom: 8px; }
+.kpi-val { font-size: 1.8rem; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
+.kpi-val.pos { color: var(--green); }
+.kpi-val.neg { color: var(--red); }
 
-/* ─── Recent list ────────────────────────── */
-.recent-title { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 12px; }
-.recent-item {
+/* ── Recent list ─────────────────────────── */
+.sec-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; color: var(--muted); margin-bottom: 12px; }
+.ri {
   display: flex; justify-content: space-between; align-items: center;
   padding: 12px 16px; margin-bottom: 6px;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 10px; transition: .15s;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
 }
-.recent-item.ingreso { border-left: 3px solid var(--green); }
-.recent-item.gasto   { border-left: 3px solid var(--red); }
-.recent-left { display: flex; flex-direction: column; gap: 2px; }
-.recent-desc { font-size: 14px; font-weight: 600; color: var(--text); }
-.recent-meta { font-size: 11px; color: var(--muted); }
-.recent-monto { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.recent-item.ingreso .recent-monto { color: var(--green); }
-.recent-item.gasto   .recent-monto { color: var(--red); }
-.empty-msg { text-align: center; color: var(--muted); padding: 32px; font-size: 14px; }
+.ri.ingreso { border-left: 3px solid var(--green); }
+.ri.gasto   { border-left: 3px solid var(--red); }
+.ri-left { display: flex; flex-direction: column; gap: 2px; }
+.ri-desc { font-size: 14px; font-weight: 600; }
+.ri-meta { font-size: 11px; color: var(--muted); }
+.ri-monto { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ri.ingreso .ri-monto { color: var(--green); }
+.ri.gasto   .ri-monto { color: var(--red); }
+.empty-msg { color: var(--muted); padding: 32px; text-align: center; font-size: 14px; }
 
-/* ─── Form ───────────────────────────────── */
+/* ── Form ────────────────────────────────── */
 .form-card {
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r); padding: 28px; max-width: 540px;
+  border-radius: var(--r); padding: 28px; max-width: 520px;
 }
 .form-card h2 { font-size: 18px; font-weight: 800; margin-bottom: 24px; color: #fff; }
-.field { margin-bottom: 18px; }
-.field label { display: block; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 8px; }
-.field input, .field select {
+.fld { margin-bottom: 18px; }
+.fld label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 7px; }
+.fld input, .fld select {
   width: 100%; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
   border-radius: 10px; color: var(--text); padding: 11px 14px;
   font-size: 14px; font-family: var(--font); transition: .15s;
 }
-.field input:focus, .field select:focus {
+.fld input:focus, .fld select:focus {
   outline: none; border-color: rgba(251,191,36,.5);
   box-shadow: 0 0 0 3px rgba(251,191,36,.12);
 }
-.field input::placeholder { color: var(--muted); }
-.field select option { background: #1e293b; }
-
-/* Type selector */
-.type-selector { display: flex; gap: 8px; }
-.type-btn {
+.fld input::placeholder { color: var(--muted); }
+.fld select option { background: #1e293b; }
+.type-row { display: flex; gap: 8px; }
+.tbtn {
   flex: 1; padding: 11px; background: rgba(255,255,255,.05);
   border: 1px solid rgba(255,255,255,.12); border-radius: 10px;
-  color: var(--muted); font-family: var(--font); font-size: 14px;
-  font-weight: 700; cursor: pointer; transition: .2s; text-align: center;
+  color: var(--muted); font-family: var(--font); font-size: 14px; font-weight: 700;
+  cursor: pointer; transition: .2s; text-align: center;
 }
-.type-btn.active.ing {
-  background: rgba(74,222,128,.15); border-color: rgba(74,222,128,.4); color: var(--green);
-}
-.type-btn.active.gas {
-  background: rgba(248,113,113,.15); border-color: rgba(248,113,113,.4); color: var(--red);
-}
-
-/* Save button */
+.tbtn.sel-ing { background: rgba(74,222,128,.15); border-color: rgba(74,222,128,.4); color: var(--green); }
+.tbtn.sel-gas { background: rgba(248,113,113,.15); border-color: rgba(248,113,113,.4); color: var(--red); }
 .btn-save {
-  width: 100%; padding: 13px; margin-top: 6px;
+  width: 100%; padding: 13px; margin-top: 4px;
   background: var(--yellow); border: none; border-radius: 10px;
   color: #0f172a; font-family: var(--font); font-size: 15px; font-weight: 800;
   cursor: pointer; transition: .15s;
 }
-.btn-save:hover { filter: brightness(1.1); }
+.btn-save:hover { filter: brightness(1.08); }
+.fb { display: none; margin-top: 14px; padding: 11px 14px; border-radius: 10px; font-size: 13px; font-weight: 700; }
+.fb.ok  { background: rgba(74,222,128,.1);  color: var(--green); border: 1px solid rgba(74,222,128,.25); }
+.fb.err { background: rgba(248,113,113,.1); color: var(--red);   border: 1px solid rgba(248,113,113,.25); }
 
-/* Feedback */
-.feedback {
-  display: none; margin-top: 14px; padding: 11px 14px;
-  border-radius: 10px; font-size: 13px; font-weight: 700;
-}
-.feedback.success { background: rgba(74,222,128,.12); color: var(--green); border: 1px solid rgba(74,222,128,.25); }
-.feedback.error   { background: rgba(248,113,113,.12); color: var(--red);   border: 1px solid rgba(248,113,113,.25); }
-
-/* ─── Historial ──────────────────────────── */
-.hist-top {
-  display: flex; justify-content: space-between; align-items: center;
-  flex-wrap: wrap; gap: 12px; margin-bottom: 18px;
-}
+/* ── Historial ───────────────────────────── */
+.hist-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
 .hist-top h2 { font-size: 18px; font-weight: 800; }
-.btn-export {
-  padding: 8px 16px; background: rgba(74,222,128,.12); border: 1px solid rgba(74,222,128,.25);
+.btn-exp {
+  padding: 8px 16px; background: rgba(74,222,128,.1); border: 1px solid rgba(74,222,128,.22);
   border-radius: 10px; color: var(--green); font-size: 13px; font-weight: 700;
   cursor: pointer; font-family: var(--font); transition: .15s;
 }
-.btn-export:hover { background: rgba(74,222,128,.22); }
-
-/* Filters */
-.filters {
-  display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;
-}
+.btn-exp:hover { background: rgba(74,222,128,.2); }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .filters input, .filters select {
+  flex: 1; min-width: 120px;
   background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
   border-radius: 10px; color: var(--text); padding: 8px 12px;
-  font-size: 13px; font-family: var(--font); min-width: 130px; flex: 1;
+  font-size: 13px; font-family: var(--font);
 }
 .filters input::placeholder { color: var(--muted); }
 .filters select option { background: #1e293b; }
-
-/* Totals bar */
-.totals-bar {
-  display: flex; gap: 16px; flex-wrap: wrap; padding: 12px 16px;
-  background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 10px; margin-bottom: 14px; font-size: 13px;
+.tbar {
+  display: flex; gap: 16px; flex-wrap: wrap; padding: 11px 16px;
+  background: var(--sur2); border: 1px solid var(--border); border-radius: 10px;
+  margin-bottom: 14px; font-size: 13px;
 }
-.tb-item { color: var(--muted); }
-.tb-item strong { font-weight: 800; }
-.tb-item.g strong { color: var(--green); }
-.tb-item.r strong { color: var(--red); }
-.tb-item.bl strong { color: var(--blue); }
-
-/* Table */
-.hist-table {
+.tb-it { color: var(--muted); }
+.tb-it strong { font-weight: 800; }
+.tb-it.g strong { color: var(--green); }
+.tb-it.r strong { color: var(--red); }
+.tb-it.b strong { color: var(--blue); }
+.htable {
   width: 100%; border-collapse: collapse;
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r); overflow: hidden; font-size: 14px;
 }
-.hist-table thead th {
-  background: var(--surface2); padding: 12px 14px; text-align: left;
+.htable thead th {
+  background: var(--sur2); padding: 11px 14px; text-align: left;
   font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
   color: var(--muted); font-weight: 700; white-space: nowrap;
 }
-.hist-table tbody tr { border-top: 1px solid rgba(255,255,255,.04); transition: .1s; }
-.hist-table tbody tr:hover { background: rgba(255,255,255,.025); }
-.hist-table td { padding: 11px 14px; vertical-align: middle; }
-.td-fecha { color: var(--muted); font-size: 12px; white-space: nowrap; }
-.td-desc  { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.td-monto { text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.td-monto.ingreso { color: var(--green); }
-.td-monto.gasto   { color: var(--red); }
-.td-acciones { text-align: center; white-space: nowrap; }
-.empty-cell { text-align: center; padding: 36px; color: var(--muted); }
-
-/* Badges */
-.badge {
-  display: inline-block; padding: 3px 10px;
-  border-radius: 999px; font-size: 11px; font-weight: 800;
-}
+.htable tbody tr { border-top: 1px solid rgba(255,255,255,.04); transition: .1s; }
+.htable tbody tr:hover { background: rgba(255,255,255,.025); }
+.htable td { padding: 10px 14px; vertical-align: middle; }
+.td-f  { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.td-d  { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-m  { text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.td-m.ingreso { color: var(--green); }
+.td-m.gasto   { color: var(--red); }
+.td-ac { text-align: center; white-space: nowrap; }
+.empty-row td { text-align: center; padding: 36px; color: var(--muted); }
+.badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; }
 .badge.ingreso { background: rgba(74,222,128,.15);  color: var(--green); }
 .badge.gasto   { background: rgba(248,113,113,.15); color: var(--red); }
-
-/* Action buttons */
-.btn-edit {
+.btn-ed {
   background: none; border: none; cursor: pointer; padding: 4px 6px;
-  font-size: 14px; border-radius: 6px; color: var(--muted); transition: .15s;
+  font-size: 14px; border-radius: 6px; color: var(--muted); transition: .15s; font-family: var(--font);
 }
-.btn-edit:hover { background: rgba(255,255,255,.08); color: var(--text); }
-.btn-del {
+.btn-ed:hover { background: rgba(255,255,255,.08); color: var(--text); }
+.btn-rm {
   background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.18);
   border-radius: 6px; color: var(--red); padding: 4px 8px; cursor: pointer;
-  font-size: 13px; font-weight: 700; font-family: var(--font); transition: .15s;
+  font-size: 12px; font-weight: 700; font-family: var(--font); transition: .15s;
 }
-.btn-del:hover { background: rgba(248,113,113,.2); }
+.btn-rm:hover { background: rgba(248,113,113,.2); }
 
-/* ─── Modal editar ───────────────────────── */
-.modal-overlay {
+/* ── Modal ───────────────────────────────── */
+.modal-ov {
   display: none; position: fixed; inset: 0;
   background: rgba(0,0,0,.72); z-index: 100;
   align-items: center; justify-content: center; padding: 16px;
 }
-.modal-overlay.open { display: flex; }
+.modal-ov.on { display: flex; }
 .modal-box {
   background: var(--surface); border: 1px solid rgba(255,255,255,.12);
   border-radius: 18px; padding: 28px; width: 100%; max-width: 420px;
@@ -240,188 +210,142 @@ html, body { height: 100%; font-family: var(--font); background: var(--bg); colo
 }
 .modal-box h3 { font-size: 17px; font-weight: 800; color: #fff; margin-bottom: 20px; }
 .modal-btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
-.btn-cancel {
+.btn-can {
   padding: 10px 18px; background: rgba(255,255,255,.06); border: 1px solid var(--border);
   border-radius: 10px; color: var(--muted); font-size: 14px; font-weight: 700;
   cursor: pointer; font-family: var(--font); transition: .15s;
 }
 .btn-ok {
-  padding: 10px 18px; background: var(--yellow); border: none;
+  padding: 10px 20px; background: var(--yellow); border: none;
   border-radius: 10px; color: #0f172a; font-size: 14px; font-weight: 800;
-  cursor: pointer; font-family: var(--font); transition: .15s;
+  cursor: pointer; font-family: var(--font);
 }
-.btn-ok:hover { filter: brightness(1.1); }
 </style>
 </head>
 <body>
 
-<!-- ─── Topbar ──────────────────────────── -->
+<!-- Topbar -->
 <div class="topbar">
-  <div class="topbar-brand">
+  <div class="brand">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <rect x="2" y="3" width="20" height="14" rx="2"/>
       <path d="M8 21h8M12 17v4"/>
     </svg>
     Contabilidad
   </div>
-  <a href="panel (34).html" class="back-link">← Volver al panel</a>
+  <a href="panel (34).html" class="back">← Panel</a>
 </div>
 
-<!-- ─── Tabs ──────────────────────────────── -->
-<nav class="tabs-nav">
-  <button class="tab active" data-tab="dashboard">📊 Resumen</button>
-  <button class="tab"        data-tab="registrar">➕ Registrar</button>
-  <button class="tab"        data-tab="historial">📋 Historial</button>
+<!-- Tabs -->
+<nav class="tabs">
+  <button class="tab active" data-sec="dashboard">📊 Resumen</button>
+  <button class="tab"        data-sec="registrar">➕ Registrar</button>
+  <button class="tab"        data-sec="historial">📋 Historial</button>
 </nav>
 
-<!-- ═══════════════════════════════════════════
-     SECCIÓN A: DASHBOARD
-═══════════════════════════════════════════ -->
-<section id="dashboard" class="section active">
+<!-- ═══════ DASHBOARD ═══════ -->
+<section id="dashboard" class="sec on">
   <div class="kpi-row">
-    <div class="kpi-card g">
-      <div class="kpi-label">Ingresos totales</div>
-      <div class="kpi-value pos" id="kpiIngresos">$0</div>
-    </div>
-    <div class="kpi-card r">
-      <div class="kpi-label">Gastos totales</div>
-      <div class="kpi-value neg" id="kpiGastos">$0</div>
-    </div>
-    <div class="kpi-card b">
-      <div class="kpi-label">Balance</div>
-      <div class="kpi-value" id="kpiBalance">$0</div>
-    </div>
+    <div class="kpi g"><div class="kpi-lbl">Ingresos totales</div><div class="kpi-val pos" id="kI">$0</div></div>
+    <div class="kpi r"><div class="kpi-lbl">Gastos totales</div><div class="kpi-val neg" id="kG">$0</div></div>
+    <div class="kpi b"><div class="kpi-lbl">Balance</div><div class="kpi-val" id="kB">$0</div></div>
   </div>
-
-  <div class="recent-title">Últimos movimientos</div>
+  <div class="sec-lbl">Últimos movimientos</div>
   <div id="recentList"></div>
 </section>
 
-<!-- ═══════════════════════════════════════════
-     SECCIÓN B: REGISTRAR
-═══════════════════════════════════════════ -->
-<section id="registrar" class="section">
+<!-- ═══════ REGISTRAR ═══════ -->
+<section id="registrar" class="sec">
   <div class="form-card">
     <h2>Nuevo movimiento</h2>
-
-    <div class="field">
+    <div class="fld">
       <label>Tipo</label>
-      <div class="type-selector">
-        <button class="type-btn active ing" id="btnIngreso" onclick="App.selTipo('ingreso')">↑ Ingreso</button>
-        <button class="type-btn"            id="btnGasto"   onclick="App.selTipo('gasto')">↓ Gasto</button>
+      <div class="type-row">
+        <button class="tbtn sel-ing" id="btnI" onclick="App.tipo('ingreso')">↑ Ingreso</button>
+        <button class="tbtn"         id="btnG" onclick="App.tipo('gasto')">↓ Gasto</button>
       </div>
     </div>
-
-    <div class="field">
-      <label for="fMonto">Monto</label>
-      <input type="number" id="fMonto" placeholder="Ej: 50000" min="1" step="1">
+    <div class="fld">
+      <label for="fM">Monto</label>
+      <input type="number" id="fM" placeholder="Ej: 50000" min="1" step="1">
     </div>
-
-    <div class="field">
-      <label for="fDesc">Descripción</label>
-      <input type="text" id="fDesc" placeholder="Ej: Venta del día" maxlength="120"
-             onkeydown="if(event.key==='Enter') App.guardar()">
+    <div class="fld">
+      <label for="fD">Descripción</label>
+      <input type="text" id="fD" placeholder="Ej: Ventas del día" maxlength="120"
+             onkeydown="if(event.key==='Enter')App.guardar()">
     </div>
-
-    <div class="field">
-      <label for="fFecha">Fecha</label>
-      <input type="date" id="fFecha">
+    <div class="fld">
+      <label for="fF">Fecha</label>
+      <input type="date" id="fF">
     </div>
-
     <button class="btn-save" onclick="App.guardar()">💾 Guardar</button>
-    <div class="feedback" id="feedback"></div>
+    <div class="fb" id="fb"></div>
   </div>
 </section>
 
-<!-- ═══════════════════════════════════════════
-     SECCIÓN C: HISTORIAL
-═══════════════════════════════════════════ -->
-<section id="historial" class="section">
+<!-- ═══════ HISTORIAL ═══════ -->
+<section id="historial" class="sec">
   <div class="hist-top">
-    <h2>Historial de movimientos</h2>
-    <button class="btn-export" onclick="App.exportar()">⬇ Exportar CSV</button>
+    <h2>Historial</h2>
+    <button class="btn-exp" onclick="App.exportar()">⬇ CSV</button>
   </div>
-
   <div class="filters">
-    <select id="filtroTipo" onchange="UI.renderHistorial()">
+    <select id="fTipo" onchange="UI.hist()">
       <option value="todos">Todos los tipos</option>
       <option value="ingreso">Solo ingresos</option>
       <option value="gasto">Solo gastos</option>
     </select>
-    <input type="date" id="filtroDesde" title="Desde" onchange="UI.renderHistorial()">
-    <input type="date" id="filtroHasta" title="Hasta" onchange="UI.renderHistorial()">
-    <input type="text" id="filtroBusqueda" placeholder="🔍 Buscar descripción..."
-           oninput="UI.renderHistorial()">
+    <input type="date" id="fDesde" title="Desde" onchange="UI.hist()">
+    <input type="date" id="fHasta" title="Hasta" onchange="UI.hist()">
+    <input type="text" id="fBus" placeholder="🔍 Buscar..." oninput="UI.hist()">
   </div>
-
-  <div class="totals-bar" id="totalsBar"></div>
-
+  <div class="tbar" id="tBar"></div>
   <div style="overflow-x:auto">
-    <table class="hist-table">
-      <thead>
-        <tr>
-          <th>Fecha</th>
-          <th>Tipo</th>
-          <th>Descripción</th>
-          <th style="text-align:right">Monto</th>
-          <th style="text-align:center">Acción</th>
-        </tr>
-      </thead>
-      <tbody id="historialBody"></tbody>
+    <table class="htable">
+      <thead><tr>
+        <th>Fecha</th><th>Tipo</th><th>Descripción</th>
+        <th style="text-align:right">Monto</th><th style="text-align:center">Acción</th>
+      </tr></thead>
+      <tbody id="hBody"></tbody>
     </table>
   </div>
 </section>
 
-<!-- ─── Modal editar ──────────────────────── -->
-<div class="modal-overlay" id="editModal">
+<!-- Modal editar -->
+<div class="modal-ov" id="editMod">
   <div class="modal-box">
-    <h3>✏️ Editar movimiento</h3>
-    <input type="hidden" id="editId">
-
-    <div class="field">
-      <label>Tipo</label>
-      <select id="editTipo">
-        <option value="ingreso">↑ Ingreso</option>
-        <option value="gasto">↓ Gasto</option>
-      </select>
+    <h3>✏️ Editar</h3>
+    <input type="hidden" id="eId">
+    <div class="fld"><label>Tipo</label>
+      <select id="eTipo"><option value="ingreso">↑ Ingreso</option><option value="gasto">↓ Gasto</option></select>
     </div>
-    <div class="field">
-      <label>Monto</label>
-      <input type="number" id="editMonto" min="1" step="1">
-    </div>
-    <div class="field">
-      <label>Descripción</label>
-      <input type="text" id="editDesc" maxlength="120">
-    </div>
-    <div class="field">
-      <label>Fecha</label>
-      <input type="date" id="editFecha">
-    </div>
-
+    <div class="fld"><label>Monto</label><input type="number" id="eMonto" min="1"></div>
+    <div class="fld"><label>Descripción</label><input type="text" id="eDesc" maxlength="120"></div>
+    <div class="fld"><label>Fecha</label><input type="date" id="eFecha"></div>
     <div class="modal-btns">
-      <button class="btn-cancel" onclick="App.cerrarEdit()">Cancelar</button>
-      <button class="btn-ok"     onclick="App.guardarEdit()">Guardar cambios</button>
+      <button class="btn-can" onclick="App.cerrarEdit()">Cancelar</button>
+      <button class="btn-ok"  onclick="App.guardarEdit()">Guardar</button>
     </div>
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════════
-     JAVASCRIPT — MÓDULOS SEPARADOS
-═══════════════════════════════════════════ -->
 <script>
 'use strict';
 
 // =====================================================
-// DATA MODULE
-// ─ Única fuente de verdad: localStorage('conta_v2')
-// ─ Importa datos legados una sola vez al primer uso
+//  DATA MODULE
+//  Lee SIEMPRE en tiempo real desde las 3 fuentes:
+//    1. conta_v2      → movimientos creados aquí
+//    2. mc_local      → ventas bruto + ingresos del panel
+//    3. gm_local      → gastos manuales del panel
+//  Escribe solo en conta_v2 (nuevas entradas manuales).
+//  Borrado seguro: encuentra por contenido, no por índice.
 // =====================================================
 var Data = (function () {
 
-  var STORE_KEY = 'conta_v2';
-  var MIG_KEY   = 'conta_v2_ok';
+  var V2 = 'conta_v2';
 
-  // Genera fecha local YYYY-MM-DD sin drift UTC
+  // ── Fecha local YYYY-MM-DD sin drift UTC ──────────
   function fechaHoy() {
     var d = new Date();
     return d.getFullYear()
@@ -429,15 +353,14 @@ var Data = (function () {
       + '-' + String(d.getDate()).padStart(2, '0');
   }
 
-  // Normaliza cualquier valor de fecha a YYYY-MM-DD local
-  function normFecha(f) {
+  // Normaliza cualquier fecha a YYYY-MM-DD local
+  function norm(f) {
     if (!f) return fechaHoy();
     f = String(f).trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(f)) return f;   // ya OK
+    if (/^\d{4}-\d{2}-\d{2}$/.test(f)) return f;
     try {
       var d = new Date(f);
       if (isNaN(d.getTime())) return fechaHoy();
-      // Extraer desde componentes locales para evitar drift
       return d.getFullYear()
         + '-' + String(d.getMonth() + 1).padStart(2, '0')
         + '-' + String(d.getDate()).padStart(2, '0');
@@ -445,426 +368,434 @@ var Data = (function () {
   }
 
   function uid() {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   }
 
-  // Lee el store completo (nunca lanza excepción)
-  function getAll() {
+  // Lectura segura de cualquier JSON en storage
+  function readArr(key, storage) {
     try {
-      var raw = localStorage.getItem(STORE_KEY);
+      var raw = (storage || localStorage).getItem(key);
       if (!raw) return [];
       var p = JSON.parse(raw);
       return Array.isArray(p) ? p : [];
-    } catch (e) {
-      console.error('[Data.getAll]', e);
-      return [];
-    }
+    } catch (e) { return []; }
   }
 
-  // Sobreescribe el store (valida antes de escribir)
-  function saveAll(list) {
-    try {
-      if (!Array.isArray(list)) return false;
-      localStorage.setItem(STORE_KEY, JSON.stringify(list));
-      return true;
-    } catch (e) {
-      console.error('[Data.saveAll]', e);
-      return false;
-    }
+  // Escribe en localStorage
+  function writeLS(key, arr) {
+    try { localStorage.setItem(key, JSON.stringify(arr)); return true; }
+    catch (e) { return false; }
   }
 
-  // Crea y persiste un nuevo movimiento
-  function add(tipo, monto, descripcion, fecha) {
-    var m = Number(monto);
+  // ── Mapa de funciones de borrado (se rellena en getAll) ──
+  var _delMap = {};
+
+  // ── GETALL: merge vivo de todas las fuentes ───────
+  function getAll() {
+    _delMap = {};
+    var result = [];
+    var seen   = {};  // dedupli por clave de contenido
+
+    function ck(tipo, monto, desc, fecha) {
+      // Clave canónica de contenido para deduplicar
+      return tipo + '|' + norm(fecha) + '|' + Number(monto)
+           + '|' + String(desc).toLowerCase().replace(/\s+/g, ' ').trim();
+    }
+
+    // ── Fuente 1: conta_v2 (creados en esta página) ──
+    readArr(V2).forEach(function (m) {
+      if (!m || !(Number(m.monto) > 0) || !m.id) return;
+      var tipo  = m.tipo === 'ingreso' ? 'ingreso' : 'gasto';
+      var monto = Number(m.monto);
+      var fecha = norm(m.fecha);
+      var desc  = String(m.descripcion || tipo).trim();
+      var k     = ck(tipo, monto, desc, fecha);
+      if (seen[k]) return;
+      seen[k]   = true;
+      var dispId = 'v2_' + m.id;
+      var capId  = m.id;
+      _delMap[dispId] = function () {
+        var arr = readArr(V2);
+        var i   = arr.findIndex(function (x) { return x.id === capId; });
+        if (i >= 0) { arr.splice(i, 1); writeLS(V2, arr); }
+      };
+      result.push({
+        dispId: dispId, tipo: tipo, monto: monto, descripcion: desc,
+        fecha: fecha, timestamp: m.timestamp || 0, editable: true
+      });
+    });
+
+    // ── Fuente 2: mc_local → ingresos brutos del día + ingresos de caja ──
+    readArr('mc_local').forEach(function (m) {
+      if (!m || !(Number(m.monto) > 0)) return;
+      var tipo  = String(m.tipo || '').toLowerCase() === 'ingreso' ? 'ingreso' : 'gasto';
+      var monto = Number(m.monto);
+      var fecha = norm(m.fecha);
+      var desc  = String(m.descripcion || m.categoria || (tipo === 'ingreso' ? 'Ingreso' : 'Gasto')).trim();
+      var k     = ck(tipo, monto, desc, fecha);
+      if (seen[k]) return;
+      seen[k] = true;
+      var dispId = 'mc_' + uid();
+      // Captura los valores para la búsqueda en borrado
+      var c = { tipo: tipo, monto: monto, desc: desc, fecha: fecha };
+      _delMap[dispId] = function () {
+        var arr = readArr('mc_local');
+        var i   = arr.findIndex(function (x) {
+          return String(x.tipo || '').toLowerCase() === c.tipo
+              && Number(x.monto) === c.monto
+              && norm(x.fecha) === c.fecha
+              && String(x.descripcion || x.categoria || '').trim() === c.desc;
+        });
+        if (i >= 0) { arr.splice(i, 1); writeLS('mc_local', arr); }
+      };
+      result.push({
+        dispId: dispId, tipo: tipo, monto: monto, descripcion: desc,
+        fecha: fecha, timestamp: m.timestamp || 0, editable: false
+      });
+    });
+
+    // ── Fuente 3: gm_local → gastos manuales del panel ──
+    var gmRaw = localStorage.getItem('gm_local') || sessionStorage.getItem('gastos') || '[]';
+    var gm = [];
+    try { gm = JSON.parse(gmRaw); if (!Array.isArray(gm)) gm = []; } catch (e) {}
+    gm.forEach(function (g) {
+      if (!g || !(Number(g.monto) > 0)) return;
+      var monto = Number(g.monto);
+      var fecha = norm(g.fecha);
+      var desc  = String(g.descripcion || 'Gasto').trim();
+      var k     = ck('gasto', monto, desc, fecha);
+      if (seen[k]) return;
+      seen[k] = true;
+      var dispId = 'gm_' + uid();
+      var c = { monto: monto, desc: desc, fecha: fecha };
+      _delMap[dispId] = function () {
+        // Borrar de gm_local
+        var arrLS = readArr('gm_local');
+        var i = arrLS.findIndex(function (x) {
+          return Number(x.monto) === c.monto && norm(x.fecha) === c.fecha
+              && String(x.descripcion || '').trim() === c.desc;
+        });
+        if (i >= 0) { arrLS.splice(i, 1); writeLS('gm_local', arrLS); }
+        // Borrar de sessionStorage
+        try {
+          var arrSS = readArr('gastos', sessionStorage);
+          var j = arrSS.findIndex(function (x) {
+            return Number(x.monto) === c.monto && norm(x.fecha) === c.fecha
+                && String(x.descripcion || '').trim() === c.desc;
+          });
+          if (j >= 0) { arrSS.splice(j, 1); sessionStorage.setItem('gastos', JSON.stringify(arrSS)); }
+        } catch (e) {}
+      };
+      result.push({
+        dispId: dispId, tipo: 'gasto', monto: monto, descripcion: desc,
+        fecha: fecha, timestamp: g.timestamp || 0, editable: false
+      });
+    });
+
+    return result;
+  }
+
+  // ── ADD: escribe solo en conta_v2 ────────────────
+  function add(tipo, monto, desc, fecha) {
     if (!['ingreso', 'gasto'].includes(tipo)) return null;
+    var m = Number(monto);
     if (!(m > 0)) return null;
-    var desc = String(descripcion || '').trim();
+    desc = String(desc || '').trim();
     if (!desc) return null;
-    var f = /^\d{4}-\d{2}-\d{2}$/.test(String(fecha)) ? fecha : fechaHoy();
-
-    var list = getAll();
-    var entry = { id: uid(), tipo: tipo, monto: m, descripcion: desc, fecha: f, timestamp: Date.now() };
-    list.push(entry);
-    saveAll(list);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(fecha))) fecha = fechaHoy();
+    var arr   = readArr(V2);
+    var entry = { id: uid(), tipo: tipo, monto: m, descripcion: desc, fecha: fecha, timestamp: Date.now() };
+    arr.push(entry);
+    writeLS(V2, arr);
     return entry;
   }
 
-  // Actualiza un movimiento existente
-  function update(id, tipo, monto, descripcion, fecha) {
-    var m = Number(monto);
-    if (!['ingreso', 'gasto'].includes(tipo) || !(m > 0)) return false;
-    var desc = String(descripcion || '').trim();
+  // ── UPDATE: solo entradas v2 ──────────────────────
+  function update(dispId, tipo, monto, desc, fecha) {
+    if (!dispId.startsWith('v2_')) return false;
+    var realId = dispId.slice(3);
+    if (!['ingreso', 'gasto'].includes(tipo) || !(Number(monto) > 0)) return false;
+    desc = String(desc || '').trim();
     if (!desc) return false;
-    var list = getAll();
-    var idx = list.findIndex(function (x) { return x.id === id; });
-    if (idx < 0) return false;
-    list[idx] = { id: id, tipo: tipo, monto: m, descripcion: desc,
-                  fecha: /^\d{4}-\d{2}-\d{2}$/.test(String(fecha)) ? fecha : list[idx].fecha,
-                  timestamp: list[idx].timestamp };
-    return saveAll(list);
+    var arr = readArr(V2);
+    var i   = arr.findIndex(function (x) { return x.id === realId; });
+    if (i < 0) return false;
+    arr[i] = { id: realId, tipo: tipo, monto: Number(monto), descripcion: desc,
+               fecha: /^\d{4}-\d{2}-\d{2}$/.test(String(fecha)) ? fecha : arr[i].fecha,
+               timestamp: arr[i].timestamp };
+    return writeLS(V2, arr);
   }
 
-  // Elimina por ID
-  function remove(id) {
-    var list = getAll();
-    var idx = list.findIndex(function (x) { return x.id === id; });
-    if (idx < 0) return false;
-    list.splice(idx, 1);
-    return saveAll(list);
+  // ── REMOVE: usa el closure del _delMap ───────────
+  function remove(dispId) {
+    if (!_delMap[dispId]) return false;
+    _delMap[dispId]();
+    return true;
   }
 
-  // ── Migración única desde fuentes legacy ──────────
-  // Lee mc_local (movimientosContables) y gm_local (gastosMemoria)
-  // y los importa en conta_v2 sin duplicar.
-  function importLegacy() {
-    if (localStorage.getItem(MIG_KEY) === '1') return;
-
-    var existing = getAll();
-    var seenIds  = {};
-    existing.forEach(function (m) { seenIds[m.id] = true; });
-
-    var added = 0;
-
-    // 1. mc_local → ingresos y gastos de movimientosContables
-    try {
-      var mc = JSON.parse(localStorage.getItem('mc_local') || '[]');
-      if (Array.isArray(mc)) {
-        mc.forEach(function (m) {
-          if (!m || typeof m !== 'object') return;
-          var monto = Number(m.monto) || 0;
-          if (monto <= 0) return;
-          var tipo = String(m.tipo || '').toLowerCase() === 'ingreso' ? 'ingreso' : 'gasto';
-          var id = m.id || uid();
-          if (seenIds[id]) return;
-          seenIds[id] = true;
-          var desc = String(m.descripcion || m.categoria || tipo).trim() || tipo;
-          existing.push({ id: id, tipo: tipo, monto: monto, descripcion: desc,
-                          fecha: normFecha(m.fecha), timestamp: m.timestamp || Date.now() });
-          added++;
-        });
-      }
-    } catch (e) { console.warn('[Data] mc_local:', e.message); }
-
-    // 2. gm_local → gastos manuales (sessionStorage como fallback)
-    try {
-      var raw = localStorage.getItem('gm_local') || sessionStorage.getItem('gastos') || '[]';
-      var gm  = JSON.parse(raw);
-      if (Array.isArray(gm)) {
-        gm.forEach(function (g) {
-          if (!g || typeof g !== 'object') return;
-          var monto = Number(g.monto) || 0;
-          if (monto <= 0) return;
-          var id = g.id || uid();
-          if (seenIds[id]) return;
-          var fecha = normFecha(g.fecha);
-          var desc  = String(g.descripcion || '').trim() || 'Gasto';
-          // Evitar duplicados por contenido exacto
-          var dup = existing.some(function (e) {
-            return e.tipo === 'gasto' && e.descripcion === desc &&
-                   e.monto === monto && e.fecha === fecha;
-          });
-          if (dup) return;
-          seenIds[id] = true;
-          existing.push({ id: id, tipo: 'gasto', monto: monto, descripcion: desc,
-                          fecha: fecha, timestamp: g.timestamp || Date.now() });
-          added++;
-        });
-      }
-    } catch (e) { console.warn('[Data] gm_local:', e.message); }
-
-    saveAll(existing);
-    localStorage.setItem(MIG_KEY, '1');
-    if (added > 0) console.info('[Conta] Migración: ' + added + ' registro(s) importados.');
-  }
-
-  return { fechaHoy: fechaHoy, normFecha: normFecha, getAll: getAll, add: add, update: update, remove: remove, importLegacy: importLegacy };
+  return { fechaHoy: fechaHoy, norm: norm, getAll: getAll, add: add, update: update, remove: remove };
 })();
 
 
 // =====================================================
-// LOGIC MODULE
-// ─ Reglas de negocio puras (sin tocar el DOM)
+//  LOGIC MODULE  — Cálculos puros, sin DOM
 // =====================================================
 var Logic = (function () {
 
-  function getTotals(list) {
-    var ingresos = 0, gastos = 0;
+  function totals(list) {
+    var ing = 0, gas = 0;
     (list || []).forEach(function (m) {
-      if (m.tipo === 'ingreso') ingresos += m.monto;
-      else gastos += m.monto;
+      if (m.tipo === 'ingreso') ing += m.monto;
+      else gas += m.monto;
     });
-    return { ingresos: ingresos, gastos: gastos, balance: ingresos - gastos };
+    return { ing: ing, gas: gas, bal: ing - gas };
   }
 
-  function applyFilters(list, tipo, desde, hasta, busqueda) {
+  function filter(list, tipo, desde, hasta, busq) {
     return (list || []).filter(function (m) {
       if (tipo && tipo !== 'todos' && m.tipo !== tipo) return false;
       if (desde && m.fecha < desde) return false;
       if (hasta && m.fecha > hasta) return false;
-      if (busqueda) {
-        var b = String(busqueda).toLowerCase();
+      if (busq) {
+        var b = String(busq).toLowerCase();
         if (m.descripcion.toLowerCase().indexOf(b) < 0) return false;
       }
       return true;
     }).sort(function (a, b) {
-      var df = b.fecha.localeCompare(a.fecha);
-      return df !== 0 ? df : (b.timestamp - a.timestamp);
+      var d = b.fecha.localeCompare(a.fecha);
+      return d !== 0 ? d : b.timestamp - a.timestamp;
     });
   }
 
-  function validate(tipo, monto, descripcion) {
-    var errs = [];
-    if (!['ingreso', 'gasto'].includes(tipo)) errs.push('Selecciona un tipo válido');
-    if (!(Number(monto) > 0)) errs.push('El monto debe ser mayor a 0');
-    if (!String(descripcion || '').trim()) errs.push('La descripción es obligatoria');
-    return errs;
+  function validate(tipo, monto, desc) {
+    var e = [];
+    if (!['ingreso', 'gasto'].includes(tipo)) e.push('Selecciona ingreso o gasto');
+    if (!(Number(monto) > 0)) e.push('El monto debe ser mayor a 0');
+    if (!String(desc || '').trim()) e.push('La descripción no puede estar vacía');
+    return e;
   }
 
-  return { getTotals: getTotals, applyFilters: applyFilters, validate: validate };
+  return { totals: totals, filter: filter, validate: validate };
 })();
 
 
 // =====================================================
-// UI MODULE
-// ─ Renderizado del DOM. Sólo lee datos, no los modifica.
+//  UI MODULE — Solo renderiza, nunca modifica datos
 // =====================================================
 var UI = (function () {
 
-  function fm(n) {
-    return '$' + (Number(n) || 0).toLocaleString('es-CO');
-  }
+  function fm(n) { return '$' + (Number(n) || 0).toLocaleString('es-CO'); }
 
-  function fmtFecha(f) {
+  function fmF(f) {
     try {
       return new Date(f + 'T12:00:00')
         .toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
     } catch (e) { return f; }
   }
 
-  function renderDashboard() {
+  function dash() {
     var movs = Data.getAll();
-    var t    = Logic.getTotals(movs);
+    var t    = Logic.totals(movs);
+    document.getElementById('kI').textContent = fm(t.ing);
+    document.getElementById('kG').textContent = fm(t.gas);
+    var bEl = document.getElementById('kB');
+    bEl.textContent = fm(t.bal);
+    bEl.className   = 'kpi-val' + (t.bal > 0 ? ' pos' : t.bal < 0 ? ' neg' : '');
 
-    document.getElementById('kpiIngresos').textContent = fm(t.ingresos);
-    document.getElementById('kpiGastos').textContent   = fm(t.gastos);
-
-    var bEl = document.getElementById('kpiBalance');
-    bEl.textContent = fm(t.balance);
-    bEl.className = 'kpi-value' + (t.balance > 0 ? ' pos' : t.balance < 0 ? ' neg' : '');
-
-    // Últimos 5 movimientos
     var recent = movs.slice().sort(function (a, b) { return b.timestamp - a.timestamp; }).slice(0, 5);
-    var list   = document.getElementById('recentList');
-    if (!list) return;
-
+    var el     = document.getElementById('recentList');
+    if (!el) return;
     if (recent.length === 0) {
-      list.innerHTML = '<div class="empty-msg">Sin movimientos registrados aún.<br>¡Registra el primero en la pestaña <strong>Registrar</strong>!</div>';
+      el.innerHTML = '<div class="empty-msg">Sin movimientos aún.<br>Regístralos en la pestaña <strong>Registrar</strong>.</div>';
       return;
     }
-
-    list.innerHTML = recent.map(function (m) {
-      return '<div class="recent-item ' + m.tipo + '">'
-        + '<div class="recent-left">'
-        + '<span class="recent-desc">' + m.descripcion.replace(/</g, '&lt;') + '</span>'
-        + '<span class="recent-meta">' + fmtFecha(m.fecha) + ' · ' + (m.tipo === 'ingreso' ? 'Ingreso' : 'Gasto') + '</span>'
+    el.innerHTML = recent.map(function (m) {
+      return '<div class="ri ' + m.tipo + '">'
+        + '<div class="ri-left">'
+        + '<span class="ri-desc">' + m.descripcion.replace(/</g, '&lt;') + '</span>'
+        + '<span class="ri-meta">' + fmF(m.fecha) + ' · ' + m.tipo + '</span>'
         + '</div>'
-        + '<div class="recent-monto">' + (m.tipo === 'ingreso' ? '+' : '-') + fm(m.monto) + '</div>'
+        + '<div class="ri-monto">' + (m.tipo === 'ingreso' ? '+' : '-') + fm(m.monto) + '</div>'
         + '</div>';
     }).join('');
   }
 
-  function renderHistorial() {
-    var tipo      = (document.getElementById('filtroTipo')?.value)     || 'todos';
-    var desde     = (document.getElementById('filtroDesde')?.value)    || '';
-    var hasta     = (document.getElementById('filtroHasta')?.value)    || '';
-    var busqueda  = (document.getElementById('filtroBusqueda')?.value) || '';
+  function hist() {
+    var tipo  = (document.getElementById('fTipo')  || {}).value || 'todos';
+    var desde = (document.getElementById('fDesde') || {}).value || '';
+    var hasta = (document.getElementById('fHasta') || {}).value || '';
+    var busq  = (document.getElementById('fBus')   || {}).value || '';
 
-    var movs      = Data.getAll();
-    var filtrados = Logic.applyFilters(movs, tipo, desde, hasta, busqueda);
-    var t         = Logic.getTotals(filtrados);
+    var movs = Data.getAll();
+    var fil  = Logic.filter(movs, tipo, desde, hasta, busq);
+    var t    = Logic.totals(fil);
 
-    // Totals bar
-    var tb = document.getElementById('totalsBar');
-    if (tb) {
-      tb.innerHTML =
-        '<span class="tb-item g">Ingresos: <strong>' + fm(t.ingresos) + '</strong></span>'
-        + '<span class="tb-item r">Gastos: <strong>' + fm(t.gastos) + '</strong></span>'
-        + '<span class="tb-item ' + (t.balance >= 0 ? 'bl' : 'r') + '">Balance: <strong>' + fm(t.balance) + '</strong></span>'
-        + '<span class="tb-item">' + filtrados.length + ' registro(s)</span>';
-    }
+    var tb = document.getElementById('tBar');
+    if (tb) tb.innerHTML =
+      '<span class="tb-it g">Ingresos: <strong>' + fm(t.ing) + '</strong></span>'
+      + '<span class="tb-it r">Gastos: <strong>' + fm(t.gas) + '</strong></span>'
+      + '<span class="tb-it ' + (t.bal >= 0 ? 'b' : 'r') + '">Balance: <strong>' + fm(t.bal) + '</strong></span>'
+      + '<span class="tb-it">' + fil.length + ' registro(s)</span>';
 
-    // Table body
-    var tbody = document.getElementById('historialBody');
+    var tbody = document.getElementById('hBody');
     if (!tbody) return;
-
-    if (filtrados.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty-cell">Sin movimientos para los filtros aplicados.</td></tr>';
+    if (fil.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Sin movimientos para estos filtros</td></tr>';
       return;
     }
 
-    tbody.innerHTML = filtrados.map(function (m) {
-      var safeId   = m.id.replace(/'/g, "\\'");
-      var safeDesc = m.descripcion.replace(/</g, '&lt;');
-      return '<tr class="hist-row">'
-        + '<td class="td-fecha">' + fmtFecha(m.fecha) + '</td>'
+    tbody.innerHTML = fil.map(function (m) {
+      var sid = m.dispId.replace(/'/g, "\\'");
+      var sd  = m.descripcion.replace(/</g, '&lt;');
+      var editBtn = m.editable
+        ? '<button class="btn-ed" onclick="App.abrirEdit(\'' + sid + '\')" title="Editar">✏️</button> '
+        : '';
+      return '<tr>'
+        + '<td class="td-f">' + fmF(m.fecha) + '</td>'
         + '<td><span class="badge ' + m.tipo + '">' + (m.tipo === 'ingreso' ? '↑ Ingreso' : '↓ Gasto') + '</span></td>'
-        + '<td class="td-desc" title="' + safeDesc + '">' + safeDesc + '</td>'
-        + '<td class="td-monto ' + m.tipo + '">' + (m.tipo === 'ingreso' ? '+' : '-') + fm(m.monto) + '</td>'
-        + '<td class="td-acciones">'
-        + '<button class="btn-edit" onclick="App.abrirEdit(\'' + safeId + '\')" title="Editar">✏️</button> '
-        + '<button class="btn-del"  onclick="App.eliminar(\'' + safeId + '\')" title="Eliminar">✕</button>'
-        + '</td>'
-        + '</tr>';
+        + '<td class="td-d" title="' + sd + '">' + sd + '</td>'
+        + '<td class="td-m ' + m.tipo + '">' + (m.tipo === 'ingreso' ? '+' : '-') + fm(m.monto) + '</td>'
+        + '<td class="td-ac">' + editBtn
+        + '<button class="btn-rm" onclick="App.eliminar(\'' + sid + '\')" title="Eliminar">✕</button>'
+        + '</td></tr>';
     }).join('');
   }
 
-  function showFeedback(msg, type) {
-    var el = document.getElementById('feedback');
+  function feedback(msg, type) {
+    var el = document.getElementById('fb');
     if (!el) return;
     el.textContent = msg;
-    el.className = 'feedback ' + (type || 'success');
+    el.className = 'fb ' + (type || 'ok');
     el.style.display = 'block';
     clearTimeout(el._t);
     el._t = setTimeout(function () { el.style.display = 'none'; }, 3500);
   }
 
-  function showTab(tab) {
-    document.querySelectorAll('.section').forEach(function (s) { s.classList.remove('active'); });
-    document.querySelectorAll('.tab').forEach(function (t)     { t.classList.remove('active'); });
-    var sec = document.getElementById(tab);
-    var btn = document.querySelector('[data-tab="' + tab + '"]');
-    if (sec) sec.classList.add('active');
+  function showSec(id) {
+    document.querySelectorAll('.sec').forEach(function (s) { s.classList.remove('on'); });
+    document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
+    var sec = document.getElementById(id);
+    var btn = document.querySelector('[data-sec="' + id + '"]');
+    if (sec) sec.classList.add('on');
     if (btn) btn.classList.add('active');
-    if (tab === 'dashboard') renderDashboard();
-    if (tab === 'historial') renderHistorial();
+    if (id === 'dashboard') dash();
+    if (id === 'historial') hist();
   }
 
-  return { fm: fm, renderDashboard: renderDashboard, renderHistorial: renderHistorial, showFeedback: showFeedback, showTab: showTab };
+  return { fm: fm, dash: dash, hist: hist, feedback: feedback, showSec: showSec };
 })();
 
 
 // =====================================================
-// APP MODULE
-// ─ Coordinador: une Data + Logic + UI
-// ─ Expuesto globalmente para los onclick del HTML
+//  APP MODULE — Coordina todo, expuesto para onclick
 // =====================================================
 var App = (function () {
 
   var _tipo = 'ingreso';
 
-  function selTipo(tipo) {
-    _tipo = tipo;
-    document.getElementById('btnIngreso').className = 'type-btn' + (tipo === 'ingreso' ? ' active ing' : '');
-    document.getElementById('btnGasto').className   = 'type-btn' + (tipo === 'gasto'   ? ' active gas' : '');
+  function tipo(t) {
+    _tipo = t;
+    document.getElementById('btnI').className = 'tbtn' + (t === 'ingreso' ? ' sel-ing' : '');
+    document.getElementById('btnG').className = 'tbtn' + (t === 'gasto'   ? ' sel-gas' : '');
   }
 
   function guardar() {
-    var monto = document.getElementById('fMonto').value;
-    var desc  = document.getElementById('fDesc').value;
-    var fecha = document.getElementById('fFecha').value;
-
-    var errs = Logic.validate(_tipo, monto, desc);
-    if (errs.length > 0) { UI.showFeedback(errs.join(' · '), 'error'); return; }
-
+    var monto = document.getElementById('fM').value;
+    var desc  = document.getElementById('fD').value;
+    var fecha = document.getElementById('fF').value;
+    var errs  = Logic.validate(_tipo, monto, desc);
+    if (errs.length) { UI.feedback(errs.join(' · '), 'err'); return; }
     var ok = Data.add(_tipo, Number(monto), desc, fecha);
-    if (!ok) { UI.showFeedback('Error al guardar. Intenta de nuevo.', 'error'); return; }
-
-    document.getElementById('fMonto').value = '';
-    document.getElementById('fDesc').value  = '';
-    UI.showFeedback((_tipo === 'ingreso' ? 'Ingreso' : 'Gasto') + ' registrado correctamente ✓', 'success');
-    // El dashboard se actualizará al cambiar de tab
+    if (!ok) { UI.feedback('Error al guardar. Intenta de nuevo.', 'err'); return; }
+    document.getElementById('fM').value = '';
+    document.getElementById('fD').value = '';
+    UI.feedback((_tipo === 'ingreso' ? 'Ingreso' : 'Gasto') + ' registrado ✓', 'ok');
+    UI.dash();
   }
 
-  function eliminar(id) {
+  function eliminar(dispId) {
     if (!confirm('¿Eliminar este movimiento? No se puede deshacer.')) return;
-    var ok = Data.remove(id);
-    if (!ok) { alert('No se pudo eliminar.'); return; }
-    UI.renderHistorial();
-    UI.renderDashboard();
+    Data.remove(dispId);
+    UI.hist();
+    UI.dash();
   }
 
-  function abrirEdit(id) {
-    var m = Data.getAll().find(function (x) { return x.id === id; });
+  function abrirEdit(dispId) {
+    var m = Data.getAll().find(function (x) { return x.dispId === dispId; });
     if (!m) return;
-    document.getElementById('editId').value    = m.id;
-    document.getElementById('editTipo').value  = m.tipo;
-    document.getElementById('editMonto').value = m.monto;
-    document.getElementById('editDesc').value  = m.descripcion;
-    document.getElementById('editFecha').value = m.fecha;
-    document.getElementById('editModal').classList.add('open');
+    document.getElementById('eId').value    = m.dispId;
+    document.getElementById('eTipo').value  = m.tipo;
+    document.getElementById('eMonto').value = m.monto;
+    document.getElementById('eDesc').value  = m.descripcion;
+    document.getElementById('eFecha').value = m.fecha;
+    document.getElementById('editMod').classList.add('on');
   }
 
   function cerrarEdit() {
-    document.getElementById('editModal').classList.remove('open');
+    document.getElementById('editMod').classList.remove('on');
   }
 
   function guardarEdit() {
-    var id    = document.getElementById('editId').value;
-    var tipo  = document.getElementById('editTipo').value;
-    var monto = document.getElementById('editMonto').value;
-    var desc  = document.getElementById('editDesc').value;
-    var fecha = document.getElementById('editFecha').value;
+    var id    = document.getElementById('eId').value;
+    var tipo  = document.getElementById('eTipo').value;
+    var monto = document.getElementById('eMonto').value;
+    var desc  = document.getElementById('eDesc').value;
+    var fecha = document.getElementById('eFecha').value;
     var errs  = Logic.validate(tipo, monto, desc);
-    if (errs.length > 0) { alert(errs.join('\n')); return; }
+    if (errs.length) { alert(errs.join('\n')); return; }
     var ok = Data.update(id, tipo, Number(monto), desc, fecha);
     if (!ok) { alert('Error al actualizar.'); return; }
     cerrarEdit();
-    UI.renderHistorial();
-    UI.renderDashboard();
+    UI.hist();
+    UI.dash();
   }
 
   function exportar() {
-    var movs = Logic.applyFilters(Data.getAll(), 'todos', '', '', '');
-    var rows = [['Fecha', 'Tipo', 'Monto', 'Descripción', 'ID']];
-    movs.forEach(function (m) {
-      rows.push([m.fecha, m.tipo, m.monto, m.descripcion, m.id]);
-    });
-    var csv = rows.map(function (r) {
+    var movs = Logic.filter(Data.getAll(), 'todos', '', '', '');
+    var rows = [['Fecha', 'Tipo', 'Monto', 'Descripción']];
+    movs.forEach(function (m) { rows.push([m.fecha, m.tipo, m.monto, m.descripcion]); });
+    var csv  = rows.map(function (r) {
       return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(',');
     }).join('\n');
-    var blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
     var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
     a.download = 'contabilidad-' + Data.fechaHoy() + '.csv';
     a.click();
   }
 
   function init() {
-    // 1. Migración one-time desde fuentes legacy
-    Data.importLegacy();
+    // Fecha de hoy en el formulario
+    document.getElementById('fF').value = Data.fechaHoy();
 
-    // 2. Fecha de hoy en el formulario
-    document.getElementById('fFecha').value = Data.fechaHoy();
-
-    // 3. Navegación por tabs
+    // Navegación por tabs
     document.querySelectorAll('.tab').forEach(function (btn) {
-      btn.addEventListener('click', function () { UI.showTab(btn.dataset.tab); });
+      btn.addEventListener('click', function () { UI.showSec(btn.dataset.sec); });
     });
 
-    // 4. Cerrar modal al hacer clic fuera
-    document.getElementById('editModal').addEventListener('click', function (e) {
+    // Cerrar modal al hacer clic fuera
+    document.getElementById('editMod').addEventListener('click', function (e) {
       if (e.target === this) cerrarEdit();
     });
 
-    // 5. Renderizar dashboard inicial
-    UI.renderDashboard();
+    // Render inicial
+    UI.dash();
 
-    // 6. Sincronización entre pestañas (si el usuario tiene el panel abierto en otro tab)
+    // Sincronización entre pestañas (si el panel está abierto en otro tab)
     window.addEventListener('storage', function (e) {
-      if (e.key !== 'conta_v2') return;
-      var activeTab = document.querySelector('.section.active');
-      if (!activeTab) return;
-      if (activeTab.id === 'dashboard') UI.renderDashboard();
-      if (activeTab.id === 'historial') UI.renderHistorial();
+      var claves = ['conta_v2', 'mc_local', 'gm_local'];
+      if (claves.indexOf(e.key) < 0) return;
+      var activo = document.querySelector('.sec.on');
+      if (!activo) return;
+      if (activo.id === 'dashboard') UI.dash();
+      if (activo.id === 'historial') UI.hist();
     });
   }
 
-  return { selTipo: selTipo, guardar: guardar, eliminar: eliminar,
+  return { tipo: tipo, guardar: guardar, eliminar: eliminar,
            abrirEdit: abrirEdit, cerrarEdit: cerrarEdit, guardarEdit: guardarEdit,
            exportar: exportar, init: init };
 })();
 
-// ─── Arranque ────────────────────────────────────
 document.addEventListener('DOMContentLoaded', App.init);
 </script>
 </body>
