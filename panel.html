@@ -1540,11 +1540,15 @@ async function imprimirTicket(){
   </div>`;
   let ventana=window.open("","_blank");
   if(!ventana){alert("Bloqueado por el navegador");return;}
-  ventana.document.write(`<html><head><title>Ticket</title><style>body{margin:0;padding:0;font-family:monospace;}.ticket{width:280px;margin:0 auto;text-align:center;}.linea{border-top:1px dashed black;margin:6px 0;width:100%;}.producto{font-size:20px;font-weight:bold;text-align:center;line-height:1.1;margin:0;padding:2px 0;}.bendaje{font-size:14px;margin:0;padding:0;}</style></head><body onload="window.print();window.close();"><div class="ticket">${contenido}</div>
-</div>
-
-</body></html>`);
-  ventana.document.write("<script>window.print();<\/script>");
+  ventana.document.write(`<html><head><title>Ticket</title><style>body{margin:0;padding:0;font-family:monospace;}.ticket{width:280px;margin:0 auto;text-align:center;}.linea{border-top:1px dashed black;margin:6px 0;width:100%;}.producto{font-size:20px;font-weight:bold;text-align:center;line-height:1.1;margin:0;padding:2px 0;}.bendaje{font-size:14px;margin:0;padding:0;}@media print{body{margin:0;}}</style></head><body><div class="ticket">${contenido}</div><script>
+  // Esperar que el logo cargue ANTES de abrir el diálogo de impresión
+  var _img = document.querySelector('img');
+  function _doPrint(){ window.print(); window.close(); }
+  if(_img){
+    if(_img.complete && _img.naturalWidth > 0){ _doPrint(); }
+    else{ _img.onload = _doPrint; _img.onerror = _doPrint; }
+  } else { _doPrint(); }
+<\/script></body></html>`);
   ventana.document.close();
 }
 
