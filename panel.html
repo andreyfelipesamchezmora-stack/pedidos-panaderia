@@ -11463,50 +11463,7 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
   async function subF(t,f,d){try{var r=await db.from(t).upsert({fecha:f,datos:d,updated_at:new Date().toISOString()},{onConflict:'fecha'});return!r.error;}catch(e){return false;}}
   async function baj(t){try{var r=await db.from(t).select('datos').eq('id',1).maybeSingle();return(r&&r.data)?r.data.datos:null;}catch(e){return null;}}
   async function bajF(t,f){try{var r=await db.from(t).select('datos').eq('fecha',f).maybeSingle();return(r&&r.data)?r.data.datos:null;}catch(e){return null;}}
-  function apl(t,d){
-    if(!d)return;
-    _s=true;
-    var l=RMAP[t];
-    if(t==='clientes_config'&&Array.isArray(d)&&d.length>0){
-      // 🛡️ PROTECCIÓN ANTI-PÉRDIDA DE CLIENTES
-      // Si lo remoto tiene MENOS clientes que lo local, hacer MERGE (no sobrescribir)
-      var locC = [];
-      try { locC = JSON.parse(LS.get('clientes')||'[]'); } catch(e){}
-      if(Array.isArray(locC) && locC.length > d.length){
-        // Merge por nombre
-        var byNombre = {};
-        d.forEach(function(c){ if(c && c.nombre) byNombre[c.nombre] = c; });
-        locC.forEach(function(c){
-          if(c && c.nombre && !byNombre[c.nombre]) byNombre[c.nombre] = c;
-        });
-        var merged = Object.values(byNombre);
-        console.log('[SYNC V12] 🛡️ Remoto tenía '+d.length+' clientes, local '+locC.length+'. Merged: '+merged.length);
-        window.clientes = merged;
-        LS.set('clientes',JSON.stringify(merged));
-        // Subir el merged para sincronizar
-        setTimeout(function(){ try { sub('clientes_config', merged); } catch(e){} }, 600);
-      } else {
-        window.clientes=d;
-        LS.set('clientes',JSON.stringify(d));
-      }
-    } else if(t==='cuentas_bancarias'&&Array.isArray(d)&&d.length>0){
-      window.cuentasMemoria=d;
-      LS.set('cuentasMemoria',JSON.stringify(d));
-    } else if(t==='transferencias'){
-      window.transferenciasMem=d;
-      LS.set('transferenciasMem',JSON.stringify(d));
-    } else if(t==='movimientos_contables'&&Array.isArray(d)&&d.length>0){
-      window.movimientosContables=d;
-      LS.set('mc_local',JSON.stringify(d));
-    } else if(t==='gastos_manuales'&&Array.isArray(d)&&d.length>0){
-      window.gastosMemoria=d;
-      SS.set('gastos',JSON.stringify(d));
-      LS.set('gm_local',JSON.stringify(d));
-    } else if(l){
-      LS.set(l,JSON.stringify(d));
-    }
-    setTimeout(function(){_s=false;},500);
-  }
+  function apl(t,d){if(!d)return;_s=true;var l=RMAP[t];if(t==='clientes_config'&&Array.isArray(d)&&d.length>0){window.clientes=d;LS.set('clientes',JSON.stringify(d));}else if(t==='cuentas_bancarias'&&Array.isArray(d)&&d.length>0){window.cuentasMemoria=d;LS.set('cuentasMemoria',JSON.stringify(d));}else if(t==='transferencias'){window.transferenciasMem=d;LS.set('transferenciasMem',JSON.stringify(d));}else if(t==='movimientos_contables'&&Array.isArray(d)&&d.length>0){window.movimientosContables=d;LS.set('mc_local',JSON.stringify(d));}else if(t==='gastos_manuales'&&Array.isArray(d)&&d.length>0){window.gastosMemoria=d;SS.set('gastos',JSON.stringify(d));LS.set('gm_local',JSON.stringify(d));}else if(l){LS.set(l,JSON.stringify(d));}setTimeout(function(){_s=false;},500);}
   localStorage.setItem=function(k,v){LS.set(k,v);if(_s)return;if(MAP[k]){try{sub(MAP[k],JSON.parse(v));}catch(e){}}if(k.indexOf('recaudo_')===0&&k.length>10){try{subF('recaudo_diario',k.slice(8),JSON.parse(v));}catch(e){}}if(k.indexOf('monedas_')===0&&k.length>10){try{subF('monedas_diario',k.slice(8),JSON.parse(v));}catch(e){}}};
   sessionStorage.setItem=function(k,v){SS.set(k,v);if(_s)return;if(k==='gastos'){try{sub('gastos_manuales',JSON.parse(v));}catch(e){}}};
   var _lM=0,_lG=0;
@@ -13248,234 +13205,34 @@ window.vnDiagVentas = function(){
     } catch (e) { return null; }
   }
 
-  // ─── MERGE INTELIGENTE por tipo de tabla ───────────
-  //  Cartera (vn_deudas_v20 y cartera_deudas): merge por nombre de cliente,
-  //    se queda con el que tiene MÁS movimientos (h.length)
-  //  Arrays (clientes, mc_local, gm_local, transferenciasMem, cuentas_por_pagar):
-  //    merge por id/timestamp/clave única, sin duplicar
-  //  Objetos planos (nomina_data, observaciones_marquee): tomar el más completo
-  function _itemKeyArr(m) {
-    if (!m || typeof m !== 'object') return JSON.stringify(m);
-    // Si tiene ID único, usarlo SIEMPRE (más confiable)
-    if (m.id) return 'id:' + m.id;
-    // Si tiene NOMBRE (clientes, cuentas, empleados, proveedores) → la clave es el nombre
-    // Esto evita el bug donde dos clientes con tipo='cercano' se consideraban duplicados
-    if (m.nombre) return 'nom:' + String(m.nombre).toLowerCase().trim();
-    // Para movimientos/transacciones (tienen fecha, monto, tipo, descripción)
-    if (m.fecha || m.monto || m.descripcion) {
-      return [m.tipo||'', m.fecha||'', m.monto||'', String(m.descripcion||m.cliente||'').toLowerCase().trim()].join('|');
-    }
-    // Para cualquier otro objeto: hash del JSON completo (no se pierde nada)
-    return JSON.stringify(m);
-  }
-
-  function _mergeArrays(loc, rem) {
-    var a = Array.isArray(loc) ? loc : [];
-    var b = Array.isArray(rem) ? rem : [];
-    var seen = {}, out = [];
-    a.concat(b).forEach(function (m) {
-      if (!m) return;
-      var k = _itemKeyArr(m);
-      if (!seen[k]) { seen[k] = true; out.push(m); }
-    });
-    return out;
-  }
-
-  // Merge específico para vn_deudas_v20 (estructura {nombre: {sc, sm, h:[]}})
-  function _mergeDeudasV20(loc, rem) {
-    var locObj = (loc && typeof loc === 'object' && !Array.isArray(loc)) ? loc : {};
-    var remObj = (rem && typeof rem === 'object' && !Array.isArray(rem)) ? rem : {};
-    var out = {};
-    var nombres = {};
-    Object.keys(locObj).forEach(function(n){ nombres[n] = true; });
-    Object.keys(remObj).forEach(function(n){ nombres[n] = true; });
-
-    Object.keys(nombres).forEach(function(nombre) {
-      var L = locObj[nombre] || { sc:0, sm:0, h:[] };
-      var R = remObj[nombre] || { sc:0, sm:0, h:[] };
-      var hL = Array.isArray(L.h) ? L.h : [];
-      var hR = Array.isArray(R.h) ? R.h : [];
-
-      // Combinar historiales sin duplicar (por id si existe, sino por fecha+monto+tipo)
-      var seen = {}, hMerge = [];
-      hL.concat(hR).forEach(function(x){
-        if(!x) return;
-        var k = x.id || (String(x.fecha||'') + '|' + String(x.tipo||'') + '|' + String(x.sub||'') + '|' + String(x.monto||''));
-        if(!seen[k]) { seen[k] = true; hMerge.push(x); }
-      });
-      // Ordenar por fecha (más viejo primero)
-      hMerge.sort(function(a,b){ return String(a.fecha||'').localeCompare(String(b.fecha||'')); });
-
-      // Recalcular saldos a partir del historial (más confiable)
-      var sc = 0, sm = 0;
-      hMerge.forEach(function(x){
-        if(!x) return;
-        if(x.tipo === 'saldo_ini'){ if(x.sub==='cliente') sc = Number(x.monto)||0; else if(x.sub==='mia') sm = Number(x.monto)||0; }
-        else if(x.tipo === 'edicion'){ var m = (x.nota||'').match(/debe=(\d+).*debo=(\d+)/); if(m){ sc = Number(m[1])||0; sm = Number(m[2])||0; } }
-        else if(x.tipo === 'deuda'){ if(x.sub==='cliente') sc += Number(x.monto)||0; else if(x.sub==='mia') sm += Number(x.monto)||0; }
-        else if(x.tipo === 'pago'){ if(x.sub==='cliente') sc = Math.max(0, sc - (Number(x.monto)||0)); else if(x.sub==='mia') sm = Math.max(0, sm - (Number(x.monto)||0)); }
-      });
-
-      // Si no hay historial, conservar el saldo más alto entre los dos
-      if(hMerge.length === 0){
-        sc = Math.max(Number(L.sc)||0, Number(R.sc)||0);
-        sm = Math.max(Number(L.sm)||0, Number(R.sm)||0);
-      }
-
-      out[nombre] = { sc: sc, sm: sm, h: hMerge };
-    });
-    return out;
-  }
-
-  // Merge para cartera_deudas (estructura {nombre: {deudasPagadas, fechaPago, ...}})
-  function _mergeCarteraDeudas(loc, rem) {
-    var locObj = (loc && typeof loc === 'object' && !Array.isArray(loc)) ? loc : {};
-    var remObj = (rem && typeof rem === 'object' && !Array.isArray(rem)) ? rem : {};
-    var out = {};
-    var nombres = {};
-    Object.keys(locObj).forEach(function(n){ nombres[n] = true; });
-    Object.keys(remObj).forEach(function(n){ nombres[n] = true; });
-
-    Object.keys(nombres).forEach(function(nombre) {
-      var L = locObj[nombre] || {};
-      var R = remObj[nombre] || {};
-      // Tomar el que tiene fechaPago más reciente
-      var fL = String(L.fechaPago || '');
-      var fR = String(R.fechaPago || '');
-      out[nombre] = (fR > fL) ? R : L;
-      // Combinar pagosHistorial si existe
-      var pL = Array.isArray(L.pagosHistorial) ? L.pagosHistorial : [];
-      var pR = Array.isArray(R.pagosHistorial) ? R.pagosHistorial : [];
-      if(pL.length || pR.length){
-        var seen = {}, ph = [];
-        pL.concat(pR).forEach(function(x){
-          if(!x) return;
-          var k = String(x.fecha||'') + '|' + String(x.monto||'');
-          if(!seen[k]){ seen[k] = true; ph.push(x); }
-        });
-        out[nombre].pagosHistorial = ph;
-      }
-    });
-    return out;
-  }
-
-  // ─── Aplicar dato remoto CON MERGE (no pierde datos) ─
+  // ─── Aplicar dato remoto al localStorage del panel ─
   function aplicarRemoto(lsKey, remoto) {
     if (remoto === null || remoto === undefined) return false;
     try {
       var prev = localStorage.getItem(lsKey);
-      var loc = null;
-      try { loc = JSON.parse(prev || 'null'); } catch (e) {}
+      var nuevo = JSON.stringify(remoto);
+      if (prev === nuevo) return false;
+      localStorage.setItem(lsKey, nuevo);
 
-      var nuevoData;
-
-      // ESTRATEGIA POR TABLA
-      if (lsKey === 'vn_deudas_v20') {
-        nuevoData = _mergeDeudasV20(loc, remoto);
-      } else if (lsKey === 'cartera_deudas') {
-        nuevoData = _mergeCarteraDeudas(loc, remoto);
-      } else if (lsKey === 'clientes') {
-        // 🛡️ PROTECCIÓN ESPECIAL CLIENTES: nunca perder clientes
-        var locC = Array.isArray(loc) ? loc : [];
-        var remC = Array.isArray(remoto) ? remoto : [];
-        // Si el remoto está vacío o tiene MENOS clientes y el local tiene varios, mantener el local
-        if (remC.length === 0 && locC.length > 0) {
-          console.log('[SYNC PANEL] 🛡️ Remoto sin clientes — manteniendo locales (' + locC.length + ')');
-          return false;  // ni siquiera tocar
-        }
-        // Hacer merge por nombre
-        nuevoData = _mergeArrays(locC, remC);
-        // SAFETY: si el merge dio menos de lo que ya tenía, NO aplicar
-        if (nuevoData.length < locC.length) {
-          console.warn('[SYNC PANEL] 🛡️ Merge produjo MENOS clientes (' + nuevoData.length + ' vs local ' + locC.length + ') — abortando');
-          return false;
-        }
-      } else if (lsKey === 'mc_local' || lsKey === 'gm_local' ||
-                 lsKey === 'conta_v2' || lsKey === 'cartera_pagos_historial' ||
-                 lsKey === 'transferenciasMem' || lsKey === 'cuentas_por_pagar' ||
-                 lsKey === 'cuotas_obligaciones' || lsKey === 'obs_marquee') {
-        // Arrays: merge por clave única
-        if (Array.isArray(remoto) || Array.isArray(loc)) {
-          nuevoData = _mergeArrays(loc, remoto);
-          // SAFETY: si el merge produce menos items que lo local, conservar local
-          var locLen = Array.isArray(loc) ? loc.length : 0;
-          if (nuevoData.length < locLen) {
-            console.warn('[SYNC PANEL] 🛡️ Merge en ' + lsKey + ' produjo menos items — abortando');
-            return false;
-          }
-        } else {
-          nuevoData = remoto;
-        }
-      } else if (lsKey === 'cuentasMemoria') {
-        // Cuentas: merge por nombre, conservar el saldo más reciente
-        var locArr = Array.isArray(loc) ? loc : [];
-        var remArr = Array.isArray(remoto) ? remoto : [];
-        if (remArr.length === 0 && locArr.length > 0) {
-          nuevoData = locArr;  // no sobrescribir si remoto está vacío
-        } else if (locArr.length === 0) {
-          nuevoData = remArr;
-        } else {
-          // Merge por nombre, tomar el de mayor saldo absoluto (probablemente más reciente)
-          var byNombre = {};
-          locArr.forEach(function(c){ if(c && c.nombre) byNombre[c.nombre] = c; });
-          remArr.forEach(function(c){
-            if(!c || !c.nombre) return;
-            var ex = byNombre[c.nombre];
-            if(!ex || (Number(c.saldo)||0) !== (Number(ex.saldo)||0)){
-              byNombre[c.nombre] = c;  // último gana en cuentas (porque es estado)
-            }
-          });
-          nuevoData = Object.values(byNombre);
-        }
-      } else {
-        // Otros (objetos planos): si remoto está vacío, no sobrescribir
-        var remVacio = (remoto === null) ||
-                       (Array.isArray(remoto) && remoto.length === 0) ||
-                       (typeof remoto === 'object' && !Array.isArray(remoto) && Object.keys(remoto).length === 0);
-        if (remVacio && loc) {
-          return false;  // mantener local
-        }
-        nuevoData = remoto;
+      // Reflejar en variables globales (cada caso)
+      if (lsKey === 'clientes' && Array.isArray(remoto)) {
+        try { window.clientes = remoto; } catch(e) {}
       }
-
-      var nuevoStr = JSON.stringify(nuevoData);
-      if (prev === nuevoStr) return false;
-      localStorage.setItem(lsKey, nuevoStr);
-
-      // Reflejar en variables globales
-      if (lsKey === 'clientes' && Array.isArray(nuevoData)) {
-        try { window.clientes = nuevoData; } catch(e) {}
-      }
-      if (lsKey === 'cuentasMemoria' && Array.isArray(nuevoData)) {
-        try { window.cuentasMemoria = nuevoData; } catch(e) {}
+      if (lsKey === 'cuentasMemoria' && Array.isArray(remoto)) {
+        try { window.cuentasMemoria = remoto; } catch(e) {}
       }
       if (lsKey === 'transferenciasMem') {
-        try { window.transferenciasMem = nuevoData; } catch(e) {}
+        try { window.transferenciasMem = remoto; } catch(e) {}
       }
-      if (lsKey === 'mc_local' && Array.isArray(nuevoData)) {
-        try { window.movimientosContables = nuevoData; } catch(e) {}
+      if (lsKey === 'mc_local' && Array.isArray(remoto)) {
+        try { window.movimientosContables = remoto; } catch(e) {}
       }
-      if (lsKey === 'gm_local' && Array.isArray(nuevoData)) {
+      if (lsKey === 'gm_local' && Array.isArray(remoto)) {
         try {
-          window.gastosMemoria = nuevoData;
-          sessionStorage.setItem('gastos', JSON.stringify(nuevoData));
+          window.gastosMemoria = remoto;
+          sessionStorage.setItem('gastos', JSON.stringify(remoto));
         } catch(e) {}
       }
-
-      // Si hicimos merge, subir el resultado merged para que ambos navegadores converjan
-      var fueMerge = (lsKey === 'vn_deudas_v20' || lsKey === 'cartera_deudas' ||
-                      lsKey === 'mc_local' || lsKey === 'gm_local' ||
-                      lsKey === 'conta_v2' || lsKey === 'transferenciasMem' ||
-                      lsKey === 'cuentas_por_pagar' || lsKey === 'cuotas_obligaciones' ||
-                      lsKey === 'obs_marquee' || lsKey === 'clientes');
-      if (fueMerge) {
-        var tabla = TABLAS[lsKey];
-        if (tabla) {
-          // Sin await para no bloquear; en background
-          pushTabla(tabla, nuevoData);
-        }
-      }
-
       return true;
     } catch (e) {
       console.warn('[SYNC PANEL] aplicarRemoto error:', e);
@@ -13529,7 +13286,7 @@ window.vnDiagVentas = function(){
 
   // ─── BOTÓN ⬆ Subir ──────────────────────────────
   window.SyncForzarSubirPanel = async function () {
-    setBadge('Sincronizando (merge)…', 'amarillo');
+    setBadge('Subiendo a la nube…', 'amarillo');
     var subidos = 0, fallidos = 0;
     var hoy = (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10);
 
@@ -13538,71 +13295,17 @@ window.vnDiagVentas = function(){
       try {
         var raw = localStorage.getItem(lsKey);
         if (!raw) continue;
-        var datosLocales = JSON.parse(raw);
-        if (!datosLocales) continue;
+        var datos = JSON.parse(raw);
+        if (!datos) continue;
         // Saltar arrays/objetos vacíos
-        if (Array.isArray(datosLocales) && datosLocales.length === 0) continue;
-        if (typeof datosLocales === 'object' && !Array.isArray(datosLocales) && Object.keys(datosLocales).length === 0) continue;
+        if (Array.isArray(datos) && datos.length === 0) continue;
+        if (typeof datos === 'object' && !Array.isArray(datos) && Object.keys(datos).length === 0) continue;
 
-        // ✅ ANTES DE SUBIR: bajar lo remoto y hacer MERGE
-        // Esto evita que un navegador pise los datos del otro
-        var datosRemotos = await pullTabla(tabla);
-        var datosFinales = datosLocales;
-
-        if (datosRemotos !== null && datosRemotos !== undefined) {
-          // Aplicar la misma lógica de merge que usa aplicarRemoto
-          if (lsKey === 'vn_deudas_v20') {
-            datosFinales = _mergeDeudasV20(datosLocales, datosRemotos);
-          } else if (lsKey === 'cartera_deudas') {
-            datosFinales = _mergeCarteraDeudas(datosLocales, datosRemotos);
-          } else if (lsKey === 'clientes') {
-            // 🛡️ PROTECCIÓN ESPECIAL: nunca perder clientes
-            var locC = Array.isArray(datosLocales) ? datosLocales : [];
-            var remC = Array.isArray(datosRemotos) ? datosRemotos : [];
-            datosFinales = _mergeArrays(locC, remC);
-            // Si el merge dio MENOS clientes que el local, usar el local
-            if (datosFinales.length < locC.length) {
-              console.warn('[SYNC PANEL] 🛡️ Subir clientes: merge daría menos clientes, usando local');
-              datosFinales = locC;
-            }
-          } else if (lsKey === 'mc_local' || lsKey === 'gm_local' ||
-                     lsKey === 'conta_v2' || lsKey === 'cartera_pagos_historial' ||
-                     lsKey === 'transferenciasMem' || lsKey === 'cuentas_por_pagar' ||
-                     lsKey === 'cuotas_obligaciones' || lsKey === 'obs_marquee') {
-            if (Array.isArray(datosLocales) || Array.isArray(datosRemotos)) {
-              datosFinales = _mergeArrays(datosLocales, datosRemotos);
-              // Protección: si el merge produce menos items que lo local, usar local
-              var locLen = Array.isArray(datosLocales) ? datosLocales.length : 0;
-              if (datosFinales.length < locLen) {
-                console.warn('[SYNC PANEL] 🛡️ Subir ' + lsKey + ': merge daría menos items, usando local');
-                datosFinales = datosLocales;
-              }
-            }
-          } else if (lsKey === 'cuentasMemoria') {
-            // Merge cuentas por nombre
-            var locArr = Array.isArray(datosLocales) ? datosLocales : [];
-            var remArr = Array.isArray(datosRemotos) ? datosRemotos : [];
-            var byNombre = {};
-            locArr.forEach(function(c){ if(c && c.nombre) byNombre[c.nombre] = c; });
-            remArr.forEach(function(c){
-              if(!c || !c.nombre) return;
-              if(!byNombre[c.nombre]) byNombre[c.nombre] = c;
-            });
-            datosFinales = Object.values(byNombre);
-            // Si no había cuentas locales, usar remotas
-            if (locArr.length === 0 && remArr.length > 0) datosFinales = remArr;
-          }
-          // Guardar el resultado merged en local también (consistencia)
-          try {
-            localStorage.setItem(lsKey, JSON.stringify(datosFinales));
-          } catch(e) {}
-        }
-
-        var ok = await pushTabla(tabla, datosFinales);
+        var ok = await pushTabla(tabla, datos);
         if (ok) subidos++;
         else fallidos++;
-        await new Promise(function (r) { setTimeout(r, 100); });
-      } catch (e) { fallidos++; console.warn('Error en', lsKey, e); }
+        await new Promise(function (r) { setTimeout(r, 150); });
+      } catch (e) { fallidos++; }
     }
 
     // También subir el recaudo del día (que va en otra tabla)
@@ -13611,25 +13314,11 @@ window.vnDiagVentas = function(){
       if (recRaw) {
         var recData = JSON.parse(recRaw);
         if (recData && Object.keys(recData).length > 0) {
-          // Bajar lo remoto del día
-          var rRemoto = await db.from('recaudo_diario').select('datos').eq('fecha', hoy).maybeSingle();
-          var recFinal = recData;
-          if (rRemoto && rRemoto.data && rRemoto.data.datos) {
-            // Merge: combinar clientes (clave = nombre cliente)
-            var rL = recData;
-            var rR = rRemoto.data.datos;
-            recFinal = {};
-            Object.keys(rL).forEach(function(k){ recFinal[k] = rL[k]; });
-            Object.keys(rR).forEach(function(k){
-              if(!recFinal[k]) recFinal[k] = rR[k];
-            });
-          }
           await db.from('recaudo_diario').upsert({
             fecha: hoy,
-            datos: recFinal,
+            datos: recData,
             updated_at: new Date().toISOString()
           }, { onConflict: 'fecha' });
-          localStorage.setItem('recaudo_' + hoy, JSON.stringify(recFinal));
           subidos++;
         }
       }
@@ -13639,10 +13328,8 @@ window.vnDiagVentas = function(){
       setBadge('✅ ' + subidos + ' OK · ⚠ ' + fallidos + ' fallaron', 'amarillo');
       console.warn('[SYNC PANEL] Subida con errores. Revisa políticas RLS de las tablas que fallaron.');
     } else {
-      setBadge('✅ ' + subidos + ' tablas merge+subidas', 'verde');
+      setBadge('✅ ' + subidos + ' tablas subidas', 'verde');
     }
-    // Refrescar UI con los datos merged
-    refrescarUI(['cartera_deudas','vn_deudas_v20','clientes','cuentasMemoria','mc_local','gm_local','nomina_data','cuentas_por_pagar']);
     setTimeout(function () { setBadge('En vivo · Supabase', 'verde'); }, 3500);
   };
 
@@ -13690,59 +13377,6 @@ window.vnDiagVentas = function(){
     var v = document.getElementById('vnSB');
     if (v) v.style.display = 'none';
   }, 2000);
-
-  // ─────────────────────────────────────────────────────
-  // 🔄 POLLING AUTOMÁTICO CON MERGE (cada 5 segundos)
-  // ─────────────────────────────────────────────────────
-  // Detecta cambios en otros navegadores y hace merge
-  // sin perder datos locales. Si Realtime funciona,
-  // este polling es redundante pero da seguridad extra.
-  // ─────────────────────────────────────────────────────
-  var _pollLastTS = {};
-  var _pollEnEjecucion = false;
-
-  async function _pollMergeAuto() {
-    if (_pollEnEjecucion) return;
-    if (document.hidden) return;  // ahorrar batería cuando la pestaña no está visible
-    _pollEnEjecucion = true;
-    try {
-      var clavesCambio = [];
-      for (var lsKey in TABLAS) {
-        var tabla = TABLAS[lsKey];
-        try {
-          // Solo bajamos si el updated_at cambió
-          var r = await db.from(tabla).select('updated_at').eq('id', 1).maybeSingle();
-          if (!r || !r.data) continue;
-          var ts = r.data.updated_at || '';
-          if (ts === (_pollLastTS[tabla] || '')) continue;  // sin cambios
-          _pollLastTS[tabla] = ts;
-
-          // Hay cambio remoto → bajar y mergear
-          var remoto = await pullTabla(tabla);
-          if (remoto !== null) {
-            if (aplicarRemoto(lsKey, remoto)) {
-              clavesCambio.push(lsKey);
-            }
-          }
-        } catch (e) {}
-      }
-      if (clavesCambio.length > 0) {
-        refrescarUI(clavesCambio);
-        setBadge('🔄 Sync actualizado', 'verde');
-        setTimeout(function () { setBadge('En vivo · Supabase', 'verde'); }, 1500);
-      }
-    } catch (e) {
-      console.warn('[SYNC PANEL] poll auto error:', e);
-    } finally {
-      _pollEnEjecucion = false;
-    }
-  }
-
-  // Iniciar polling después de 4s para no competir con la carga inicial
-  setTimeout(function () {
-    setInterval(_pollMergeAuto, 5000);
-    console.log('🔄 Polling automático con merge (cada 5s) activo');
-  }, 4000);
 
   // ─────────────────────────────────────────────────────
   // 🚀 AUTO-SUBIR AL CERRAR PESTAÑA / CAMBIAR DE TAB
@@ -13845,57 +13479,6 @@ window.vnDiagVentas = function(){
 
   console.log('✅ SYNC PANEL cargado — botones ⬆ Subir / ⬇ Bajar disponibles en sidebar');
   console.log('✅ AUTO-SUBIR al cerrar pestaña activado');
-
-  // ─────────────────────────────────────────────────────
-  // 🚑 HERRAMIENTAS DE RECUPERACIÓN (consola)
-  // ─────────────────────────────────────────────────────
-  // Si perdiste clientes en Supabase y los tienes en este navegador:
-  //   RescatarClientes()
-  // Esto fuerza la subida de los clientes locales sin merge ni protecciones
-  // (sobrescribe el remoto con la lista local actual).
-  window.RescatarClientes = async function () {
-    var locC = [];
-    try { locC = JSON.parse(localStorage.getItem('clientes')||'[]'); } catch(e){}
-    if (!Array.isArray(locC) || locC.length === 0) {
-      alert('❌ Este navegador NO tiene clientes locales para subir');
-      return;
-    }
-    if (!confirm('¿Subir ' + locC.length + ' clientes a Supabase?\n(Sobrescribe el remoto con esta lista)')) return;
-    try {
-      var r = await db.from('clientes_config').upsert({
-        id: 1,
-        datos: locC,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
-      if (r && r.error) {
-        alert('❌ Error: ' + (r.error.message || 'desconocido'));
-      } else {
-        alert('✅ Subidos ' + locC.length + ' clientes a Supabase.\nAhora abre el otro navegador y ejecuta:\n  SyncForzarBajarPanel()');
-      }
-    } catch (e) {
-      alert('❌ Error: ' + e.message);
-    }
-  };
-
-  // Diagnóstico rápido: ver cuántos clientes hay local vs remoto
-  window.DiagnosticarClientes = async function () {
-    var locC = [];
-    try { locC = JSON.parse(localStorage.getItem('clientes')||'[]'); } catch(e){}
-    console.log('📋 LOCAL: ' + (Array.isArray(locC) ? locC.length : 0) + ' clientes');
-    if (Array.isArray(locC)) {
-      console.log('   Primeros 5:', locC.slice(0,5).map(function(c){return c.nombre;}));
-    }
-    try {
-      var r = await db.from('clientes_config').select('datos').eq('id', 1).maybeSingle();
-      if (r && r.data && Array.isArray(r.data.datos)) {
-        console.log('☁️ REMOTO: ' + r.data.datos.length + ' clientes');
-        console.log('   Primeros 5:', r.data.datos.slice(0,5).map(function(c){return c.nombre;}));
-      } else {
-        console.log('☁️ REMOTO: vacío o sin datos');
-      }
-    } catch (e) { console.warn('Error consultando remoto:', e); }
-  };
-  console.log('🚑 Herramientas: RescatarClientes() | DiagnosticarClientes()');
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
