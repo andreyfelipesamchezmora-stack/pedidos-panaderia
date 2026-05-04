@@ -1333,10 +1333,18 @@ async function cargar(){
     let p = data.find(x => x.cliente === c.nombre) || null;
     let _safeNombre = String(c.nombre).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     let _idArg = p && p.id != null ? JSON.stringify(p.id) : 'null';
+    let _estadoCls = p ? (p.editado ? 'editado' : 'nuevo') : '';
+    let _total = p ? (Number(p.total)||0) : 0;
+    let _totalHtml = p ? `<p style="margin:4px 0 0;font-weight:700;color:#166534;">$${_total.toLocaleString('es-CO')}</p>` : '';
+    let _xHtml = p && p.id != null
+      ? `<span class="x" title="Eliminar pedido" onclick="event.stopPropagation();eliminar(${_idArg}, '${_safeNombre}')" style="position:absolute;top:6px;right:8px;cursor:pointer;">✕</span>`
+      : '';
 
     grid.innerHTML += `
-      <div class="card ${c.tipo}" onclick="abrir('${_safeNombre}', ${_idArg})">
+      <div class="card ${c.tipo} ${_estadoCls}" style="position:relative;" onclick="abrir('${_safeNombre}', ${_idArg})">
+        ${_xHtml}
         <h4>${c.nombre}</h4>
+        ${_totalHtml}
       </div>`;
   });
 }
