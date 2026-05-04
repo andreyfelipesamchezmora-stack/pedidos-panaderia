@@ -1294,7 +1294,13 @@ function renderProductos(){
 }
 
 async function cargar(){
-  await cargarClientesDesdeSupabase(); // 🔥 IMPORTANTE
+  try {
+    if (typeof cargarClientesDesdeSupabase === 'function') {
+      await cargarClientesDesdeSupabase();
+    } else if (typeof window !== 'undefined' && typeof window.cargarClientesDesdeSupabase === 'function') {
+      await window.cargarClientesDesdeSupabase();
+    }
+  } catch(e){ console.error('cargarClientesDesdeSupabase falló (se sigue con clientes locales):', e); } // 🔥 IMPORTANTE
 
   let fechaSeleccionada = document.getElementById("fecha").value;
 
@@ -13753,11 +13759,13 @@ async function cargarClientesDesdeSupabase(){
     return;
   }
 
-  if(Array.isArray(data)){
+  if(Array.isArray(data) && data.length > 0){
     clientes = data;
+    try { window.clientes = clientes; } catch(e){}
     localStorage.setItem("clientes", JSON.stringify(clientes));
   }
 }
+try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(e){}
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
