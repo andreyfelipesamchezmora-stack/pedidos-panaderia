@@ -1331,9 +1331,11 @@ async function cargar(){
 
   clientes.forEach(c => {
     let p = data.find(x => x.cliente === c.nombre) || null;
+    let _safeNombre = String(c.nombre).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    let _idArg = p && p.id != null ? JSON.stringify(p.id) : 'null';
 
     grid.innerHTML += `
-      <div class="card ${c.tipo}">
+      <div class="card ${c.tipo}" onclick="abrir('${_safeNombre}', ${_idArg})">
         <h4>${c.nombre}</h4>
       </div>`;
   });
