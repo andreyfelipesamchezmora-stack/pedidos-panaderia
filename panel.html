@@ -11463,7 +11463,50 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
   async function subF(t,f,d){try{var r=await db.from(t).upsert({fecha:f,datos:d,updated_at:new Date().toISOString()},{onConflict:'fecha'});return!r.error;}catch(e){return false;}}
   async function baj(t){try{var r=await db.from(t).select('datos').eq('id',1).maybeSingle();return(r&&r.data)?r.data.datos:null;}catch(e){return null;}}
   async function bajF(t,f){try{var r=await db.from(t).select('datos').eq('fecha',f).maybeSingle();return(r&&r.data)?r.data.datos:null;}catch(e){return null;}}
-  function apl(t,d){if(!d)return;_s=true;var l=RMAP[t];if(t==='clientes_config'&&Array.isArray(d)&&d.length>0){window.clientes=d;LS.set('clientes',JSON.stringify(d));}else if(t==='cuentas_bancarias'&&Array.isArray(d)&&d.length>0){window.cuentasMemoria=d;LS.set('cuentasMemoria',JSON.stringify(d));}else if(t==='transferencias'){window.transferenciasMem=d;LS.set('transferenciasMem',JSON.stringify(d));}else if(t==='movimientos_contables'&&Array.isArray(d)&&d.length>0){window.movimientosContables=d;LS.set('mc_local',JSON.stringify(d));}else if(t==='gastos_manuales'&&Array.isArray(d)&&d.length>0){window.gastosMemoria=d;SS.set('gastos',JSON.stringify(d));LS.set('gm_local',JSON.stringify(d));}else if(l){LS.set(l,JSON.stringify(d));}setTimeout(function(){_s=false;},500);}
+  function apl(t,d){
+    if(!d)return;
+    _s=true;
+    var l=RMAP[t];
+    if(t==='clientes_config'&&Array.isArray(d)&&d.length>0){
+      // 🛡️ PROTECCIÓN ANTI-PÉRDIDA DE CLIENTES
+      // Si lo remoto tiene MENOS clientes que lo local, hacer MERGE (no sobrescribir)
+      var locC = [];
+      try { locC = JSON.parse(LS.get('clientes')||'[]'); } catch(e){}
+      if(Array.isArray(locC) && locC.length > d.length){
+        // Merge por nombre
+        var byNombre = {};
+        d.forEach(function(c){ if(c && c.nombre) byNombre[c.nombre] = c; });
+        locC.forEach(function(c){
+          if(c && c.nombre && !byNombre[c.nombre]) byNombre[c.nombre] = c;
+        });
+        var merged = Object.values(byNombre);
+        console.log('[SYNC V12] 🛡️ Remoto tenía '+d.length+' clientes, local '+locC.length+'. Merged: '+merged.length);
+        window.clientes = merged;
+        LS.set('clientes',JSON.stringify(merged));
+        // Subir el merged para sincronizar
+        setTimeout(function(){ try { sub('clientes_config', merged); } catch(e){} }, 600);
+      } else {
+        window.clientes=d;
+        LS.set('clientes',JSON.stringify(d));
+      }
+    } else if(t==='cuentas_bancarias'&&Array.isArray(d)&&d.length>0){
+      window.cuentasMemoria=d;
+      LS.set('cuentasMemoria',JSON.stringify(d));
+    } else if(t==='transferencias'){
+      window.transferenciasMem=d;
+      LS.set('transferenciasMem',JSON.stringify(d));
+    } else if(t==='movimientos_contables'&&Array.isArray(d)&&d.length>0){
+      window.movimientosContables=d;
+      LS.set('mc_local',JSON.stringify(d));
+    } else if(t==='gastos_manuales'&&Array.isArray(d)&&d.length>0){
+      window.gastosMemoria=d;
+      SS.set('gastos',JSON.stringify(d));
+      LS.set('gm_local',JSON.stringify(d));
+    } else if(l){
+      LS.set(l,JSON.stringify(d));
+    }
+    setTimeout(function(){_s=false;},500);
+  }
   localStorage.setItem=function(k,v){LS.set(k,v);if(_s)return;if(MAP[k]){try{sub(MAP[k],JSON.parse(v));}catch(e){}}if(k.indexOf('recaudo_')===0&&k.length>10){try{subF('recaudo_diario',k.slice(8),JSON.parse(v));}catch(e){}}if(k.indexOf('monedas_')===0&&k.length>10){try{subF('monedas_diario',k.slice(8),JSON.parse(v));}catch(e){}}};
   sessionStorage.setItem=function(k,v){SS.set(k,v);if(_s)return;if(k==='gastos'){try{sub('gastos_manuales',JSON.parse(v));}catch(e){}}};
   var _lM=0,_lG=0;
@@ -13213,8 +13256,17 @@ window.vnDiagVentas = function(){
   //  Objetos planos (nomina_data, observaciones_marquee): tomar el más completo
   function _itemKeyArr(m) {
     if (!m || typeof m !== 'object') return JSON.stringify(m);
+    // Si tiene ID único, usarlo SIEMPRE (más confiable)
     if (m.id) return 'id:' + m.id;
-    return [m.tipo||m.nombre||'', m.fecha||'', m.monto||'', String(m.descripcion||m.cliente||'').toLowerCase().trim()].join('|');
+    // Si tiene NOMBRE (clientes, cuentas, empleados, proveedores) → la clave es el nombre
+    // Esto evita el bug donde dos clientes con tipo='cercano' se consideraban duplicados
+    if (m.nombre) return 'nom:' + String(m.nombre).toLowerCase().trim();
+    // Para movimientos/transacciones (tienen fecha, monto, tipo, descripción)
+    if (m.fecha || m.monto || m.descripcion) {
+      return [m.tipo||'', m.fecha||'', m.monto||'', String(m.descripcion||m.cliente||'').toLowerCase().trim()].join('|');
+    }
+    // Para cualquier otro objeto: hash del JSON completo (no se pierde nada)
+    return JSON.stringify(m);
   }
 
   function _mergeArrays(loc, rem) {
@@ -13322,14 +13374,35 @@ window.vnDiagVentas = function(){
         nuevoData = _mergeDeudasV20(loc, remoto);
       } else if (lsKey === 'cartera_deudas') {
         nuevoData = _mergeCarteraDeudas(loc, remoto);
+      } else if (lsKey === 'clientes') {
+        // 🛡️ PROTECCIÓN ESPECIAL CLIENTES: nunca perder clientes
+        var locC = Array.isArray(loc) ? loc : [];
+        var remC = Array.isArray(remoto) ? remoto : [];
+        // Si el remoto está vacío o tiene MENOS clientes y el local tiene varios, mantener el local
+        if (remC.length === 0 && locC.length > 0) {
+          console.log('[SYNC PANEL] 🛡️ Remoto sin clientes — manteniendo locales (' + locC.length + ')');
+          return false;  // ni siquiera tocar
+        }
+        // Hacer merge por nombre
+        nuevoData = _mergeArrays(locC, remC);
+        // SAFETY: si el merge dio menos de lo que ya tenía, NO aplicar
+        if (nuevoData.length < locC.length) {
+          console.warn('[SYNC PANEL] 🛡️ Merge produjo MENOS clientes (' + nuevoData.length + ' vs local ' + locC.length + ') — abortando');
+          return false;
+        }
       } else if (lsKey === 'mc_local' || lsKey === 'gm_local' ||
                  lsKey === 'conta_v2' || lsKey === 'cartera_pagos_historial' ||
                  lsKey === 'transferenciasMem' || lsKey === 'cuentas_por_pagar' ||
-                 lsKey === 'cuotas_obligaciones' || lsKey === 'obs_marquee' ||
-                 lsKey === 'clientes') {
+                 lsKey === 'cuotas_obligaciones' || lsKey === 'obs_marquee') {
         // Arrays: merge por clave única
         if (Array.isArray(remoto) || Array.isArray(loc)) {
           nuevoData = _mergeArrays(loc, remoto);
+          // SAFETY: si el merge produce menos items que lo local, conservar local
+          var locLen = Array.isArray(loc) ? loc.length : 0;
+          if (nuevoData.length < locLen) {
+            console.warn('[SYNC PANEL] 🛡️ Merge en ' + lsKey + ' produjo menos items — abortando');
+            return false;
+          }
         } else {
           nuevoData = remoto;
         }
@@ -13482,13 +13555,28 @@ window.vnDiagVentas = function(){
             datosFinales = _mergeDeudasV20(datosLocales, datosRemotos);
           } else if (lsKey === 'cartera_deudas') {
             datosFinales = _mergeCarteraDeudas(datosLocales, datosRemotos);
+          } else if (lsKey === 'clientes') {
+            // 🛡️ PROTECCIÓN ESPECIAL: nunca perder clientes
+            var locC = Array.isArray(datosLocales) ? datosLocales : [];
+            var remC = Array.isArray(datosRemotos) ? datosRemotos : [];
+            datosFinales = _mergeArrays(locC, remC);
+            // Si el merge dio MENOS clientes que el local, usar el local
+            if (datosFinales.length < locC.length) {
+              console.warn('[SYNC PANEL] 🛡️ Subir clientes: merge daría menos clientes, usando local');
+              datosFinales = locC;
+            }
           } else if (lsKey === 'mc_local' || lsKey === 'gm_local' ||
                      lsKey === 'conta_v2' || lsKey === 'cartera_pagos_historial' ||
                      lsKey === 'transferenciasMem' || lsKey === 'cuentas_por_pagar' ||
-                     lsKey === 'cuotas_obligaciones' || lsKey === 'obs_marquee' ||
-                     lsKey === 'clientes') {
+                     lsKey === 'cuotas_obligaciones' || lsKey === 'obs_marquee') {
             if (Array.isArray(datosLocales) || Array.isArray(datosRemotos)) {
               datosFinales = _mergeArrays(datosLocales, datosRemotos);
+              // Protección: si el merge produce menos items que lo local, usar local
+              var locLen = Array.isArray(datosLocales) ? datosLocales.length : 0;
+              if (datosFinales.length < locLen) {
+                console.warn('[SYNC PANEL] 🛡️ Subir ' + lsKey + ': merge daría menos items, usando local');
+                datosFinales = datosLocales;
+              }
             }
           } else if (lsKey === 'cuentasMemoria') {
             // Merge cuentas por nombre
@@ -13757,6 +13845,57 @@ window.vnDiagVentas = function(){
 
   console.log('✅ SYNC PANEL cargado — botones ⬆ Subir / ⬇ Bajar disponibles en sidebar');
   console.log('✅ AUTO-SUBIR al cerrar pestaña activado');
+
+  // ─────────────────────────────────────────────────────
+  // 🚑 HERRAMIENTAS DE RECUPERACIÓN (consola)
+  // ─────────────────────────────────────────────────────
+  // Si perdiste clientes en Supabase y los tienes en este navegador:
+  //   RescatarClientes()
+  // Esto fuerza la subida de los clientes locales sin merge ni protecciones
+  // (sobrescribe el remoto con la lista local actual).
+  window.RescatarClientes = async function () {
+    var locC = [];
+    try { locC = JSON.parse(localStorage.getItem('clientes')||'[]'); } catch(e){}
+    if (!Array.isArray(locC) || locC.length === 0) {
+      alert('❌ Este navegador NO tiene clientes locales para subir');
+      return;
+    }
+    if (!confirm('¿Subir ' + locC.length + ' clientes a Supabase?\n(Sobrescribe el remoto con esta lista)')) return;
+    try {
+      var r = await db.from('clientes_config').upsert({
+        id: 1,
+        datos: locC,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+      if (r && r.error) {
+        alert('❌ Error: ' + (r.error.message || 'desconocido'));
+      } else {
+        alert('✅ Subidos ' + locC.length + ' clientes a Supabase.\nAhora abre el otro navegador y ejecuta:\n  SyncForzarBajarPanel()');
+      }
+    } catch (e) {
+      alert('❌ Error: ' + e.message);
+    }
+  };
+
+  // Diagnóstico rápido: ver cuántos clientes hay local vs remoto
+  window.DiagnosticarClientes = async function () {
+    var locC = [];
+    try { locC = JSON.parse(localStorage.getItem('clientes')||'[]'); } catch(e){}
+    console.log('📋 LOCAL: ' + (Array.isArray(locC) ? locC.length : 0) + ' clientes');
+    if (Array.isArray(locC)) {
+      console.log('   Primeros 5:', locC.slice(0,5).map(function(c){return c.nombre;}));
+    }
+    try {
+      var r = await db.from('clientes_config').select('datos').eq('id', 1).maybeSingle();
+      if (r && r.data && Array.isArray(r.data.datos)) {
+        console.log('☁️ REMOTO: ' + r.data.datos.length + ' clientes');
+        console.log('   Primeros 5:', r.data.datos.slice(0,5).map(function(c){return c.nombre;}));
+      } else {
+        console.log('☁️ REMOTO: vacío o sin datos');
+      }
+    } catch (e) { console.warn('Error consultando remoto:', e); }
+  };
+  console.log('🚑 Herramientas: RescatarClientes() | DiagnosticarClientes()');
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
