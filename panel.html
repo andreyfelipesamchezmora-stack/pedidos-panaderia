@@ -1236,13 +1236,13 @@ const productos = [
 ];
 
 let clientes = [];
+let _clientesGuardados = [];
 try {
   let guardados = JSON.parse(localStorage.getItem("clientes"));
-  if(Array.isArray(guardados) && guardados.length > 0) clientes = guardados;
-} catch(e) { clientes = []; }
+  if(Array.isArray(guardados)) _clientesGuardados = guardados;
+} catch(e) { _clientesGuardados = []; }
 
-if(clientes.length === 0){
-  clientes = [
+let _clientesBase = [
     {nombre:"AMPARO MOLINO ROA",tipo:"moto"},{nombre:"ANAYIBE",tipo:"moto"},
     {nombre:"NATALIA - PATIOS TRANSITO",tipo:"moto"},{nombre:"ANA SUEGRA",tipo:"moto"},
     {nombre:"NUBIA CASETA LOS OLIVOS",tipo:"moto"},{nombre:"MONICA",tipo:"moto"},
@@ -1268,8 +1268,27 @@ if(clientes.length === 0){
     {nombre:"YURANY DISTRIBUIDORA HUEVOS - VERGEL",tipo:"lejano"},
     {nombre:"TIENDA DISNEY - VILLA REGINA",tipo:"lejano"},{nombre:"CECILIA LEJOS",tipo:"lejano"},
     {nombre:"CAMBULOS",tipo:"lejano"},{nombre:"LA CORUÑA",tipo:"lejano"},{nombre:"RUTH",tipo:"lejano"}
-  ];
-}
+];
+
+// MERGE base hardcoded + guardados en localStorage (sin duplicar, conservando todo).
+(function(){
+  var mapa = {};
+  var orden = [];
+  _clientesBase.forEach(function(c){
+    if(c && c.nombre && !mapa[c.nombre]){ mapa[c.nombre] = c; orden.push(c.nombre); }
+  });
+  _clientesGuardados.forEach(function(c){
+    if(!c || !c.nombre) return;
+    if(mapa[c.nombre]){
+      mapa[c.nombre] = Object.assign({}, mapa[c.nombre], c); // guardado actualiza campos
+    } else {
+      mapa[c.nombre] = c; orden.push(c.nombre);
+    }
+  });
+  clientes = orden.map(function(n){ return mapa[n]; });
+  try { window.clientes = clientes; } catch(e){}
+  try { localStorage.setItem("clientes", JSON.stringify(clientes)); } catch(e){}
+})();
 
 document.getElementById("fecha").value = (function(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
 
@@ -13760,9 +13779,27 @@ async function cargarClientesDesdeSupabase(){
   }
 
   if(Array.isArray(data) && data.length > 0){
-    clientes = data;
-    try { window.clientes = clientes; } catch(e){}
-    localStorage.setItem("clientes", JSON.stringify(clientes));
+    // MERGE por nombre: nunca borra clientes locales que no estén en Supabase.
+    var _mapa = {};
+    var _orden = [];
+    (Array.isArray(clientes) ? clientes : []).forEach(function(c){
+      if(c && c.nombre && !_mapa[c.nombre]){ _mapa[c.nombre] = c; _orden.push(c.nombre); }
+    });
+    data.forEach(function(c){
+      if(!c || !c.nombre) return;
+      if(_mapa[c.nombre]){
+        _mapa[c.nombre] = Object.assign({}, _mapa[c.nombre], c); // remoto actualiza campos
+      } else {
+        _mapa[c.nombre] = c;
+        _orden.push(c.nombre);
+      }
+    });
+    var _merged = _orden.map(function(n){ return _mapa[n]; });
+    if(_merged.length > 0){
+      clientes = _merged;
+      try { window.clientes = clientes; } catch(e){}
+      localStorage.setItem("clientes", JSON.stringify(clientes));
+    }
   }
 }
 try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(e){}
