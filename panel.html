@@ -1294,36 +1294,24 @@ function renderProductos(){
 }
 
 async function cargar(){
-  let fechaInput = document.getElementById("fecha");
-  if(!fechaInput.value){var _d=new Date();fechaInput.value = _d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0')+'-'+String(_d.getDate()).padStart(2,'0');}
-  let fechaSeleccionada = fechaInput.value;
-  let data = [];
-  try {
-    let res = await db.from("pedidos").select("*").eq("fecha", fechaSeleccionada);
-    if(!res.error) data = res.data || [];
-  } catch(e){ data = []; }
+  await cargarClientesDesdeSupabase(); // 🔥 IMPORTANTE
 
-  let total = 0;
+  let fechaSeleccionada = document.getElementById("fecha").value;
+
+  let res = await db.from("pedidos").select("*").eq("fecha", fechaSeleccionada);
+  let data = res.data || [];
+
   let grid = document.getElementById("grid");
   grid.innerHTML = "";
-  if(!clientes || clientes.length === 0){
-    grid.innerHTML = "<h3 style='color:red'>No hay clientes cargados</h3>";
-    return;
-  }
+
   clientes.forEach(c => {
     let p = data.find(x => x.cliente === c.nombre) || null;
-    let t = p ? Number(p.total) || 0 : 0;
-    total += t;
+
     grid.innerHTML += `
-    <div class="card ${c.tipo} ${p ? (p.editado ? 'editado' : 'nuevo') : ''}"
-      onclick="abrir('${c.nombre}', ${p?.id || 0})">
-      <div class="printMini" onclick="event.stopPropagation();imprimirDirecto('${c.nombre}')">🖨️</div>
-      <div class="x" onclick="event.stopPropagation();eliminar(${p?.id||0},'${c.nombre}')">✖</div>
-      <h4>${c.nombre}</h4>
-      <p>$${t.toLocaleString('es-CO')}</p>
-    </div>`;
+      <div class="card ${c.tipo}">
+        <h4>${c.nombre}</h4>
+      </div>`;
   });
-  localStorage.setItem("clientes", JSON.stringify(clientes));
 }
 
 async function abrir(nombre,id){
@@ -13757,6 +13745,19 @@ window.vnDiagVentas = function(){
 
   console.log('✅ SYNC PANEL cargado — botones ⬆ Subir / ⬇ Bajar disponibles en sidebar');
   console.log('✅ AUTO-SUBIR al cerrar pestaña activado');
+async function cargarClientesDesdeSupabase(){
+  let { data, error } = await db.from("clientes").select("*");
+
+  if(error){
+    console.error("Error cargando clientes:", error);
+    return;
+  }
+
+  if(Array.isArray(data)){
+    clientes = data;
+    localStorage.setItem("clientes", JSON.stringify(clientes));
+  }
+}
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
