@@ -1336,32 +1336,6 @@ async function cargar(){
     let _estadoCls = p ? (p.editado ? 'editado' : 'nuevo') : '';
     let _total = p ? (Number(p.total)||0) : 0;
     let _totalHtml = p ? `<p style="margin:4px 0 0;font-weight:700;color:#166534;">$${_total.toLocaleString('es-CO')}</p>` : '';
-    let _pedidoTxt = '';
-    if (p) {
-      if (p.pedido && String(p.pedido).trim()) {
-        _pedidoTxt = String(p.pedido)
-          .replace(/-{3,}/g,'')
-          .replace(/Bendaje:[^\n]*/gi,'')
-          .replace(/\n+/g,' · ')
-          .replace(/\s+/g,' ')
-          .replace(/^\s*·\s*/,'')
-          .trim();
-      } else if (Array.isArray(p.productos) && p.productos.length > 0) {
-        _pedidoTxt = p.productos
-          .filter(pr => (Number(pr.cantidad)||0) > 0 || (Number(pr.dinero)||0) > 0)
-          .map(pr => {
-            let cant = Number(pr.cantidad)||0;
-            let din  = Number(pr.dinero)||0;
-            if (cant > 0) return `${pr.nombre} x${cant}`;
-            if (din  > 0) return `${pr.nombre} $${din.toLocaleString('es-CO')}`;
-            return pr.nombre;
-          })
-          .join(' · ');
-      }
-    }
-    let _pedidoHtml = _pedidoTxt
-      ? `<div style="margin-top:4px;font-size:11px;color:#475569;line-height:1.3;max-height:48px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;">${_pedidoTxt.replace(/</g,'&lt;')}</div>`
-      : '';
     let _xHtml = p && p.id != null
       ? `<span class="x" title="Eliminar pedido" onclick="event.stopPropagation();eliminar(${_idArg}, '${_safeNombre}')" style="position:absolute;top:6px;right:8px;cursor:pointer;">✕</span>`
       : '';
@@ -1371,7 +1345,6 @@ async function cargar(){
         ${_xHtml}
         <h4>${c.nombre}</h4>
         ${_totalHtml}
-        ${_pedidoHtml}
       </div>`;
   });
 }
