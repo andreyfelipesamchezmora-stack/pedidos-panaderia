@@ -10319,34 +10319,43 @@ console.log('✅ Parche Unificado V2: Todo activo');
 // =====================================================
 // 1. RECAUDO — ORDENAR SEGÚN PANEL PRINCIPAL
 // =====================================================
+// Usa el array `clientes` EN MEMORIA (mismo que renderiza `cargar()` en el
+// panel principal). Antes leíamos de localStorage, que podía estar desfasado
+// respecto a la versión en memoria → orden distinto al panel.
 var _origRecaudoConstruirData = window.recaudoConstruirData;
 window.recaudoConstruirData = async function(){
   var rows = [];
   if(typeof _origRecaudoConstruirData === 'function'){
     rows = await _origRecaudoConstruirData();
   }
- 
-  // Obtener orden del panel principal (array clientes en localStorage)
-  var clientesOrden = [];
-  try { clientesOrden = JSON.parse(localStorage.getItem('clientes')||'[]'); } catch(e){}
- 
-  if(clientesOrden.length > 0){
-    // Crear mapa de posición: nombre → índice
+
+  // Fuente de verdad: window.clientes (in-memory). Fallback a localStorage.
+  var fuente = null;
+  try {
+    if (Array.isArray(window.clientes) && window.clientes.length > 0) {
+      fuente = window.clientes;
+    } else {
+      fuente = JSON.parse(localStorage.getItem('clientes')||'[]');
+    }
+  } catch(e){ fuente = []; }
+
+  if (Array.isArray(fuente) && fuente.length > 0) {
     var posMap = {};
-    clientesOrden.forEach(function(c, i){
-      var n = (typeof c === 'string' ? c : (c.nombre||'')).toUpperCase().trim();
-      posMap[n] = i;
+    fuente.forEach(function(c, i){
+      var n = (typeof c === 'string' ? c : (c && c.nombre || '')).toUpperCase().trim();
+      if (n) posMap[n] = i;
     });
- 
+
     rows.sort(function(a, b){
       var nA = (a.cliente||'').toUpperCase().trim();
       var nB = (b.cliente||'').toUpperCase().trim();
       var pA = posMap[nA] !== undefined ? posMap[nA] : 99999;
       var pB = posMap[nB] !== undefined ? posMap[nB] : 99999;
-      return pA - pB;
+      if (pA !== pB) return pA - pB;
+      return nA.localeCompare(nB, 'es');
     });
   }
- 
+
   return rows;
 };
  
