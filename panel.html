@@ -13847,18 +13847,30 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
 })();
 
 // =====================================================
-// ANTI-TITILEO: coalesce renders pesados (renderRecaudo / renderCartera /
-// renderConta). Si llegan varias llamadas seguidas (onblur, realtime, etc.)
-// solo se ejecuta una y se reagenda otra al final si hubo nuevas peticiones.
+// ANTI-TITILEO v2: coalesce + cooldown de renders pesados.
+// Problema anterior: cada onblur lanzaba un renderRecaudo completo que
+// reconstruía todo el DOM (se veía como "reseteo"). Ahora, tras ejecutar
+// el render, se bloquean 450 ms más; toda llamada que llegue en ese tiempo
+// se agrupa y se ejecuta UNA sola vez al final. La primera llamada (al
+// abrir el módulo) sigue siendo inmediata para no sentir lag.
 // =====================================================
 (function(){
+  var WRAPPED_KEY = '__vnCoalesced';
   function wrap(name){
     var orig = window[name];
-    if(typeof orig !== 'function') return;
+    if(typeof orig !== 'function') return false;
+    if(orig[WRAPPED_KEY]) return true; // ya envuelta
+
     var running = false, pending = false, lastArgs = null, lastThis = null;
+    var timer = null;
+    var lastRun = 0;
+    var DEBOUNCE_MS = 500;   // espera tras última llamada durante ráfaga
+    var IDLE_GAP_MS = 1200;  // si no hubo calls recientes: ejecuta inmediato
+
     function run(){
-      if(running) { pending = true; return; }
+      timer = null;
       running = true;
+      lastRun = Date.now();
       try {
         var r = orig.apply(lastThis, lastArgs || []);
         Promise.resolve(r).then(done, done);
@@ -13866,18 +13878,42 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
     }
     function done(){
       running = false;
-      if(pending){ pending = false; setTimeout(run, 60); }
+      if(pending){
+        pending = false;
+        // Tras render pendiente: sigue debounced.
+        if(timer) clearTimeout(timer);
+        timer = setTimeout(run, DEBOUNCE_MS);
+      }
     }
-    window[name] = function(){
+
+    var wrapper = function(){
       lastArgs = arguments; lastThis = this;
       if(running){ pending = true; return; }
-      run();
+      var idle = Date.now() - lastRun;
+      if(idle > IDLE_GAP_MS && !timer){
+        // Primera llamada "en frío": ejecuta ya, sin lag.
+        run();
+      } else {
+        // Ráfaga: colapsa todas las llamadas en una sola al final.
+        if(timer) clearTimeout(timer);
+        timer = setTimeout(run, DEBOUNCE_MS);
+      }
     };
+    wrapper[WRAPPED_KEY] = true;
+    window[name] = wrapper;
+    return true;
   }
-  // Espera a que TODOS los wrappers anteriores se hayan aplicado.
-  setTimeout(function(){
-    ['renderRecaudo','renderCartera','renderConta'].forEach(wrap);
-  }, 1500);
+
+  // Reintentar hasta enganchar la última versión de cada render. Muchos
+  // parches sobreescriben window.renderRecaudo (etc.), así que aplicamos
+  // el wrapper varias veces hasta que sea estable.
+  var targets = ['renderRecaudo','renderCartera','renderConta'];
+  var tries = 0;
+  var iv = setInterval(function(){
+    tries++;
+    targets.forEach(wrap);
+    if(tries >= 20) clearInterval(iv); // 20 * 500ms = 10s
+  }, 500);
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
