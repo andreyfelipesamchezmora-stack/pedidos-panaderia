@@ -1558,10 +1558,12 @@ function marcar(i){
   let dinRaw=document.getElementById("din"+i).value||"";
   let din=Number(typeof limpiarFormato==='function'?limpiarFormato(dinRaw):dinRaw.replace(/\./g,''))||0;
   let div=document.getElementById("prod"+i);
-  if(cant>0 && din>0)      div.style.background="#86efac"; // verde sólido: ambos
-  else if(cant>0)          div.style.background="#d4ffd4"; // verde claro: solo cantidad
-  else if(din>0)           div.style.background="#d4e4ff"; // azul claro: solo dinero
-  else                     div.style.background="white";    // ninguno
+  let color = "#ffffff";
+  if(cant>0 && din>0)      color="#86efac"; // verde sólido: ambos
+  else if(cant>0)          color="#d4ffd4"; // verde claro: solo cantidad
+  else if(din>0)           color="#d4e4ff"; // azul claro: solo dinero
+  // `!important` necesario porque hay una regla CSS global con !important.
+  div.style.setProperty("background", color, "important");
 }
 
 function generarNumeroTicket(){ let n=numeroTicket; numeroTicket++; localStorage.setItem("ticketNumero",numeroTicket); return n; }
@@ -4473,7 +4475,7 @@ function recaudoMarcarDeudaSaldada(nombre, deudaCliente, deudaMia) {
       checkbox.checked = false;
     } else if(deudaMia > 0){
       if(confirm('Le debes $' + Number(deudaMia).toLocaleString("es-CO") + ' a ' + nombre + '.\n¿Descontar de la factura del día?')){
-        rQuMHtpwbtsTXsRMArUQeWyGrRu7gwbZs2(nombre, deudaMia);
+        r3nP5oFahNL86vESFrkKjmuupsQa1mPzN7(nombre, deudaMia);
       } else {
         checkbox.checked = false;
       }
