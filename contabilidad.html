@@ -558,13 +558,25 @@ var Data = (function() {
   // ingresos/gastos contables reales.
   function _esPagoODeudaCliente(m){
     if (!m) return false;
-    if (m._fromCartera || m._fromRecaudo || m._fromCliente || m._esDeuda || m._esPagoCliente) return true;
+    // 1) Flags explícitos del panel/cartera/recaudo
+    if (m._fromCartera || m._fromRecaudo || m._fromCliente ||
+        m._esDeuda || m._esPagoCliente || m._esPago ||
+        m._origen === 'cartera' || m._origen === 'recaudo' ||
+        m.fuente === 'cartera' || m.fuente === 'recaudo' ||
+        m.modulo === 'cartera' || m.modulo === 'recaudo') return true;
+
+    // 2) Categoría conocida de cartera/recaudo
     var cat = String(m.categoria||'').toUpperCase();
-    if (cat === 'PAGO DE DEUDA' || cat === 'DEUDA CLIENTE' || cat === 'COBRO CLIENTE' || cat === 'ABONO CLIENTE') return true;
+    if (/(?:^|\s|_)(PAGO\s+DE\s+DEUDA|DEUDA(?:\s+(?:CLIENTE|MIA))?|COBRO(?:\s+CLIENTE)?|ABONO(?:\s+CLIENTE)?|CARTERA|RECAUDO\s+CLIENTE)(?:$|\s|_)/.test(cat))
+      return true;
+
+    // 3) Descripción con palabras clave de cartera/recaudo
     var d = String(m.descripcion||'').toLowerCase();
-    if (d.indexOf('pago de deuda')>=0 || d.indexOf('pago cliente')>=0 ||
-        d.indexOf('deuda cliente')>=0 || d.indexOf('abono cliente')>=0 ||
-        d.indexOf('cobro cliente')>=0 || d.indexOf('cartera')>=0) return true;
+    if (/\b(deuda|abono|cartera)\b/.test(d)) return true;
+    if (/pago\s+(?:de\s+)?(?:deuda|cliente|recibido|cartera)\b/.test(d)) return true;
+    if (/cobro\s+(?:cliente|deuda|cartera)\b/.test(d)) return true;
+    if (/recaudo\s+(?:cliente|de|cartera)\b/.test(d)) return true;
+    if (/\bsaldo\s+cliente\b/.test(d)) return true;
     return false;
   }
 
@@ -1228,8 +1240,24 @@ var App = (function() {
       });
     });
 
-    // Render inicial
-    UI.dash();
+    // Render inicial — esperamos a que pullAll baje datos frescos para
+    // evitar el flash con datos viejos (deudas/pagos que luego desaparecían).
+    // Si en 1200 ms el sync no terminó (red lenta/sin internet), renderizamos
+    // con lo local de respaldo. Una vez finalice el sync, refreshUI() hará
+    // el repintado con datos correctos.
+    var _firstRendered = false;
+    function _renderOnce(){
+      if (_firstRendered) return;
+      _firstRendered = true;
+      try { UI.dash(); } catch(e){}
+    }
+    window.__contaFirstRender = _renderOnce;
+    setTimeout(_renderOnce, 1200); // fallback offline
+    // Placeholders mientras llegan los datos del sync
+    var _hb = document.getElementById('hBody');
+    if (_hb) _hb.innerHTML = '<tr class="empty-row"><td colspan="6" style="opacity:.6">Cargando movimientos…</td></tr>';
+    var _rl = document.getElementById('recentList');
+    if (_rl) _rl.innerHTML = '<div class="empty-msg" style="opacity:.6">Cargando movimientos…</div>';
 
     // Sync cross-tab
     window.addEventListener('storage', function(e){
@@ -1360,6 +1388,8 @@ document.addEventListener('DOMContentLoaded', App.init);
 
   // ─── Refresh UI activa ───────────────────────────
   function refreshUI() {
+    // Marcar primer render hecho (en caso de que App.init aún esté esperando)
+    try { if (typeof window.__contaFirstRender === 'function') window.__contaFirstRender(); } catch(e){}
     var s = document.querySelector('.sec.on');
     if (!s) return;
     try {
@@ -1386,49 +1416,71 @@ document.addEventListener('DOMContentLoaded', App.init);
     try { pushNow(tabla, JSON.parse(v)); } catch (e) {}
   };
 
-  // ─── PULL COMPLETO INICIAL ────────────────────────
+  // ─── PULL COMPLETO INICIAL (PARALELO) ─────────────
+  // Antes: await secuencial por cada tabla → tardaba ~6× más.
+  // Ahora: Promise.all → todas las tablas se descargan a la vez.
   async function pullAll() {
     badge('Sincronizando…');
+    var entries = Object.keys(TABLAS).map(function(lsKey){
+      return { lsKey: lsKey, tabla: TABLAS[lsKey] };
+    });
+    var results = await Promise.all(entries.map(function(e){
+      return pullFull(e.tabla).then(function(remote){
+        return { e: e, remote: remote };
+      }, function(){ return { e: e, remote: null }; });
+    }));
     var changed = false;
-    for (var lsKey in TABLAS) {
-      var tabla = TABLAS[lsKey];
-      try {
-        var remote = await pullFull(tabla);
-        if (remote !== null) {
-          applyRemote(lsKey, remote);
-          changed = true;
-        } else {
-          // No hay dato remoto → subir local si existe
-          var loc = null;
-          try { loc = JSON.parse(localStorage.getItem(lsKey) || 'null'); } catch (e) {}
+    results.forEach(function(res){
+      if (res.remote !== null) {
+        applyRemote(res.e.lsKey, res.remote);
+        changed = true;
+      } else {
+        // Sin dato remoto → subir local si existe (no bloqueante).
+        try {
+          var loc = JSON.parse(localStorage.getItem(res.e.lsKey) || 'null');
           if (loc && (Array.isArray(loc) ? loc.length > 0 : Object.keys(loc||{}).length > 0)) {
-            pushNow(tabla, loc);
+            pushNow(res.e.tabla, loc);
           }
-        }
-      } catch (e) {}
+        } catch(e){}
+      }
+    });
+    // Siempre disparar el primer render al terminar el pull, incluso si
+    // no hubo datos remotos (así no quedamos en "Cargando..." cuando
+    // estamos offline o es la primera carga sin nada en Supabase).
+    if (changed) {
+      refreshUI();
+    } else {
+      try { if (typeof window.__contaFirstRender === 'function') window.__contaFirstRender(); } catch(e){}
     }
-    if (changed) refreshUI();
     badge('En vivo ✓', true);
   }
 
-  // ─── POLLING cada 3 segundos ─────────────────────
-  // Compara updated_at: si cambió, descarga el dato completo
-  // Esto garantiza sync aunque el realtime no funcione
+  // ─── POLLING cada 3 segundos (PARALELO) ──────────
+  // Compara updated_at; descarga solo lo que cambió. En paralelo para no
+  // bloquear con varios round-trips secuenciales.
   async function poll() {
-    for (var lsKey in TABLAS) {
-      var tabla = TABLAS[lsKey];
-      try {
-        var ts = await pullTS(tabla);
-        if (ts && ts !== (_lastTS[tabla] || '')) {
-          // Hay dato nuevo → descargar
-          var remote = await pullFull(tabla);
-          if (remote !== null) {
-            applyRemote(lsKey, remote);
-            refreshUI();
-            badge('Actualizado ✓', true);
-          }
-        }
-      } catch (e) {}
+    var entries = Object.keys(TABLAS).map(function(lsKey){
+      return { lsKey: lsKey, tabla: TABLAS[lsKey] };
+    });
+    var stamps = await Promise.all(entries.map(function(e){
+      return pullTS(e.tabla).then(function(ts){ return { e: e, ts: ts }; },
+                                  function(){ return { e: e, ts: '' }; });
+    }));
+    var pendientes = stamps.filter(function(s){
+      return s.ts && s.ts !== (_lastTS[s.e.tabla] || '');
+    });
+    if (pendientes.length === 0) return;
+    var fulls = await Promise.all(pendientes.map(function(s){
+      return pullFull(s.e.tabla).then(function(d){ return { e: s.e, d: d }; },
+                                       function(){ return { e: s.e, d: null }; });
+    }));
+    var any = false;
+    fulls.forEach(function(f){
+      if (f.d !== null) { applyRemote(f.e.lsKey, f.d); any = true; }
+    });
+    if (any) {
+      refreshUI();
+      badge('Actualizado ✓', true);
     }
   }
 
