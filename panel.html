@@ -13856,6 +13856,61 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
 })();
 
 // =====================================================
+// ORDEN RECAUDO — FORZAR ORDEN DEL PANEL PRINCIPAL (último wrap)
+// =====================================================
+// Este wrap se aplica DESPUÉS de todos los demás parches de
+// recaudoConstruirData. Garantiza que el orden final coincida 1:1 con el
+// array `window.clientes` (mismo que renderiza el home). Si por cualquier
+// motivo otro patch reordena las filas, este wrap lo corrige.
+(function(){
+  function applyOrden(){
+    var orig = window.recaudoConstruirData;
+    if(typeof orig !== 'function') return false;
+    if(orig.__ordenForzado) return true;
+    var wrapped = async function(){
+      var rows = await orig.apply(this, arguments);
+      if(!Array.isArray(rows)) return rows;
+      var fuente = (Array.isArray(window.clientes) && window.clientes.length>0)
+        ? window.clientes
+        : (function(){ try { return JSON.parse(localStorage.getItem('clientes')||'[]'); } catch(e){ return []; } })();
+      if(!Array.isArray(fuente) || fuente.length===0) return rows;
+      var pos = {};
+      fuente.forEach(function(c, i){
+        var n = (typeof c==='string' ? c : (c && c.nombre || '')).toUpperCase().trim();
+        if(n) pos[n] = i;
+      });
+      // Estable: usa índice original como tiebreaker para no shuffle.
+      rows.forEach(function(r, i){ r.__origIdx = i; });
+      rows.sort(function(a, b){
+        var nA = (a.cliente||'').toUpperCase().trim();
+        var nB = (b.cliente||'').toUpperCase().trim();
+        var pA = pos[nA]!==undefined ? pos[nA] : 99999;
+        var pB = pos[nB]!==undefined ? pos[nB] : 99999;
+        if(pA !== pB) return pA - pB;
+        return a.__origIdx - b.__origIdx;
+      });
+      rows.forEach(function(r){ delete r.__origIdx; });
+      return rows;
+    };
+    wrapped.__ordenForzado = true;
+    window.recaudoConstruirData = wrapped;
+    return true;
+  }
+  // Reintenta hasta enganchar la última versión (otros parches pueden
+  // sobreescribir window.recaudoConstruirData después del DOMContentLoaded).
+  var tries = 0;
+  var iv = setInterval(function(){
+    tries++;
+    var ok = applyOrden();
+    // Si otra patch sobreescribió, perdemos la marca: reaplicar.
+    if(window.recaudoConstruirData && !window.recaudoConstruirData.__ordenForzado){
+      applyOrden();
+    }
+    if(tries >= 30) clearInterval(iv); // 30 * 600ms = 18s
+  }, 600);
+})();
+
+// =====================================================
 // ANTI-TITILEO v3: coalesce + skip "echo" renders.
 //
 // Problema: cada escritura local a Supabase vuelve por realtime y dispara
