@@ -13847,15 +13847,47 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
 })();
 
 // =====================================================
-// ANTI-TITILEO v2: coalesce + cooldown de renders pesados.
-// Problema anterior: cada onblur lanzaba un renderRecaudo completo que
-// reconstruía todo el DOM (se veía como "reseteo"). Ahora, tras ejecutar
-// el render, se bloquean 450 ms más; toda llamada que llegue en ese tiempo
-// se agrupa y se ejecuta UNA sola vez al final. La primera llamada (al
-// abrir el módulo) sigue siendo inmediata para no sentir lag.
+// ANTI-TITILEO v3: coalesce + skip "echo" renders.
+//
+// Problema: cada escritura local a Supabase vuelve por realtime y dispara
+// un renderCartera/renderConta con los MISMOS datos que el cliente ya
+// tiene. Esto re-generaba el DOM sin motivo → "titileadera al sync".
+//
+// Solución: antes de ejecutar un render, calcular una firma (hash rápido)
+// del estado relevante en localStorage. Si la firma no cambió desde el
+// último render, se salta. También se coalescen ráfagas con un debounce
+// corto para no flashear al editar.
 // =====================================================
 (function(){
   var WRAPPED_KEY = '__vnCoalesced';
+
+  function quickHash(s){
+    var h = 5381, i = s.length;
+    while(i) h = (h * 33) ^ s.charCodeAt(--i);
+    return h >>> 0;
+  }
+  function lsHash(keys){
+    try {
+      var acc = '';
+      for(var i=0;i<keys.length;i++){
+        var v = localStorage.getItem(keys[i]);
+        acc += (v==null?'_':v.length+':'+quickHash(v))+'|';
+      }
+      return acc;
+    } catch(e){ return String(Math.random()); }
+  }
+  function sigFor(name){
+    if(name === 'renderCartera')
+      return lsHash(['cartera_deudas','deudas_store_v20','cartera_pagos_historial','clientes','clientesDatos']);
+    if(name === 'renderRecaudo'){
+      var hoy = new Date().toISOString().slice(0,10);
+      return lsHash(['recaudo_'+hoy,'cartera_deudas','deudas_store_v20','clientes','clientesDatos','obs_marquee','monedas_'+hoy]);
+    }
+    if(name === 'renderConta')
+      return lsHash(['mc_local','gm_local','conta_v2','conta_categorias_v2','cuentasMemoria','transferenciasMem']);
+    return '';
+  }
+
   function wrap(name){
     var orig = window[name];
     if(typeof orig !== 'function') return false;
@@ -13863,14 +13895,21 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
 
     var running = false, pending = false, lastArgs = null, lastThis = null;
     var timer = null;
-    var lastRun = 0;
-    var DEBOUNCE_MS = 500;   // espera tras última llamada durante ráfaga
-    var IDLE_GAP_MS = 1200;  // si no hubo calls recientes: ejecuta inmediato
+    var lastSig = null;
+    var DEBOUNCE_MS = 180;
 
     function run(){
       timer = null;
+      // Omitir si no cambió nada desde el último render.
+      var sig = sigFor(name);
+      if(sig && sig === lastSig){
+        // Echo puro: no hay nada que repintar.
+        running = false;
+        if(pending){ pending = false; }
+        return;
+      }
+      lastSig = sig;
       running = true;
-      lastRun = Date.now();
       try {
         var r = orig.apply(lastThis, lastArgs || []);
         Promise.resolve(r).then(done, done);
@@ -13880,7 +13919,6 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
       running = false;
       if(pending){
         pending = false;
-        // Tras render pendiente: sigue debounced.
         if(timer) clearTimeout(timer);
         timer = setTimeout(run, DEBOUNCE_MS);
       }
@@ -13889,30 +13927,27 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
     var wrapper = function(){
       lastArgs = arguments; lastThis = this;
       if(running){ pending = true; return; }
-      var idle = Date.now() - lastRun;
-      if(idle > IDLE_GAP_MS && !timer){
-        // Primera llamada "en frío": ejecuta ya, sin lag.
-        run();
-      } else {
-        // Ráfaga: colapsa todas las llamadas en una sola al final.
-        if(timer) clearTimeout(timer);
-        timer = setTimeout(run, DEBOUNCE_MS);
-      }
+      if(timer) clearTimeout(timer);
+      timer = setTimeout(run, DEBOUNCE_MS);
     };
     wrapper[WRAPPED_KEY] = true;
+    // Permite forzar render (p.ej. al abrir el módulo por primera vez).
+    wrapper.__force = function(){
+      lastSig = null;
+      lastArgs = arguments; lastThis = window;
+      if(timer){ clearTimeout(timer); timer = null; }
+      run();
+    };
     window[name] = wrapper;
     return true;
   }
 
-  // Reintentar hasta enganchar la última versión de cada render. Muchos
-  // parches sobreescriben window.renderRecaudo (etc.), así que aplicamos
-  // el wrapper varias veces hasta que sea estable.
   var targets = ['renderRecaudo','renderCartera','renderConta'];
   var tries = 0;
   var iv = setInterval(function(){
     tries++;
     targets.forEach(wrap);
-    if(tries >= 20) clearInterval(iv); // 20 * 500ms = 10s
+    if(tries >= 20) clearInterval(iv); // 10s
   }, 500);
 })();
 </script>
