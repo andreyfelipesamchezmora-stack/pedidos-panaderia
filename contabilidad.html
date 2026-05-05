@@ -553,6 +553,21 @@ var Data = (function() {
     return m.categoria || null;
   }
 
+  // Filtro: pagos / deudas de clientes (cartera/recaudo) NO deben aparecer
+  // en contabilidad. El usuario los considera transacciones internas, no
+  // ingresos/gastos contables reales.
+  function _esPagoODeudaCliente(m){
+    if (!m) return false;
+    if (m._fromCartera || m._fromRecaudo || m._fromCliente || m._esDeuda || m._esPagoCliente) return true;
+    var cat = String(m.categoria||'').toUpperCase();
+    if (cat === 'PAGO DE DEUDA' || cat === 'DEUDA CLIENTE' || cat === 'COBRO CLIENTE' || cat === 'ABONO CLIENTE') return true;
+    var d = String(m.descripcion||'').toLowerCase();
+    if (d.indexOf('pago de deuda')>=0 || d.indexOf('pago cliente')>=0 ||
+        d.indexOf('deuda cliente')>=0 || d.indexOf('abono cliente')>=0 ||
+        d.indexOf('cobro cliente')>=0 || d.indexOf('cartera')>=0) return true;
+    return false;
+  }
+
   function getAll() {
     _delMap = {};
     var result = [];
@@ -561,6 +576,7 @@ var Data = (function() {
     // Fuente 1: conta_v2 (creados manualmente en esta página)
     readArr(V2).forEach(function(m) {
       if (!m || !(Number(m.monto)>0) || !m.id) return;
+      if (_esPagoODeudaCliente(m)) return;
       var tipo  = m.tipo==='ingreso' ? 'ingreso' : 'gasto';
       var monto = Number(m.monto);
       var fecha = norm(m.fecha);
@@ -582,6 +598,7 @@ var Data = (function() {
     // Fuente 2: mc_local (ventas bruto del panel + ingresos caja)
     readArr('mc_local').forEach(function(m) {
       if (!m || !(Number(m.monto)>0)) return;
+      if (_esPagoODeudaCliente(m)) return;
       var tipo  = String(m.tipo||'').toLowerCase()==='ingreso' ? 'ingreso' : 'gasto';
       var monto = Number(m.monto);
       var fecha = norm(m.fecha);
@@ -601,7 +618,7 @@ var Data = (function() {
         if (i>=0) { arr.splice(i,1); writeLS('mc_local',arr); }
       };
       result.push({ dispId:dispId, tipo:tipo, monto:monto, descripcion:desc,
-                    fecha:fecha, timestamp:m.timestamp||0, editable:false,
+                    fecha:fecha, timestamp:m.timestamp||0, editable:true,
                     categoria: _autocat(m) });
     });
 
@@ -611,6 +628,7 @@ var Data = (function() {
     try { gm = JSON.parse(gmRaw); if (!Array.isArray(gm)) gm=[]; } catch(e) {}
     gm.forEach(function(g) {
       if (!g || !(Number(g.monto)>0)) return;
+      if (_esPagoODeudaCliente(g)) return;
       var monto = Number(g.monto);
       var fecha = norm(g.fecha);
       var desc  = String(g.descripcion||'Gasto').trim();
@@ -634,7 +652,7 @@ var Data = (function() {
         } catch(e) {}
       };
       result.push({ dispId:dispId, tipo:'gasto', monto:monto, descripcion:desc,
-                    fecha:fecha, timestamp:g.timestamp||0, editable:false,
+                    fecha:fecha, timestamp:g.timestamp||0, editable:true,
                     categoria: g.categoria || 'OTRO GASTO' });
     });
 
@@ -655,21 +673,38 @@ var Data = (function() {
   }
 
   function update(dispId, tipo, monto, desc, fecha, categoria) {
-    if (!dispId.startsWith('v2_')) return false;
-    var realId = dispId.slice(3);
     var m = Number(monto);
     if (!['ingreso','gasto'].includes(tipo) || !(m>0)) return false;
     desc = String(desc||'').trim();
     if (!desc) return false;
     var fechaInput = String(fecha||'').trim();
     var fechaFinal = /^\d{4}-\d{2}-\d{2}$/.test(fechaInput) ? fechaInput : norm(fechaInput);
-    var arr = readArr(V2);
-    var i = arr.findIndex(function(x){ return x.id===realId; });
-    if (i<0) return false;
-    if (!fechaFinal) fechaFinal = arr[i].fecha;
-    arr[i] = { id:realId, tipo:tipo, monto:m, descripcion:desc, fecha:fechaFinal,
-               timestamp:arr[i].timestamp, categoria:categoria||arr[i].categoria||null };
-    return writeLS(V2, arr);
+
+    // Caso A: ya es v2 → editar in-place.
+    if (dispId.indexOf('v2_')===0) {
+      var realId = dispId.slice(3);
+      var arr = readArr(V2);
+      var i = arr.findIndex(function(x){ return x.id===realId; });
+      if (i<0) return false;
+      if (!fechaFinal) fechaFinal = arr[i].fecha;
+      arr[i] = { id:realId, tipo:tipo, monto:m, descripcion:desc, fecha:fechaFinal,
+                 timestamp:arr[i].timestamp, categoria:categoria||arr[i].categoria||null };
+      return writeLS(V2, arr);
+    }
+
+    // Caso B: viene de mc_local o gm_local (ventas/ingresos del panel o gastos
+    // manuales). Estrategia: eliminar el original de su fuente y crear una
+    // entrada nueva en conta_v2 con los valores editados. Así el cambio queda
+    // persistido sin tocar el panel principal y sin duplicarse (el dedupe por
+    // descripción evita conflictos).
+    if (_delMap[dispId]) {
+      try { _delMap[dispId](); } catch(e){}
+    }
+    if (!fechaFinal) fechaFinal = fechaHoy();
+    var arr2 = readArr(V2);
+    arr2.push({ id:uid(), tipo:tipo, monto:m, descripcion:desc, fecha:fechaFinal,
+                timestamp:Date.now(), categoria:categoria||null });
+    return writeLS(V2, arr2);
   }
 
   function remove(dispId) {
