@@ -741,6 +741,31 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
   accent-color:#ef4444;
   cursor:pointer;
 }
+/* Variantes visibles aún sin marcar (deuda cliente / yo le debo) */
+.recaudo-check.rojo{
+  appearance:none;-webkit-appearance:none;
+  background:rgba(239,68,68,0.18);
+  border:2px solid #ef4444;
+  border-radius:4px;
+  position:relative;
+}
+.recaudo-check.rojo:checked{ background:#ef4444; }
+.recaudo-check.rojo:checked::after{
+  content:'✓';color:#fff;position:absolute;top:-3px;left:1px;
+  font-size:14px;font-weight:900;line-height:1;
+}
+.recaudo-check.azul{
+  appearance:none;-webkit-appearance:none;
+  background:rgba(59,130,246,0.18);
+  border:2px solid #3b82f6;
+  border-radius:4px;
+  position:relative;
+}
+.recaudo-check.azul:checked{ background:#3b82f6; }
+.recaudo-check.azul:checked::after{
+  content:'✓';color:#fff;position:absolute;top:-3px;left:1px;
+  font-size:14px;font-weight:900;line-height:1;
+}
 .recaudo-btns{
   display:flex;
   gap:8px;
@@ -1529,10 +1554,14 @@ function resetear(){
 function cerrarModal(){ document.getElementById("modalPedido").style.display="none"; }
 
 function marcar(i){
-  let cant=document.getElementById("cant"+i).value;
-  let din=document.getElementById("din"+i).value;
+  let cant=Number(document.getElementById("cant"+i).value)||0;
+  let dinRaw=document.getElementById("din"+i).value||"";
+  let din=Number(typeof limpiarFormato==='function'?limpiarFormato(dinRaw):dinRaw.replace(/\./g,''))||0;
   let div=document.getElementById("prod"+i);
-  div.style.background=(cant>0||din>0)?"#d4ffd4":"white";
+  if(cant>0 && din>0)      div.style.background="#86efac"; // verde sólido: ambos
+  else if(cant>0)          div.style.background="#d4ffd4"; // verde claro: solo cantidad
+  else if(din>0)           div.style.background="#d4e4ff"; // azul claro: solo dinero
+  else                     div.style.background="white";    // ninguno
 }
 
 function generarNumeroTicket(){ let n=numeroTicket; numeroTicket++; localStorage.setItem("ticketNumero",numeroTicket); return n; }
@@ -3662,14 +3691,14 @@ async function renderRecaudo(){
                   <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.bancolombia > 0 ? r.bancolombia.toLocaleString('es-CO') : ''}" data-raw="${r.bancolombia}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
                   <td style="text-align:center;">
                     <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
-                      <input type="checkbox" class="recaudo-check" style="accent-color:#ef4444;"
+                      <input type="checkbox" class="recaudo-check rojo"
                         onclick="event.stopPropagation(); vnDeudaModal(${JSON.stringify(safe).replace(/"/g,'&quot;')}, 'cliente'); this.checked=false;" title="Agregar deuda del cliente">
                       ${r._deudaTotalCliente > 0 ? '<span style="font-size:10px;color:#fca5a5;font-weight:700;">$'+r._deudaTotalCliente.toLocaleString('es-CO')+'</span>' : ''}
                     </div>
                   </td>
                   <td style="text-align:center;">
                     <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
-                      <input type="checkbox" class="recaudo-check" style="accent-color:#3b82f6;"
+                      <input type="checkbox" class="recaudo-check azul"
                         onclick="event.stopPropagation(); vnDeudaModal(${JSON.stringify(safe).replace(/"/g,'&quot;')}, 'mia'); this.checked=false;" title="Agregar deuda mía">
                       ${r._deudaTotalMia > 0 ? '<span style="font-size:10px;color:#93c5fd;font-weight:700;">$'+r._deudaTotalMia.toLocaleString('es-CO')+'</span>' : ''}
                       ${r._deudaTotalMia > 0 ? `<label style="display:flex;align-items:center;gap:3px;margin-top:2px;cursor:pointer;" title="Incluir mi deuda en recaudo domi (resta del total)"><input id="rec_azuldomi_${safe}" type="checkbox" class="recaudo-check" style="accent-color:#3b82f6;width:13px;height:13px;" ${r.domiIncluirDeudaMia ? 'checked' : ''} onclick="event.stopPropagation();recaudoToggleAzulDomi(${JSON.stringify(safe).replace(/"/g,'&quot;')});"><span style="font-size:9px;color:#93c5fd;font-weight:700;">🏍️domi</span></label>` : ''}
@@ -4444,7 +4473,7 @@ function recaudoMarcarDeudaSaldada(nombre, deudaCliente, deudaMia) {
       checkbox.checked = false;
     } else if(deudaMia > 0){
       if(confirm('Le debes $' + Number(deudaMia).toLocaleString("es-CO") + ' a ' + nombre + '.\n¿Descontar de la factura del día?')){
-        r3nP5oFahNL86vESFrkKjmuupsQa1mPzN7(nombre, deudaMia);
+        rQuMHtpwbtsTXsRMArUQeWyGrRu7gwbZs2(nombre, deudaMia);
       } else {
         checkbox.checked = false;
       }
@@ -13813,6 +13842,40 @@ async function cargarClientesDesdeSupabase(){
   }
 }
 try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(e){}
+})();
+
+// =====================================================
+// ANTI-TITILEO: coalesce renders pesados (renderRecaudo / renderCartera /
+// renderConta). Si llegan varias llamadas seguidas (onblur, realtime, etc.)
+// solo se ejecuta una y se reagenda otra al final si hubo nuevas peticiones.
+// =====================================================
+(function(){
+  function wrap(name){
+    var orig = window[name];
+    if(typeof orig !== 'function') return;
+    var running = false, pending = false, lastArgs = null, lastThis = null;
+    function run(){
+      if(running) { pending = true; return; }
+      running = true;
+      try {
+        var r = orig.apply(lastThis, lastArgs || []);
+        Promise.resolve(r).then(done, done);
+      } catch(e) { done(); }
+    }
+    function done(){
+      running = false;
+      if(pending){ pending = false; setTimeout(run, 60); }
+    }
+    window[name] = function(){
+      lastArgs = arguments; lastThis = this;
+      if(running){ pending = true; return; }
+      run();
+    };
+  }
+  // Espera a que TODOS los wrappers anteriores se hayan aplicado.
+  setTimeout(function(){
+    ['renderRecaudo','renderCartera','renderConta'].forEach(wrap);
+  }, 1500);
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
