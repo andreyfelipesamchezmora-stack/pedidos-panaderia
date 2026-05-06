@@ -1296,24 +1296,66 @@ let _clientesBase = [
 ];
 
 // MERGE base hardcoded + guardados en localStorage (sin duplicar, conservando todo).
+// 🛡️ PRIORIDAD AL ORDEN DE _clientesBase. Los clientes guardados que NO estén
+// en la base se añaden al final (esos son clientes nuevos creados por el usuario).
 (function(){
   var mapa = {};
   var orden = [];
+  // 1) Primero, _clientesBase define EL ORDEN CANÓNICO
   _clientesBase.forEach(function(c){
     if(c && c.nombre && !mapa[c.nombre]){ mapa[c.nombre] = c; orden.push(c.nombre); }
   });
+  // 2) Si en localStorage hay datos extras (campos personalizados, tipo cambiado),
+  //    los aplicamos AL CLIENTE DE LA BASE pero SIN cambiar el orden
   _clientesGuardados.forEach(function(c){
     if(!c || !c.nombre) return;
     if(mapa[c.nombre]){
-      mapa[c.nombre] = Object.assign({}, mapa[c.nombre], c); // guardado actualiza campos
+      // Cliente ya existe en la base: actualizar campos pero MANTENER posición
+      mapa[c.nombre] = Object.assign({}, mapa[c.nombre], c);
     } else {
-      mapa[c.nombre] = c; orden.push(c.nombre);
+      // Cliente nuevo (creado por el usuario, no está en la base): añadir al final
+      mapa[c.nombre] = c;
+      orden.push(c.nombre);
     }
   });
   clientes = orden.map(function(n){ return mapa[n]; });
   try { window.clientes = clientes; } catch(e){}
   try { localStorage.setItem("clientes", JSON.stringify(clientes)); } catch(e){}
 })();
+
+// 🛡️ GUARDIÁN DE ORDEN: si en algún momento window.clientes pierde clientes
+// o se desordena (sync, merge, etc.), restaurar el orden canónico de _clientesBase
+window._clientesOrdenarPorBase = function(){
+  try {
+    var actuales = Array.isArray(window.clientes) ? window.clientes : [];
+    var mapa = {};
+    actuales.forEach(function(c){
+      if(c && c.nombre && !mapa[c.nombre]) mapa[c.nombre] = c;
+    });
+    // Reconstruir: primero los de _clientesBase, luego los extras
+    var orden = [];
+    _clientesBase.forEach(function(c){
+      if(!c || !c.nombre) return;
+      if(!mapa[c.nombre]) mapa[c.nombre] = c;  // si falta, agregar
+      orden.push(c.nombre);
+    });
+    // Añadir clientes extras (no están en base) al final
+    actuales.forEach(function(c){
+      if(c && c.nombre && orden.indexOf(c.nombre) === -1){
+        orden.push(c.nombre);
+      }
+    });
+    var nuevoArr = orden.map(function(n){ return mapa[n]; });
+    if(nuevoArr.length >= actuales.length){
+      window.clientes = nuevoArr;
+      clientes = nuevoArr;
+      localStorage.setItem("clientes", JSON.stringify(nuevoArr));
+    }
+  } catch(e) { console.warn('[OrdenGuardian] error:', e); }
+};
+
+// Ejecutar el guardián cada vez que se abre el panel de Recaudo
+// (asegura que el orden está bien antes de mostrar el módulo)
 
 document.getElementById("fecha").value = (function(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
 
@@ -3378,17 +3420,22 @@ async function recaudoConstruirData(){
     return row;
   });
  
-  // 🛡️ FIX: Mantener el orden EXACTO de clientes tal cual están en el panel principal
-  // (el usuario puede haber arrastrado las cards para reordenarlas).
-  // Construimos un mapa nombre→índice y ordenamos las filas por ese índice.
-  var ordenMap = {};
-  (clientes || []).forEach(function(c, idx){
-    if(c && c.nombre) ordenMap[c.nombre] = idx;
+  // 🛡️ ORDEN POR POSICIÓN EN EL PANEL PRINCIPAL
+  // (no más alfabético — respeta el drag-and-drop del usuario)
+  var fuenteOrden = (Array.isArray(window.clientes) && window.clientes.length > 0)
+    ? window.clientes
+    : (function(){ try { return JSON.parse(localStorage.getItem('clientes')||'[]'); } catch(e){ return []; } })();
+  var posMap = {};
+  fuenteOrden.forEach(function(c, i){
+    var n = (typeof c === 'string' ? c : (c && c.nombre || '')).toUpperCase().trim();
+    if(n) posMap[n] = i;
   });
   return rows.sort(function(a, b){
-    var ia = (ordenMap[a.cliente] !== undefined) ? ordenMap[a.cliente] : 9999;
-    var ib = (ordenMap[b.cliente] !== undefined) ? ordenMap[b.cliente] : 9999;
-    return ia - ib;
+    var nA = (a.cliente || '').toUpperCase().trim();
+    var nB = (b.cliente || '').toUpperCase().trim();
+    var pA = posMap[nA] !== undefined ? posMap[nA] : 99999;
+    var pB = posMap[nB] !== undefined ? posMap[nB] : 99999;
+    return pA - pB;
   });
 }
 
@@ -3432,197 +3479,6 @@ function getRawRecaudo(input) {
   if (!input) return 0;
   return Number((input.dataset.raw || input.value || '0').replace(/\./g, '')) || 0;
 }
-
-// =====================================================
-// 🔄 ACTUALIZACIÓN EN VIVO SIN TITILAR
-// =====================================================
-// Recalcula y reemplaza SOLO los KPIs superiores y desglose.
-// La tabla NO se vuelve a renderizar (no titila, no pierde foco).
-// Usar después de cambios menores: marcar checks, escribir montos, etc.
-// =====================================================
-async function recaudoActualizarKPIs(){
-  try {
-    var rows = await recaudoConstruirData();
-    if(!Array.isArray(rows)) return;
-
-    var bruto = 0, recaudoDomi = 0, nequiVentas = 0, bancolombiaVentas = 0;
-    var pagoDeudaEfectivo = 0, pagoDeudaNequi = 0, pagoDeudaBancolombia = 0;
-    var faltantes = 0, salidas = 0, deudasDescontadas = 0;
-    var efectivoVentasTotal = 0, dmHoyTotal = 0, dcHoyTotal = 0;
-
-    rows.forEach(function(r){
-      bruto += r.subtotal;
-      recaudoDomi += r.recaudoDomi;
-      if(r.domiIncluirDeuda) {
-        recaudoDomi += (Number(r._deudaTotalCliente)||0);
-        recaudoDomi -= (Number(r._deudaTotalMia)||0);
-      }
-      if(r.domiIncluirDeudaMia) {
-        recaudoDomi -= (Number(r._deudaTotalMia)||0);
-      }
-      nequiVentas += r.nequi;
-      bancolombiaVentas += r.bancolombia;
-      faltantes += r.faltantes;
-      salidas += r.salidas;
-      deudasDescontadas += r.deudaMiaPagada;
-      dmHoyTotal += (Number(r._deudaMiaHoy)||0);
-      dcHoyTotal += (Number(r._deudaClienteHoy)||0);
-
-      var efEnMisManos = (r.recaudoDomi > 0) ? 0 : (Number(r.efectivoNeto)||0);
-      efEnMisManos += (Number(r._deudaMiaHoy)||0);
-      efEnMisManos -= (Number(r._deudaClienteHoy)||0);
-      if(efEnMisManos < 0) efEnMisManos = 0;
-      efectivoVentasTotal += efEnMisManos;
-
-      if(r.deudaMetodo === 'efectivo'){
-        pagoDeudaEfectivo += r.deudasPagadas;
-      } else if(r.deudaMetodo === 'transferencia'){
-        var bancoUp = (r.deudaBanco||'').toUpperCase();
-        if(bancoUp.indexOf('NEQUI') > -1){
-          pagoDeudaNequi += r.deudasPagadas;
-        } else {
-          pagoDeudaBancolombia += r.deudasPagadas;
-        }
-      }
-    });
-    var efectivoTotal = efectivoVentasTotal + pagoDeudaEfectivo;
-
-    // Cache para acceso desde otros módulos (caja, etc.)
-    window._recaudoCache = window._recaudoCache || {};
-    window._recaudoCache.rows = rows;
-    window._recaudoCache.resumen = {
-      bruto: bruto, recaudoDomi: recaudoDomi, faltantes: faltantes, salidas: salidas,
-      netoEfectivo: efectivoTotal,
-      desglose: {
-        efectivoVentas: efectivoVentasTotal,
-        efectivoDeudas: pagoDeudaEfectivo,
-        efectivoTotal: efectivoTotal,
-        nequi: nequiVentas, bancolombia: bancolombiaVentas,
-        pagoDeudaNequi: pagoDeudaNequi, pagoDeudaBancolombia: pagoDeudaBancolombia,
-        deudasDescontadas: deudasDescontadas,
-        totalRecaudado: efectivoTotal + nequiVentas + bancolombiaVentas + pagoDeudaNequi + pagoDeudaBancolombia
-      }
-    };
-
-    // Helper local de formato (usa el global recaudoMoney si existe)
-    var fm = (typeof recaudoMoney === 'function') ? recaudoMoney : function(n){return '$'+(Number(n)||0).toLocaleString('es-CO');};
-
-    // 1) Actualizar el desglose compacto (4 cards arriba)
-    var desgloseDiv = document.getElementById('recaudoDesgloseWrap');
-    if(desgloseDiv){
-      var _efDesglose = [];
-      if(faltantes > 0)  _efDesglose.push('<span style="color:#f87171;">-'+fm(faltantes)+' falt.</span>');
-      if(salidas > 0)    _efDesglose.push('<span style="color:#fca5a5;">-'+fm(salidas)+' sal.</span>');
-      if(dcHoyTotal > 0) _efDesglose.push('<span style="color:#fca5a5;">-'+fm(dcHoyTotal)+' d.cli hoy</span>');
-      if(dmHoyTotal > 0) _efDesglose.push('<span style="color:#86efac;">+'+fm(dmHoyTotal)+' d.mía hoy</span>');
-      var _efDesgloseHtml = _efDesglose.length > 0
-        ? '<div style="font-size:9px;line-height:1.5;margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;">'+_efDesglose.join('')+'</div>'
-        : '';
-
-      desgloseDiv.innerHTML =
-        '<div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:10px 12px;">'+
-          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">'+
-            '<span style="font-size:14px;">💵</span>'+
-            '<span style="font-size:10px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:0.03em;">Efectivo</span>'+
-          '</div>'+
-          '<div style="font-size:16px;font-weight:800;color:white;font-variant-numeric:tabular-nums;">'+fm(efectivoTotal)+'</div>'+
-          _efDesgloseHtml+
-        '</div>'+
-        '<div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.2);border-radius:10px;padding:10px 12px;">'+
-          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">'+
-            '<span style="font-size:14px;">📱</span>'+
-            '<span style="font-size:10px;font-weight:700;color:#c084fc;text-transform:uppercase;letter-spacing:0.03em;">Nequi</span>'+
-          '</div>'+
-          '<div style="font-size:16px;font-weight:800;color:white;font-variant-numeric:tabular-nums;">'+fm(nequiVentas + pagoDeudaNequi)+'</div>'+
-        '</div>'+
-        '<div style="background:rgba(6,182,212,0.08);border:1px solid rgba(6,182,212,0.2);border-radius:10px;padding:10px 12px;">'+
-          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">'+
-            '<span style="font-size:14px;">🏛️</span>'+
-            '<span style="font-size:10px;font-weight:700;color:#22d3ee;text-transform:uppercase;letter-spacing:0.03em;">Bancolombia</span>'+
-          '</div>'+
-          '<div style="font-size:16px;font-weight:800;color:white;font-variant-numeric:tabular-nums;">'+fm(bancolombiaVentas + pagoDeudaBancolombia)+'</div>'+
-        '</div>'+
-        '<div style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:10px;padding:10px 12px;">'+
-          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">'+
-            '<span style="font-size:14px;">💰</span>'+
-            '<span style="font-size:10px;font-weight:700;color:#fbbf24;text-transform:uppercase;letter-spacing:0.03em;">Pagos deuda</span>'+
-          '</div>'+
-          '<div style="font-size:16px;font-weight:800;color:white;font-variant-numeric:tabular-nums;">'+fm(pagoDeudaEfectivo + pagoDeudaNequi + pagoDeudaBancolombia)+'</div>'+
-        '</div>'+
-        '<div style="background:rgba(34,197,94,0.12);border:1.5px solid rgba(34,197,94,0.4);border-radius:10px;padding:10px 12px;">'+
-          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">'+
-            '<span style="font-size:14px;">✅</span>'+
-            '<span style="font-size:10px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:0.03em;">Total recaudado</span>'+
-          '</div>'+
-          '<div style="font-size:16px;font-weight:800;color:#4ade80;font-variant-numeric:tabular-nums;">'+fm(efectivoTotal + nequiVentas + bancolombiaVentas + pagoDeudaNequi + pagoDeudaBancolombia)+'</div>'+
-        '</div>';
-    }
-
-    // 2) Actualizar los 4 KPI cards principales
-    var kpisDiv = document.getElementById('recaudoKpisWrap');
-    if(kpisDiv){
-      kpisDiv.innerHTML =
-        '<div class="kpi-card green">'+
-          '<div class="kpi-label">Bruto total</div>'+
-          '<div class="kpi-value" style="font-size:1.25rem;">'+fm(bruto)+'</div>'+
-          '<div class="kpi-delta neutral">Subtotal pedidos del día</div>'+
-        '</div>'+
-        '<div class="kpi-card orange">'+
-          '<div class="kpi-label">Recaudo domi</div>'+
-          '<div class="kpi-value" style="font-size:1.25rem;">'+fm(recaudoDomi)+'</div>'+
-          '<div class="kpi-delta neutral">Confirmado con domiciliario</div>'+
-        '</div>'+
-        '<div class="kpi-card" style="border-left:3px solid #ef4444;">'+
-          '<div class="kpi-label">Faltantes + Salidas</div>'+
-          '<div class="kpi-value" style="font-size:1.25rem;color:#f87171;">'+fm(faltantes + salidas)+'</div>'+
-          '<div class="kpi-delta neutral">Descontado del día</div>'+
-        '</div>'+
-        '<div class="kpi-card blue">'+
-          '<div class="kpi-label">Descontado a clientes</div>'+
-          '<div class="kpi-value" style="font-size:1.25rem;color:#60a5fa;">'+fm(deudasDescontadas)+'</div>'+
-          '<div class="kpi-delta neutral">Deudas mías descontadas</div>'+
-        '</div>';
-    }
-
-    // 3) Actualizar el color de fondo de las filas afectadas (sin re-renderizar tabla)
-    rows.forEach(function(r){
-      try {
-        var safeId = r.cliente.replace(/[^a-zA-Z0-9_-]/g,'_');
-        // Buscar la fila por algún input dentro
-        var inputs = document.querySelectorAll('[id^="rec_"][id$="_'+safeId+'"], [id*="'+safeId+'"]');
-        // Mejor: buscar la fila por contenido del cliente
-        var rows_html = document.querySelectorAll('.recaudo-table tbody tr');
-        rows_html.forEach(function(tr){
-          var tdNombre = tr.querySelectorAll('td')[1];
-          if(tdNombre && tdNombre.textContent.trim() === r.cliente){
-            // Color según estado
-            if(r.recibido) {
-              tr.style.background = 'rgba(74,222,128,0.13)';
-            } else if(r.recaudoDomi > 0) {
-              tr.style.background = 'rgba(239,68,68,0.12)';
-            } else {
-              tr.style.background = '';
-            }
-            // Actualizar columna "Efectivo neto" de la fila
-            var tds = tr.querySelectorAll('td');
-            // Penúltima columna es efectivo neto
-            if(tds.length >= 14){
-              var efRow = (r.recaudoDomi > 0) ? 0 : (Number(r.efectivoNeto)||0);
-              efRow += (Number(r._deudaMiaHoy)||0);
-              efRow -= (Number(r._deudaClienteHoy)||0);
-              if(efRow < 0) efRow = 0;
-              tds[12].innerHTML = '<strong style="color:'+(efRow>0?'#4ade80':'#9ca3af')+';">'+fm(efRow)+'</strong>';
-            }
-          }
-        });
-      } catch(e){}
-    });
-
-  } catch(e){
-    console.warn('[recaudoActualizarKPIs] error:', e);
-  }
-}
-window.recaudoActualizarKPIs = recaudoActualizarKPIs;
 
 async function renderRecaudo(){
   let body = document.getElementById("recaudoBody");
@@ -3726,7 +3582,7 @@ async function renderRecaudo(){
       : '';
 
     let desgloseCompactoHtml = `
-      <div id="recaudoDesgloseWrap" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:14px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:14px;">
         <div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:10px 12px;">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
             <span style="font-size:14px;">💵</span>
@@ -3785,7 +3641,7 @@ async function renderRecaudo(){
         </div>
       </div>
  
-      <div id="recaudoKpisWrap" class="recaudo-kpis">
+      <div class="recaudo-kpis">
         <div class="kpi-card green">
           <div class="kpi-label">Bruto total</div>
           <div class="kpi-value" style="font-size:1.25rem;">${recaudoMoney(bruto)}</div>
@@ -3885,8 +3741,8 @@ async function renderRecaudo(){
                       style="accent-color:#4ade80;${r.recibido ? 'filter:drop-shadow(0 0 4px #4ade80aa);' : ''}"
                       onclick="recaudoToggleRecibido(${JSON.stringify(safe).replace(/"/g,'&quot;')})">
                   </td>
-                  <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.nequi > 0 ? r.nequi.toLocaleString('es-CO') : ''}" data-raw="${r.nequi}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); recaudoActualizarKPIs();"></td>
-                  <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.bancolombia > 0 ? r.bancolombia.toLocaleString('es-CO') : ''}" data-raw="${r.bancolombia}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); recaudoActualizarKPIs();"></td>
+                  <td><input id="rec_nequi_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.nequi > 0 ? r.nequi.toLocaleString('es-CO') : ''}" data-raw="${r.nequi}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
+                  <td><input id="rec_banco_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.bancolombia > 0 ? r.bancolombia.toLocaleString('es-CO') : ''}" data-raw="${r.bancolombia}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
                   <td style="text-align:center;">
                     <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
                       <input type="checkbox" class="recaudo-check rojo"
@@ -3906,8 +3762,8 @@ async function renderRecaudo(){
   value="${r.faltantes > 0 ? r.faltantes.toLocaleString('es-CO') : ''}"
   data-raw="${r.faltantes}"
   style="background:rgba(168,85,247,0.12)!important;border:1px solid rgba(168,85,247,0.35)!important;color:#c084fc!important;"
-  onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); recaudoActualizarKPIs()"></td>
-                  <td><input id="rec_sal_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.salidas > 0 ? r.salidas.toLocaleString('es-CO') : ''}" data-raw="${r.salidas}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); recaudoActualizarKPIs();"></td>
+  onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo()"></td>
+                  <td><input id="rec_sal_${safe}" class="recaudo-money-input" type="text" inputmode="numeric" value="${r.salidas > 0 ? r.salidas.toLocaleString('es-CO') : ''}" data-raw="${r.salidas}" onblur="fmtRecaudo(this); recaudoGuardarFila('${safe}'); renderRecaudo();"></td>
                   <td><div class="recaudo-resumen ${r.resumen.clase}">${r.resumen.texto}</div></td>
                   <td style="font-weight:800;">${recaudoMoney(r.efectivoNeto)}</td>
                   <td><input id="rec_obs_${safe}" class="recaudo-text-input" value="${(r.observacion||'').replace(/"/g,'&quot;')}" oninput="recaudoGuardarFila('${safe}')"></td>
@@ -4049,12 +3905,16 @@ function recaudoToggleRecibido(nombre){
   if(tr){
     tr.style.background = cb.checked ? 'rgba(74,222,128,0.13)' : '';
   }
-  setTimeout(function(){ recaudoActualizarKPIs(); }, 100);
+  setTimeout(function(){ renderRecaudo(); }, 300);
 }
 
 async function abrirRecaudo(){
   let panel = document.getElementById("panelRecaudo");
   if(!panel){ alert("Panel Recaudo no encontrado"); return; }
+  // 🛡️ Asegurar que window.clientes esté en el orden correcto antes de abrir
+  if(typeof window._clientesOrdenarPorBase === 'function'){
+    window._clientesOrdenarPorBase();
+  }
   panel.style.display = "flex";
   panel.classList.add("open");
   document.getElementById("recaudoBody").innerHTML = `
@@ -5637,7 +5497,7 @@ function recaudoToggleDomiDeuda(nombre){
   // Si se desactiva, NO desactivar automáticamente el domi normal
   recaudoGuardarEstado(estado);
   // Re-renderizar en background para no bloquear clicks
-  setTimeout(function(){ recaudoActualizarKPIs(); }, 100);
+  setTimeout(function(){ renderRecaudo(); }, 300);
 }
 
 // Toggle: incluir la deuda MÍA en el total de recaudo domi (RESTA)
@@ -5660,7 +5520,7 @@ function recaudoToggleDomiDeudaMia(nombre){
     }
   }
   recaudoGuardarEstado(estado);
-  setTimeout(function(){ recaudoActualizarKPIs(); }, 100);
+  setTimeout(function(){ renderRecaudo(); }, 300);
 }
 
 // Toggle azul domi: checkbox en columna "Yo le debo" para incluir deuda mía en recaudo domi (RESTA)
@@ -5686,7 +5546,7 @@ function recaudoToggleAzulDomi(nombre){
     }
   }
   recaudoGuardarEstado(estado);
-  setTimeout(function(){ recaudoActualizarKPIs(); }, 100);
+  setTimeout(function(){ renderRecaudo(); }, 300);
 }
 
 function _contaTabs(activa){
@@ -10542,14 +10402,17 @@ window.recaudoConstruirData = async function(){
       if (n) posMap[n] = i;
     });
 
+    // Asignar índice original como tiebreaker (mantiene orden estable, NO alfabético)
+    rows.forEach(function(r, i){ r.__origIdx = i; });
     rows.sort(function(a, b){
       var nA = (a.cliente||'').toUpperCase().trim();
       var nB = (b.cliente||'').toUpperCase().trim();
       var pA = posMap[nA] !== undefined ? posMap[nA] : 99999;
       var pB = posMap[nB] !== undefined ? posMap[nB] : 99999;
       if (pA !== pB) return pA - pB;
-      return nA.localeCompare(nB, 'es');
+      return a.__origIdx - b.__origIdx;
     });
+    rows.forEach(function(r){ delete r.__origIdx; });
   }
 
   return rows;
@@ -13239,17 +13102,10 @@ window.vnDiagVentas = function(){
   function refreshRecaudo() {
     debounce('recaudo', function () {
       var p = document.getElementById('panelRecaudo');
-      if (!p || !p.classList.contains('open')) return;
-
-      // 🔄 Si ya hay tabla renderizada, hacer actualización ligera (sin titilar)
-      var kpisDiv = document.getElementById('recaudoKpisWrap');
-      var tabla = document.querySelector('.recaudo-table tbody');
-      if (kpisDiv && tabla && tabla.children.length > 0 && typeof recaudoActualizarKPIs === 'function') {
-        recaudoActualizarKPIs();
-      } else if (typeof renderRecaudo === 'function') {
+      if (p && p.classList.contains('open') && typeof renderRecaudo === 'function') {
         renderRecaudo();
       }
-    }, 200);
+    }, 300);
   }
 
   // ─────────────────────────────────────────────────
