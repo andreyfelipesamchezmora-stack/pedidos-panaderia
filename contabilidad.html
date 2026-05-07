@@ -553,19 +553,22 @@ var Data = (function() {
     return m.categoria || null;
   }
 
-  // Filtro: pagos / deudas de clientes (cartera/recaudo) Y ventas brutas
-  // automáticas NO deben aparecer en contabilidad. El usuario los considera
-  // transacciones internas / quiere ingresos manuales.
+  // Filtro auto-bruto: SOLO para entradas que vienen de mc_local (panel
+  // sync). NO se aplica a conta_v2 porque el usuario debe poder registrar
+  // manualmente ingresos con descripción "Ventas …" o categoría
+  // "VENTA REPARTOS DIARIA" sin que se le oculten.
+  function _esVentaAutoMc(m){
+    if (!m) return false;
+    if (m._autoBruto) return true;
+    var d = String(m.descripcion||'').trim();
+    if (/^ventas?\s+\d{4}-\d{2}-\d{2}/i.test(d)) return true;
+    return false;
+  }
+
+  // Filtro: pagos / deudas de clientes (cartera/recaudo) NO deben aparecer
+  // en contabilidad.
   function _esPagoODeudaCliente(m){
     if (!m) return false;
-    // 0) Auto-bruto del panel (ventas del día sumadas automáticamente).
-    //    Excluido por solicitud: el usuario ingresa los ingresos manualmente.
-    if (m._autoBruto) return true;
-    var descRaw = String(m.descripcion||'').trim();
-    if (/^ventas?\s+\d{4}-\d{2}-\d{2}/i.test(descRaw)) return true;
-    var catRaw = String(m.categoria||'').toUpperCase().trim();
-    if (catRaw === 'VENTA REPARTOS DIARIA') return true;
-
     // 1) Flags explícitos del panel/cartera/recaudo
     if (m._fromCartera || m._fromRecaudo || m._fromCliente ||
         m._esDeuda || m._esPagoCliente || m._esPago ||
@@ -623,6 +626,7 @@ var Data = (function() {
     readArr('mc_local').forEach(function(m) {
       if (!m || !(Number(m.monto)>0)) return;
       if (_esPagoODeudaCliente(m)) return;
+      if (_esVentaAutoMc(m)) return; // ventas auto-bruto del panel: ocultas
       var tipo  = String(m.tipo||'').toLowerCase()==='ingreso' ? 'ingreso' : 'gasto';
       var monto = Number(m.monto);
       var fecha = norm(m.fecha);
