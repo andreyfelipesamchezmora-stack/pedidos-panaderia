@@ -13955,18 +13955,16 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
     window.recaudoConstruirData = wrapped;
     return true;
   }
-  // Reintenta hasta enganchar la última versión (otros parches pueden
-  // sobreescribir window.recaudoConstruirData después del DOMContentLoaded).
-  var tries = 0;
-  var iv = setInterval(function(){
-    tries++;
-    var ok = applyOrden();
-    // Si otra patch sobreescribió, perdemos la marca: reaplicar.
-    if(window.recaudoConstruirData && !window.recaudoConstruirData.__ordenForzado){
+  // Polling PERMANENTE: cualquier override posterior pierde la marca y
+  // este check lo vuelve a envolver. Sin límite de tiempo: el sync con
+  // Supabase y otros patches pueden sobreescribir en cualquier momento.
+  applyOrden();
+  setInterval(function(){
+    if(typeof window.recaudoConstruirData !== 'function') return;
+    if(!window.recaudoConstruirData.__ordenForzado){
       applyOrden();
     }
-    if(tries >= 30) clearInterval(iv); // 30 * 600ms = 18s
-  }, 600);
+  }, 400);
 })();
 
 // =====================================================
@@ -14002,10 +14000,10 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
   function sigFor(name){
     if(name === 'renderCartera')
       return lsHash(['cartera_deudas','deudas_store_v20','cartera_pagos_historial','clientes','clientesDatos']);
-    if(name === 'renderRecaudo'){
-      var hoy = new Date().toISOString().slice(0,10);
-      return lsHash(['recaudo_'+hoy,'cartera_deudas','deudas_store_v20','clientes','clientesDatos','obs_marquee','monedas_'+hoy]);
-    }
+    // renderRecaudo: NO usamos firma — siempre re-renderiza para que toda
+    // modificación (deudas, transferencias, monedas, pedidos) aparezca al
+    // instante. El debounce sigue activo y evita el flicker pesado.
+    if(name === 'renderRecaudo') return '';
     if(name === 'renderConta')
       return lsHash(['mc_local','gm_local','conta_v2','conta_categorias_v2','cuentasMemoria','transferenciasMem']);
     return '';
