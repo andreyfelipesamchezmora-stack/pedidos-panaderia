@@ -553,11 +553,19 @@ var Data = (function() {
     return m.categoria || null;
   }
 
-  // Filtro: pagos / deudas de clientes (cartera/recaudo) NO deben aparecer
-  // en contabilidad. El usuario los considera transacciones internas, no
-  // ingresos/gastos contables reales.
+  // Filtro: pagos / deudas de clientes (cartera/recaudo) Y ventas brutas
+  // automáticas NO deben aparecer en contabilidad. El usuario los considera
+  // transacciones internas / quiere ingresos manuales.
   function _esPagoODeudaCliente(m){
     if (!m) return false;
+    // 0) Auto-bruto del panel (ventas del día sumadas automáticamente).
+    //    Excluido por solicitud: el usuario ingresa los ingresos manualmente.
+    if (m._autoBruto) return true;
+    var descRaw = String(m.descripcion||'').trim();
+    if (/^ventas?\s+\d{4}-\d{2}-\d{2}/i.test(descRaw)) return true;
+    var catRaw = String(m.categoria||'').toUpperCase().trim();
+    if (catRaw === 'VENTA REPARTOS DIARIA') return true;
+
     // 1) Flags explícitos del panel/cartera/recaudo
     if (m._fromCartera || m._fromRecaudo || m._fromCliente ||
         m._esDeuda || m._esPagoCliente || m._esPago ||
@@ -585,38 +593,9 @@ var Data = (function() {
     var result = [];
     var seen   = {};
 
-    // Fuente 0 (canónica): ventas brutas agregadas desde la tabla `pedidos`
-    // de Supabase. Se cachean en `mc_pedidos_brutos` por el módulo Sync.
-    // Estas son la verdad para "ingresos brutos pasados".
-    readArr('mc_pedidos_brutos').forEach(function(m) {
-      if (!m || !(Number(m.monto)>0)) return;
-      var monto = Number(m.monto);
-      var fecha = norm(m.fecha);
-      var desc  = String(m.descripcion||('Ventas '+fecha)).trim();
-      var k     = ck('ingreso', monto, desc, fecha);
-      if (seen[k]) return;
-      seen[k] = true;
-      var dispId = 'pb_'+(m.id || (fecha+'_'+monto));
-      // Edición/borrado: además de remover del cache local, agrego la
-      // fecha a una blacklist para que el próximo pull de `pedidos` no la
-      // regenere (si no, reaparecería al sincronizar con Supabase).
-      _delMap[dispId] = function(){
-        var arr = readArr('mc_pedidos_brutos');
-        var idx = arr.findIndex(function(x){
-          return norm(x.fecha)===fecha && Number(x.monto)===monto;
-        });
-        if (idx>=0){ arr.splice(idx,1); writeLS('mc_pedidos_brutos', arr); }
-        try {
-          var bl = JSON.parse(localStorage.getItem('mc_pedidos_brutos_blacklist')||'[]');
-          if (!Array.isArray(bl)) bl = [];
-          if (bl.indexOf(fecha) < 0) bl.push(fecha);
-          localStorage.setItem('mc_pedidos_brutos_blacklist', JSON.stringify(bl));
-        } catch(e){}
-      };
-      result.push({ dispId:dispId, tipo:'ingreso', monto:monto, descripcion:desc,
-                    fecha:fecha, timestamp:m.timestamp||0, editable:true,
-                    categoria: 'VENTA REPARTOS DIARIA' });
-    });
+    // [DESACTIVADO] Fuente 0: ventas brutas auto desde `pedidos` de Supabase.
+    // El usuario solicitó ingresar los ingresos brutos manualmente. Ya no
+    // se lee de `mc_pedidos_brutos` (el módulo Sync tampoco hace pull).
 
     // Fuente 1: conta_v2 (creados manualmente en esta página)
     readArr(V2).forEach(function(m) {
@@ -1449,49 +1428,13 @@ document.addEventListener('DOMContentLoaded', App.init);
     try { pushNow(tabla, JSON.parse(v)); } catch (e) {}
   };
 
-  // ─── PULL DIRECTO DE PEDIDOS → ventas brutas por día ────
-  // Consulta la tabla `pedidos` y suma `total` por fecha. Esto da las
-  // "ventas brutas pasadas" sin depender de que el panel haya pusheado
-  // movimientos contables. Resultado se guarda en `mc_pedidos_brutos`.
-  async function pullPedidosBrutos() {
-    try {
-      var r = await db.from('pedidos')
-        .select('fecha,total')
-        .order('fecha', { ascending: false })
-        .limit(20000);
-      if (!r || !r.data || !Array.isArray(r.data)) return false;
-      var sumByDate = {};
-      r.data.forEach(function(p){
-        if (!p || !p.fecha) return;
-        var f = String(p.fecha).slice(0,10);
-        var t = Number(p.total)||0;
-        if (t<=0) return;
-        sumByDate[f] = (sumByDate[f]||0) + t;
-      });
-      // Aplicar blacklist (fechas borradas/editadas por el usuario).
-      try {
-        var bl = JSON.parse(localStorage.getItem('mc_pedidos_brutos_blacklist')||'[]');
-        if (Array.isArray(bl)) bl.forEach(function(f){ delete sumByDate[f]; });
-      } catch(e){}
-      var arr = Object.keys(sumByDate).sort().reverse().map(function(f){
-        return {
-          id: 'pb_'+f,
-          tipo: 'ingreso',
-          monto: sumByDate[f],
-          descripcion: 'Ventas '+f,
-          fecha: f,
-          timestamp: new Date(f).getTime() || Date.now(),
-          categoria: 'VENTA REPARTOS DIARIA',
-          _autoBruto: true
-        };
-      });
-      _orig('mc_pedidos_brutos', JSON.stringify(arr));
-      return true;
-    } catch(e){
-      console.warn('[SYNC] pullPedidosBrutos err', e);
-      return false;
-    }
-  }
+  // ─── [DESACTIVADO] PULL DE PEDIDOS BRUTOS ────────────
+  // El usuario solicitó NO importar ingresos brutos automáticos desde la
+  // tabla `pedidos`. Los ingresará manualmente. Esta función es no-op para
+  // mantener compatibilidad con el resto del código (que aún la llama).
+  // Limpieza: borrar el cache previo `mc_pedidos_brutos` si existía.
+  try { _orig('mc_pedidos_brutos', '[]'); } catch(e){}
+  async function pullPedidosBrutos() { return false; }
 
   // ─── PULL COMPLETO INICIAL (PARALELO) ─────────────
   // Antes: await secuencial por cada tabla → tardaba ~6× más.
@@ -1506,9 +1449,6 @@ document.addEventListener('DOMContentLoaded', App.init);
         return { e: e, remote: remote };
       }, function(){ return { e: e, remote: null }; });
     });
-    // Pedidos brutos en paralelo (no bloquea el resto).
-    var pedidosPromise = pullPedidosBrutos();
-
     var results = await Promise.all(allPromises);
     var changed = false;
     results.forEach(function(res){
@@ -1525,10 +1465,6 @@ document.addEventListener('DOMContentLoaded', App.init);
         } catch(e){}
       }
     });
-    // Esperar pedidos brutos también antes del primer render.
-    var brutosOk = await pedidosPromise;
-    if (brutosOk) changed = true;
-
     if (changed) {
       refreshUI();
     } else {
@@ -1638,15 +1574,6 @@ document.addEventListener('DOMContentLoaded', App.init);
       .catch(function () { setupRealtime(); });
     // Polling cada 3s como red de seguridad para tablas mc_/gm_/conta_v2.
     setInterval(poll, 3000);
-    // Refresh de ventas brutas (pedidos) cada 30s — solo re-render si cambia.
-    setInterval(function(){
-      var prev = localStorage.getItem('mc_pedidos_brutos') || '';
-      pullPedidosBrutos().then(function(ok){
-        if (!ok) return;
-        var now = localStorage.getItem('mc_pedidos_brutos') || '';
-        if (now !== prev) refreshUI();
-      });
-    }, 30000);
   }
 
   if (document.readyState === 'loading') {
