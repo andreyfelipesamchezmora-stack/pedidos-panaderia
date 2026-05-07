@@ -14000,10 +14000,27 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
   function sigFor(name){
     if(name === 'renderCartera')
       return lsHash(['cartera_deudas','deudas_store_v20','cartera_pagos_historial','clientes','clientesDatos']);
-    // renderRecaudo: NO usamos firma — siempre re-renderiza para que toda
-    // modificación (deudas, transferencias, monedas, pedidos) aparezca al
-    // instante. El debounce sigue activo y evita el flicker pesado.
-    if(name === 'renderRecaudo') return '';
+    // renderRecaudo: firma COMPLETA con todas las claves que afectan la
+    // tabla. Si el usuario modifica algo, esa clave cambia → firma cambia
+    // → render. Si solo es echo de sync (mismos datos), firma igual → no
+    // render → no titilación.
+    if(name === 'renderRecaudo'){
+      var hoy = new Date().toISOString().slice(0,10);
+      return lsHash([
+        'recaudo_'+hoy,
+        'monedas_'+hoy,
+        'cartera_deudas',
+        'cartera_pagos_historial',
+        'deudas_store_v20',
+        'vn_deudas_v20',
+        'mc_local',
+        'gm_local',
+        'clientes',
+        'clientesDatos',
+        'cuentasMemoria',
+        'obs_marquee'
+      ]);
+    }
     if(name === 'renderConta')
       return lsHash(['mc_local','gm_local','conta_v2','conta_categorias_v2','cuentasMemoria','transferenciasMem']);
     return '';
