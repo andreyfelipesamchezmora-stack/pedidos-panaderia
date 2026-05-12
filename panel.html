@@ -11235,7 +11235,7 @@ window.recaudoGetDeudaHistorica = function(nombre){
 };
 
 // ==========================================
-// OVERRIDE recaudoConstruirData → add _deudaTotal
+// OVERRIDE recaudoConstruirData — add _deudaTotal + FORZAR ORDEN
 // ==========================================
 var _bRC = window.recaudoConstruirData;
 window.recaudoConstruirData = async function(){
@@ -11272,6 +11272,29 @@ window.recaudoConstruirData = async function(){
     if(typeof recaudoClasificarResumen==='function')
       r.resumen = recaudoClasificarResumen(r._deudaTotalCliente, r._deudaTotalMia);
   });
+
+  // FORZAR ORDEN DEL PANEL PRINCIPAL
+  var fuente = (Array.isArray(window.clientes) && window.clientes.length>0)
+    ? window.clientes
+    : (function(){ try { return JSON.parse(localStorage.getItem('clientes')||'[]'); } catch(e){ return []; } })();
+  if(Array.isArray(fuente) && fuente.length>0){
+    var pos = {};
+    fuente.forEach(function(c, i){
+      var n = (typeof c==='string' ? c : (c && c.nombre || '')).toUpperCase().trim();
+      if(n) pos[n] = i;
+    });
+    rows.forEach(function(r, i){ r.__origIdx = i; });
+    rows.sort(function(a, b){
+      var nA = (a.cliente||'').toUpperCase().trim();
+      var nB = (b.cliente||'').toUpperCase().trim();
+      var pA = pos[nA]!==undefined ? pos[nA] : 99999;
+      var pB = pos[nB]!==undefined ? pos[nB] : 99999;
+      if(pA !== pB) return pA - pB;
+      return a.__origIdx - b.__origIdx;
+    });
+    rows.forEach(function(r){ delete r.__origIdx; });
+  }
+
   return rows;
 };
 
@@ -11369,20 +11392,30 @@ window.vnPConfirmar = function(nombre, tipo){
 // (El renderCartera ya fue migrado al base; aquí solo mantenemos helpers)
 // ==========================================
 var _bCart = window.renderCartera;
-// Reemplazar renderCartera con la versión legacy que incluye historial de clientes
-window.renderCartera = async function(){
+// Guardar la versión legacy que incluye historial de clientes
+window._vnRenderCarteraLegacy = async function(){
   var body = document.getElementById('carteraBody');
   if(!body) return;
 
   var deudas = vnDeudaListar();
   var totalCartera = deudas.reduce(function(s,d){return s+d.sc+d.sm;},0);
 
-  // Lista desplegable de clientes
+  // Lista desplegable de clientes - cargar desde window.clientes o localStorage
   var clientesOpts = '<option value="">— Seleccionar cliente —</option>';
-  if(Array.isArray(window.clientes)){
-    window.clientes.forEach(function(c){
-      var n = typeof c==='string' ? c : c.nombre;
-      clientesOpts += '<option value="'+n+'">'+n+'</option>';
+  var listaClientes = window.clientes;
+  if(!Array.isArray(listaClientes) || listaClientes.length === 0){
+    try{
+      listaClientes = JSON.parse(localStorage.getItem('clientes')||'[]');
+    }catch(e){
+      listaClientes = [];
+    }
+  }
+  if(Array.isArray(listaClientes)){
+    listaClientes.forEach(function(c){
+      var n = typeof c==='string' ? c : (c && c.nombre ? c.nombre : '');
+      if(n){
+        clientesOpts += '<option value="'+n+'">'+n+'</option>';
+      }
     });
   }
 
@@ -11941,7 +11974,12 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
   if(typeof window.renderCartera === 'function'){
     var _origRC23 = window.renderCartera;
     window.renderCartera = async function(){
-      var r = await _origRC23.apply(this, arguments);
+      // Usar la versión legacy que incluye historial de clientes
+      if(typeof window._vnRenderCarteraLegacy === 'function'){
+        var r = await window._vnRenderCarteraLegacy.apply(this, arguments);
+      } else {
+        var r = await _origRC23.apply(this, arguments);
+      }
       setTimeout(_inyectarBotonHG, 250);
       return r;
     };
@@ -13913,72 +13951,6 @@ async function cargarClientesDesdeSupabase(){
   }
 }
 try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(e){}
-})();
-
-// =====================================================
-// ORDEN RECAUDO — FORZAR ORDEN DEL PANEL PRINCIPAL (último wrap)
-// =====================================================
-// Este wrap se aplica DESPUÉS de todos los demás parches de
-// recaudoConstruirData. Garantiza que el orden final coincida 1:1 con el
-// array `window.clientes` (mismo que renderiza el home). Si por cualquier
-// motivo otro patch reordena las filas, este wrap lo corrige.
-(function(){
-  function applyOrden(){
-    var orig = window.recaudoConstruirData;
-    if(typeof orig !== 'function') return false;
-    if(orig.__ordenForzado) return true;
-    var wrapped = async function(){
-      var rows = await orig.apply(this, arguments);
-      if(!Array.isArray(rows)) return rows;
-      var fuente = (Array.isArray(window.clientes) && window.clientes.length>0)
-        ? window.clientes
-        : (function(){ try { return JSON.parse(localStorage.getItem('clientes')||'[]'); } catch(e){ return []; } })();
-      if(!Array.isArray(fuente) || fuente.length===0) return rows;
-      var pos = {};
-      fuente.forEach(function(c, i){
-        var n = (typeof c==='string' ? c : (c && c.nombre || '')).toUpperCase().trim();
-        if(n) pos[n] = i;
-      });
-      // Estable: usa índice original como tiebreaker para no shuffle.
-      rows.forEach(function(r, i){ r.__origIdx = i; });
-      rows.sort(function(a, b){
-        var nA = (a.cliente||'').toUpperCase().trim();
-        var nB = (b.cliente||'').toUpperCase().trim();
-        var pA = pos[nA]!==undefined ? pos[nA] : 99999;
-        var pB = pos[nB]!==undefined ? pos[nB] : 99999;
-        if(pA !== pB) return pA - pB;
-        return a.__origIdx - b.__origIdx;
-      });
-      rows.forEach(function(r){ delete r.__origIdx; });
-      return rows;
-    };
-    wrapped.__ordenForzado = true;
-    window.recaudoConstruirData = wrapped;
-    return true;
-  }
-  // Polling PERMANENTE: cualquier override posterior pierde la marca y
-  // este check lo vuelve a envolver. Sin límite de tiempo: el sync con
-  // Supabase y otros patches pueden sobreescribir en cualquier momento.
-  applyOrden();
-  setInterval(function(){
-    if(typeof window.recaudoConstruirData !== 'function') return;
-    if(!window.recaudoConstruirData.__ordenForzado){
-      applyOrden();
-    }
-  }, 200);
-  
-  // Aplicar orden inmediatamente después de cualquier cambio en clientes
-  var originalSetItem = localStorage.setItem;
-  localStorage.setItem = function(key, value){
-    originalSetItem.call(this, key, value);
-    if(key === 'clientes'){
-      setTimeout(function(){
-        if(typeof window.recaudoConstruirData === 'function' && !window.recaudoConstruirData.__ordenForzado){
-          applyOrden();
-        }
-      }, 100);
-    }
-  };
 })();
 
 // =====================================================
