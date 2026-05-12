@@ -5462,15 +5462,15 @@ function recaudoCalcularDesgloseMetodos(rows){
   let cb = document.getElementById('rec_domi_' + nombre);
   let estado = recaudoLeerEstado();
   if(!estado[nombre]) estado[nombre] = {};
- 
+
   if(cb && cb.checked){
     estado[nombre].recaudoDomi = subtotal;
   } else {
     estado[nombre].recaudoDomi = 0;
   }
- 
+
   recaudoGuardarEstado(estado);
-  renderRecaudo();
+  setTimeout(function(){ renderRecaudo(); }, 300);
 }
 
 // Toggle: incluir la deuda del cliente en el total de recaudo domi
@@ -11369,7 +11369,8 @@ window.vnPConfirmar = function(nombre, tipo){
 // (El renderCartera ya fue migrado al base; aquí solo mantenemos helpers)
 // ==========================================
 var _bCart = window.renderCartera;
-window._vnRenderCarteraLegacy = async function(){
+// Reemplazar renderCartera con la versión legacy que incluye historial de clientes
+window.renderCartera = async function(){
   var body = document.getElementById('carteraBody');
   if(!body) return;
 
@@ -13964,7 +13965,20 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
     if(!window.recaudoConstruirData.__ordenForzado){
       applyOrden();
     }
-  }, 400);
+  }, 200);
+  
+  // Aplicar orden inmediatamente después de cualquier cambio en clientes
+  var originalSetItem = localStorage.setItem;
+  localStorage.setItem = function(key, value){
+    originalSetItem.call(this, key, value);
+    if(key === 'clientes'){
+      setTimeout(function(){
+        if(typeof window.recaudoConstruirData === 'function' && !window.recaudoConstruirData.__ordenForzado){
+          applyOrden();
+        }
+      }, 100);
+    }
+  };
 })();
 
 // =====================================================
