@@ -1,0 +1,2377 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PanControl — Sistema de Producción</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  /* ===========================
+     VARIABLES & RESET
+  =========================== */
+  :root {
+    --cream: #FAF6EE;
+    --warm-white: #FFF9F0;
+    --crust: #C8722A;
+    --crust-dark: #A05A1E;
+    --crust-light: #E8963E;
+    --crumb: #F4E4C1;
+    --brown-deep: #3B2008;
+    --brown-mid: #6B3D1E;
+    --brown-light: #9B6040;
+    --green: #3D7A5A;
+    --green-light: #5AAF82;
+    --red: #C0392B;
+    --red-light: #E74C3C;
+    --yellow: #D4A017;
+    --yellow-light: #F0C040;
+    --text-primary: #2A1A08;
+    --text-secondary: #6B4C30;
+    --text-muted: #A07858;
+    --border: rgba(200, 114, 42, 0.2);
+    --shadow-sm: 0 2px 8px rgba(59, 32, 8, 0.08);
+    --shadow-md: 0 8px 24px rgba(59, 32, 8, 0.12);
+    --shadow-lg: 0 20px 60px rgba(59, 32, 8, 0.18);
+    --radius: 16px;
+    --radius-sm: 8px;
+    --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Lato', sans-serif;
+    background: var(--cream);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ===========================
+     LAYOUT
+  =========================== */
+  .app-wrapper {
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ===========================
+     SIDEBAR
+  =========================== */
+  .sidebar {
+    width: 260px;
+    background: var(--brown-deep);
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+    overflow: hidden;
+  }
+
+  .sidebar::before {
+    content: '';
+    position: absolute;
+    top: -80px; right: -80px;
+    width: 200px; height: 200px;
+    background: radial-gradient(circle, rgba(200,114,42,0.3) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .sidebar-brand {
+    padding: 28px 24px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .sidebar-brand .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+
+  .logo-icon {
+    width: 38px; height: 38px;
+    background: var(--crust);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+
+  .sidebar-brand h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: 20px;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -0.5px;
+  }
+
+  .sidebar-brand p {
+    font-size: 11px;
+    color: rgba(255,255,255,0.4);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-family: 'DM Mono', monospace;
+    padding-left: 48px;
+  }
+
+  .sidebar-nav {
+    flex: 1;
+    padding: 16px 12px;
+    overflow-y: auto;
+  }
+
+  .nav-section-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: rgba(255,255,255,0.3);
+    font-family: 'DM Mono', monospace;
+    padding: 12px 12px 8px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: var(--transition);
+    color: rgba(255,255,255,0.6);
+    font-size: 14px;
+    font-weight: 400;
+    margin-bottom: 2px;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+    position: relative;
+  }
+
+  .nav-item:hover {
+    background: rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.9);
+  }
+
+  .nav-item.active {
+    background: var(--crust);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(200,114,42,0.4);
+  }
+
+  .nav-item .nav-icon {
+    font-size: 18px;
+    width: 22px;
+    text-align: center;
+  }
+
+  .nav-badge {
+    margin-left: auto;
+    background: var(--red);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 20px;
+    font-family: 'DM Mono', monospace;
+    display: none;
+  }
+
+  .nav-badge.show { display: block; }
+
+  .sidebar-footer {
+    padding: 16px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .status-dot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: rgba(255,255,255,0.4);
+  }
+
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green-light);
+    box-shadow: 0 0 6px var(--green-light);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* ===========================
+     MAIN CONTENT
+  =========================== */
+  .main-content {
+    margin-left: 260px;
+    flex: 1;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .topbar {
+    background: var(--warm-white);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+
+  .topbar-left h2 {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .topbar-left p {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: 'DM Mono', monospace;
+  }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    border: none;
+    text-decoration: none;
+  }
+
+  .btn-primary {
+    background: var(--crust);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(200,114,42,0.3);
+  }
+
+  .btn-primary:hover {
+    background: var(--crust-dark);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(200,114,42,0.4);
+  }
+
+  .btn-ghost {
+    background: var(--crumb);
+    color: var(--text-secondary);
+  }
+
+  .btn-ghost:hover {
+    background: var(--border);
+    color: var(--text-primary);
+  }
+
+  .btn-danger {
+    background: var(--red);
+    color: #fff;
+  }
+
+  .btn-danger:hover {
+    background: #a52a1e;
+  }
+
+  .btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 7px;
+  }
+
+  .page-content {
+    padding: 28px 32px;
+    flex: 1;
+  }
+
+  /* ===========================
+     PAGES (VIEWS)
+  =========================== */
+  .page { display: none; animation: fadeIn 0.3s ease; }
+  .page.active { display: block; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ===========================
+     CARDS
+  =========================== */
+  .card {
+    background: var(--warm-white);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+    padding: 24px;
+  }
+
+  .card-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+
+  .card-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+  }
+
+  /* ===========================
+     STAT CARDS (DASHBOARD)
+  =========================== */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: var(--warm-white);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    padding: 22px;
+    position: relative;
+    overflow: hidden;
+    transition: var(--transition);
+  }
+
+  .stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .stat-card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .stat-card.orange::after { background: var(--crust); }
+  .stat-card.green::after { background: var(--green); }
+  .stat-card.red::after { background: var(--red); }
+  .stat-card.yellow::after { background: var(--yellow); }
+  .stat-card.blue::after { background: #2980B9; }
+
+  .stat-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    font-family: 'DM Mono', monospace;
+    margin-bottom: 8px;
+  }
+
+  .stat-value {
+    font-family: 'Syne', sans-serif;
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--text-primary);
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+
+  .stat-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .stat-icon {
+    position: absolute;
+    top: 18px; right: 18px;
+    font-size: 28px;
+    opacity: 0.15;
+  }
+
+  /* ===========================
+     GRID LAYOUTS
+  =========================== */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  .grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .section-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  /* ===========================
+     ALERTS
+  =========================== */
+  .alert-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .alert-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+  }
+
+  .alert-item.danger {
+    background: rgba(192,57,43,0.1);
+    border: 1px solid rgba(192,57,43,0.25);
+    color: var(--red);
+  }
+
+  .alert-item.warning {
+    background: rgba(212,160,23,0.1);
+    border: 1px solid rgba(212,160,23,0.25);
+    color: #A07000;
+  }
+
+  .alert-item.success {
+    background: rgba(61,122,90,0.1);
+    border: 1px solid rgba(61,122,90,0.25);
+    color: var(--green);
+  }
+
+  .alert-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .alert-item.danger .alert-dot { background: var(--red); }
+  .alert-item.warning .alert-dot { background: var(--yellow); }
+  .alert-item.success .alert-dot { background: var(--green); }
+
+  .alert-info {
+    flex: 1;
+    font-weight: 600;
+  }
+
+  .alert-qty {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  /* ===========================
+     TABLE
+  =========================== */
+  .table-container {
+    overflow-x: auto;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  thead th {
+    background: var(--crumb);
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-secondary);
+    font-family: 'DM Mono', monospace;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: var(--transition);
+  }
+
+  tbody tr:last-child { border-bottom: none; }
+
+  tbody tr:hover { background: rgba(248, 240, 228, 0.6); }
+
+  tbody td {
+    padding: 13px 16px;
+    font-size: 13px;
+    color: var(--text-primary);
+  }
+
+  .td-mono {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .badge-success { background: rgba(61,122,90,0.15); color: var(--green); }
+  .badge-danger { background: rgba(192,57,43,0.15); color: var(--red); }
+  .badge-warning { background: rgba(212,160,23,0.15); color: #A07000; }
+  .badge-neutral { background: rgba(107,61,30,0.12); color: var(--text-secondary); }
+
+  /* ===========================
+     FORMS
+  =========================== */
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .form-group.full { grid-column: 1 / -1; }
+
+  label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  input, select, textarea {
+    padding: 11px 14px;
+    border-radius: 10px;
+    border: 1.5px solid var(--border);
+    background: var(--cream);
+    font-size: 14px;
+    color: var(--text-primary);
+    font-family: 'Lato', sans-serif;
+    transition: var(--transition);
+    outline: none;
+    width: 100%;
+  }
+
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--crust);
+    background: var(--warm-white);
+    box-shadow: 0 0 0 3px rgba(200,114,42,0.12);
+  }
+
+  .form-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: 'DM Mono', monospace;
+  }
+
+  .calc-result {
+    background: var(--crumb);
+    border: 1px dashed var(--crust-light);
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--brown-mid);
+    margin-top: 16px;
+  }
+
+  .calc-result strong {
+    color: var(--crust-dark);
+    font-size: 15px;
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 20px 0;
+  }
+
+  /* ===========================
+     PRODUCTION PROGRESS
+  =========================== */
+  .progress-bar-wrap {
+    background: var(--crumb);
+    border-radius: 20px;
+    height: 8px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .progress-bar {
+    height: 100%;
+    border-radius: 20px;
+    transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .progress-bar.green { background: var(--green); }
+  .progress-bar.orange { background: var(--crust); }
+  .progress-bar.red { background: var(--red); }
+
+  /* ===========================
+     INVENTORY TABLE ROWS
+  =========================== */
+  .inv-row-danger td { background: rgba(192,57,43,0.04); }
+  .inv-row-warning td { background: rgba(212,160,23,0.04); }
+  .inv-row-success td { background: rgba(61,122,90,0.04); }
+
+  /* ===========================
+     CASH FLOW DASHBOARD
+  =========================== */
+  .cashflow-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .cf-card {
+    background: var(--warm-white);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    padding: 20px;
+    text-align: center;
+    transition: var(--transition);
+  }
+
+  .cf-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+  .cf-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+  }
+
+  .cf-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    font-family: 'DM Mono', monospace;
+    margin-bottom: 6px;
+  }
+
+  .cf-value {
+    font-family: 'Syne', sans-serif;
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--text-primary);
+  }
+
+  .cf-value.positive { color: var(--green); }
+  .cf-value.negative { color: var(--red); }
+
+  /* ===========================
+     TABS
+  =========================== */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    background: var(--crumb);
+    padding: 4px;
+    border-radius: 12px;
+    width: fit-content;
+  }
+
+  .tab {
+    padding: 8px 20px;
+    border-radius: 9px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    transition: var(--transition);
+    border: none;
+    background: none;
+  }
+
+  .tab.active {
+    background: var(--warm-white);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* ===========================
+     CHART CONTAINERS
+  =========================== */
+  .chart-container {
+    position: relative;
+    height: 260px;
+    width: 100%;
+  }
+
+  /* ===========================
+     EMPTY STATE
+  =========================== */
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted);
+  }
+
+  .empty-state .empty-icon {
+    font-size: 40px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+  }
+
+  .empty-state p {
+    font-size: 14px;
+  }
+
+  /* ===========================
+     MODAL
+  =========================== */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(42, 26, 8, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s;
+  }
+
+  .modal-overlay.open {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .modal {
+    background: var(--warm-white);
+    border-radius: 20px;
+    padding: 32px;
+    width: 520px;
+    max-width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+    transform: translateY(20px) scale(0.97);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .modal-overlay.open .modal {
+    transform: translateY(0) scale(1);
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+
+  .modal-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .modal-close {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: var(--crumb);
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-secondary);
+    transition: var(--transition);
+  }
+
+  .modal-close:hover { background: var(--border); }
+
+  /* ===========================
+     TOAST
+  =========================== */
+  #toast-container {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .toast {
+    background: var(--brown-deep);
+    color: #fff;
+    padding: 14px 20px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: var(--shadow-md);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: slideIn 0.3s ease;
+    min-width: 240px;
+  }
+
+  .toast.success { background: var(--green); }
+  .toast.error { background: var(--red); }
+  .toast.warning { background: var(--yellow); color: #1a1a1a; }
+
+  @keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  @keyframes slideOut {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(100%); opacity: 0; }
+  }
+
+  /* ===========================
+     RECOMMENDATION BOX
+  =========================== */
+  .recommendation-box {
+    background: linear-gradient(135deg, var(--crust) 0%, var(--crust-dark) 100%);
+    border-radius: var(--radius);
+    padding: 24px;
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .recommendation-box::before {
+    content: '🍞';
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 64px;
+    opacity: 0.15;
+  }
+
+  .recommendation-box h3 {
+    font-family: 'Syne', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: 0.8;
+    margin-bottom: 8px;
+  }
+
+  .recommendation-box .rec-value {
+    font-family: 'Syne', sans-serif;
+    font-size: 36px;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .recommendation-box p {
+    font-size: 13px;
+    opacity: 0.75;
+  }
+
+  .rec-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 16px;
+  }
+
+  .rec-item {
+    background: rgba(255,255,255,0.15);
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+  }
+
+  .rec-item .ri-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: 0.7;
+    margin-bottom: 4px;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .rec-item .ri-val {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  /* ===========================
+     RESPONSIVE
+  =========================== */
+  @media (max-width: 1024px) {
+    .sidebar { width: 220px; }
+    .main-content { margin-left: 220px; }
+    .cashflow-grid { grid-template-columns: repeat(2, 1fr); }
+    .grid-2 { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 768px) {
+    .sidebar { transform: translateX(-100%); }
+    .sidebar.open { transform: translateX(0); }
+    .main-content { margin-left: 0; }
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .cashflow-grid { grid-template-columns: 1fr 1fr; }
+    .form-grid { grid-template-columns: 1fr; }
+    .rec-grid { grid-template-columns: 1fr; }
+    .page-content { padding: 20px 16px; }
+    .topbar { padding: 0 16px; }
+  }
+
+  @media (max-width: 480px) {
+    .stats-grid { grid-template-columns: 1fr; }
+    .cashflow-grid { grid-template-columns: 1fr; }
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--crumb); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border); }
+</style>
+</head>
+<body>
+
+<div class="app-wrapper">
+
+  <!-- ==================== SIDEBAR ==================== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="logo">
+        <div class="logo-icon">🥖</div>
+        <h1>PanControl</h1>
+      </div>
+      <p>Sistema de Producción</p>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Principal</div>
+      <button class="nav-item active" onclick="navigate('dashboard')" data-page="dashboard">
+        <span class="nav-icon">📊</span> Dashboard
+      </button>
+      <button class="nav-item" onclick="navigate('analisis')" data-page="analisis">
+        <span class="nav-icon">🧠</span> Análisis Inteligente
+      </button>
+
+      <div class="nav-section-label">Gestión</div>
+      <button class="nav-item" onclick="navigate('recetas')" data-page="recetas">
+        <span class="nav-icon">📖</span> Recetas
+      </button>
+      <button class="nav-item" onclick="navigate('produccion')" data-page="produccion">
+        <span class="nav-icon">🏭</span> Producción
+      </button>
+      <button class="nav-item" onclick="navigate('ventas')" data-page="ventas">
+        <span class="nav-icon">🛒</span> Ventas / Pedidos
+      </button>
+
+      <div class="nav-section-label">Control</div>
+      <button class="nav-item" onclick="navigate('inventario')" data-page="inventario">
+        <span class="nav-icon">📦</span> Inventario
+        <span class="nav-badge" id="badge-inventario">0</span>
+      </button>
+      <button class="nav-item" onclick="navigate('flujo')" data-page="flujo">
+        <span class="nav-icon">💰</span> Flujo de Caja
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="status-dot">
+        <span class="dot"></span>
+        <span>Sistema activo</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ==================== MAIN ==================== -->
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-left">
+        <h2 id="page-title">Dashboard</h2>
+        <p id="page-date"></p>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-ghost btn-sm" onclick="refreshData()">🔄 Actualizar</button>
+        <button class="btn btn-primary btn-sm" onclick="openModalSale()">+ Nueva Venta</button>
+      </div>
+    </header>
+
+    <main class="page-content">
+
+      <!-- ==================== DASHBOARD ==================== -->
+      <section class="page active" id="page-dashboard">
+        <div class="stats-grid" id="dash-stats"></div>
+        <div class="grid-2" style="margin-bottom:20px;">
+          <div class="card">
+            <div class="card-title">Producción vs Ventas</div>
+            <div class="card-subtitle">Últimos 7 días</div>
+            <div class="chart-container">
+              <canvas id="chartProdVentas"></canvas>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Alertas de Inventario</div>
+            <div class="card-subtitle">Estado actual de stock</div>
+            <div class="alert-list" id="dashboard-alerts">
+              <div class="empty-state"><div class="empty-icon">✅</div><p>Sin alertas</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">Tendencia Semanal</div>
+            <div class="card-subtitle">Ventas por día de la semana</div>
+            <div class="chart-container">
+              <canvas id="chartTendencia"></canvas>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Top Productos</div>
+            <div class="card-subtitle">Por unidades vendidas</div>
+            <div class="chart-container">
+              <canvas id="chartProductos"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== ANÁLISIS INTELIGENTE ==================== -->
+      <section class="page" id="page-analisis">
+        <div id="analisis-content"></div>
+      </section>
+
+      <!-- ==================== RECETAS ==================== -->
+      <section class="page" id="page-recetas">
+        <div class="section-header">
+          <span class="section-title">Recetas Registradas</span>
+          <button class="btn btn-primary" onclick="openModalReceta()">+ Nueva Receta</button>
+        </div>
+        <div class="card">
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Peso/pan (g)</th>
+                  <th>Panes/receta</th>
+                  <th>Costo receta</th>
+                  <th>Costo unitario</th>
+                  <th>Precio venta</th>
+                  <th>Panes/libra</th>
+                  <th>Margen</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-recetas"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== PRODUCCIÓN ==================== -->
+      <section class="page" id="page-produccion">
+        <div class="grid-2" style="margin-bottom:20px;">
+          <div class="card">
+            <div class="card-title">Registrar Producción</div>
+            <div class="card-subtitle">Ingresa las libras producidas por producto</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Fecha</label>
+                <input type="date" id="prod-fecha">
+              </div>
+              <div class="form-group">
+                <label>Producto</label>
+                <select id="prod-producto" onchange="calcularProduccion()">
+                  <option value="">Seleccionar...</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Libras producidas</label>
+                <input type="number" id="prod-libras" min="0" step="0.01" placeholder="0.00" oninput="calcularProduccion()">
+              </div>
+              <div class="form-group">
+                <label>Turno</label>
+                <select id="prod-turno">
+                  <option value="mañana">Mañana</option>
+                  <option value="tarde">Tarde</option>
+                  <option value="noche">Noche</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Notas</label>
+                <input type="text" id="prod-notas" placeholder="Observaciones...">
+              </div>
+            </div>
+            <div class="calc-result" id="prod-calc">
+              <span style="color:var(--text-muted)">Ingresa libras para ver el cálculo automático</span>
+            </div>
+            <div style="margin-top:16px; display:flex; gap:10px;">
+              <button class="btn btn-primary" onclick="guardarProduccion()">💾 Guardar Producción</button>
+              <button class="btn btn-ghost" onclick="limpiarFormProduccion()">Limpiar</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Producción Recomendada</div>
+            <div class="card-subtitle">Basada en ventas de los últimos 7 días</div>
+            <div id="prod-recomendacion">
+              <div class="empty-state"><div class="empty-icon">📊</div><p>Calculando...</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="section-header">
+            <span class="card-title">Historial de Producción</span>
+            <button class="btn btn-ghost btn-sm" onclick="renderTablaProduccion()">🔄</button>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Producto</th>
+                  <th>Libras</th>
+                  <th>Panes</th>
+                  <th>Turno</th>
+                  <th>Notas</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-produccion"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== VENTAS ==================== -->
+      <section class="page" id="page-ventas">
+        <div class="section-header">
+          <span class="section-title">Pedidos y Ventas</span>
+          <button class="btn btn-primary" onclick="openModalSale()">+ Nuevo Pedido</button>
+        </div>
+        <div class="stats-grid" id="ventas-stats"></div>
+        <div class="card">
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Cliente</th>
+                  <th>Producto</th>
+                  <th>Cantidad</th>
+                  <th>Precio Unit.</th>
+                  <th>Total</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-ventas"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== INVENTARIO ==================== -->
+      <section class="page" id="page-inventario">
+        <div class="stats-grid" id="inv-stats"></div>
+        <div class="card">
+          <div class="card-title">Control de Stock</div>
+          <div class="card-subtitle">Producción − Ventas = Inventario disponible</div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Producido Hoy</th>
+                  <th>Vendido Hoy</th>
+                  <th>Disponible</th>
+                  <th>Estado</th>
+                  <th>% Stock</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-inventario"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== FLUJO DE CAJA ==================== -->
+      <section class="page" id="page-flujo">
+        <div class="cashflow-grid" id="flujo-stats"></div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title">Ingresos vs Costos</div>
+            <div class="card-subtitle">Últimos 7 días</div>
+            <div class="chart-container">
+              <canvas id="chartFlujo"></canvas>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Detalle Diario</div>
+            <div class="card-subtitle">Rentabilidad por día</div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Ingresos</th>
+                    <th>Costos</th>
+                    <th>Utilidad</th>
+                    <th>Margen</th>
+                  </tr>
+                </thead>
+                <tbody id="tabla-flujo"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- ==================== MODAL RECETA ==================== -->
+<div class="modal-overlay" id="modal-receta">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-receta-title">Nueva Receta</h2>
+      <button class="modal-close" onclick="closeModal('modal-receta')">✕</button>
+    </div>
+    <div class="form-grid">
+      <input type="hidden" id="receta-edit-id">
+      <div class="form-group">
+        <label>Nombre del Producto</label>
+        <input type="text" id="receta-nombre" placeholder="Ej: Pan Francés">
+      </div>
+      <div class="form-group">
+        <label>Peso por pan (gramos)</label>
+        <input type="number" id="receta-peso" min="1" step="0.5" placeholder="Ej: 50" oninput="calcularReceta()">
+      </div>
+      <div class="form-group">
+        <label>Panes por receta</label>
+        <input type="number" id="receta-cantidad" min="1" placeholder="Ej: 20" oninput="calcularReceta()">
+      </div>
+      <div class="form-group">
+        <label>Costo total receta ($)</label>
+        <input type="number" id="receta-costo" min="0" step="0.01" placeholder="Ej: 15.00" oninput="calcularReceta()">
+      </div>
+      <div class="form-group">
+        <label>Precio de venta ($)</label>
+        <input type="number" id="receta-precio" min="0" step="0.01" placeholder="Ej: 1.50" oninput="calcularReceta()">
+      </div>
+      <div class="form-group">
+        <label>Color identificador</label>
+        <select id="receta-color">
+          <option value="orange">Naranja</option>
+          <option value="green">Verde</option>
+          <option value="blue">Azul</option>
+          <option value="red">Rojo</option>
+          <option value="yellow">Amarillo</option>
+        </select>
+      </div>
+    </div>
+    <div class="calc-result" id="receta-calc">
+      <span style="color:var(--text-muted)">Completa los campos para ver el cálculo</span>
+    </div>
+    <div class="divider"></div>
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="closeModal('modal-receta')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarReceta()">💾 Guardar Receta</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== MODAL VENTA ==================== -->
+<div class="modal-overlay" id="modal-venta">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-venta-title">Nuevo Pedido</h2>
+      <button class="modal-close" onclick="closeModal('modal-venta')">✕</button>
+    </div>
+    <div class="form-grid">
+      <input type="hidden" id="venta-edit-id">
+      <div class="form-group">
+        <label>Fecha</label>
+        <input type="date" id="venta-fecha">
+      </div>
+      <div class="form-group">
+        <label>Cliente</label>
+        <input type="text" id="venta-cliente" placeholder="Nombre del cliente">
+      </div>
+      <div class="form-group">
+        <label>Producto</label>
+        <select id="venta-producto" onchange="autoFillVentaPrecio()">
+          <option value="">Seleccionar...</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Cantidad (unidades)</label>
+        <input type="number" id="venta-cantidad" min="1" placeholder="0" oninput="calcularVenta()">
+      </div>
+      <div class="form-group">
+        <label>Precio unitario ($)</label>
+        <input type="number" id="venta-precio" min="0" step="0.01" placeholder="0.00" oninput="calcularVenta()">
+      </div>
+      <div class="form-group">
+        <label>Estado</label>
+        <select id="venta-estado">
+          <option value="pendiente">Pendiente</option>
+          <option value="entregado">Entregado</option>
+          <option value="cancelado">Cancelado</option>
+        </select>
+      </div>
+    </div>
+    <div class="calc-result" id="venta-calc">
+      <span style="color:var(--text-muted)">Ingresa cantidad y precio para ver total</span>
+    </div>
+    <div class="divider"></div>
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="closeModal('modal-venta')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarVenta()">💾 Guardar Pedido</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== TOAST CONTAINER ==================== -->
+<div id="toast-container"></div>
+
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+
+/* ==========================================
+   ESTADO GLOBAL / BASE DE DATOS LOCAL
+   (Simula Supabase — reemplaza con llamadas
+   reales a la API cuando integres Supabase)
+=========================================== */
+const DB = {
+  recetas: [],
+  produccion: [],
+  ventas: [],
+
+  // Persistencia local (simula BD)
+  save() {
+    try {
+      localStorage.setItem('pancontrol_recetas', JSON.stringify(this.recetas));
+      localStorage.setItem('pancontrol_produccion', JSON.stringify(this.produccion));
+      localStorage.setItem('pancontrol_ventas', JSON.stringify(this.ventas));
+    } catch(e) {}
+  },
+
+  load() {
+    try {
+      this.recetas    = JSON.parse(localStorage.getItem('pancontrol_recetas') || '[]');
+      this.produccion = JSON.parse(localStorage.getItem('pancontrol_produccion') || '[]');
+      this.ventas     = JSON.parse(localStorage.getItem('pancontrol_ventas') || '[]');
+    } catch(e) {
+      this.recetas = []; this.produccion = []; this.ventas = [];
+    }
+
+    // Datos de demostración si está vacío
+    if (this.recetas.length === 0) this._seedData();
+  },
+
+  _seedData() {
+    const hoy = new Date();
+    const fmt = d => d.toISOString().split('T')[0];
+
+    this.recetas = [
+      { id: uid(), nombre: 'Pan Francés', peso: 50, cantidad: 20, costo: 12.00, precio: 0.75, color: 'orange' },
+      { id: uid(), nombre: 'Pan Integral', peso: 80, cantidad: 12, costo: 15.00, precio: 1.20, color: 'green' },
+      { id: uid(), nombre: 'Pan de Dulce', peso: 60, cantidad: 15, costo: 18.00, precio: 1.50, color: 'yellow' },
+      { id: uid(), nombre: 'Baguette', peso: 250, cantidad: 5, costo: 10.00, precio: 3.50, color: 'blue' },
+    ];
+
+    // Ventas últimos 7 días
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(hoy); d.setDate(hoy.getDate() - i);
+      const fecha = fmt(d);
+      this.recetas.forEach(r => {
+        const qty = Math.floor(Math.random() * 30) + 10;
+        this.ventas.push({ id: uid(), fecha, cliente: 'Cliente ' + (Math.floor(Math.random()*5)+1), producto_id: r.id, cantidad: qty, precio: r.precio, estado: 'entregado' });
+      });
+    }
+
+    // Producción últimos 7 días
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(hoy); d.setDate(hoy.getDate() - i);
+      const fecha = fmt(d);
+      this.recetas.forEach(r => {
+        const ppl = calcPanesPorLibra(r.peso);
+        const libras = +(Math.random() * 3 + 1).toFixed(2);
+        this.produccion.push({ id: uid(), fecha, producto_id: r.id, libras, panes: Math.round(libras * ppl), turno: 'mañana', notas: '' });
+      });
+    }
+
+    this.save();
+  }
+};
+
+/* ==========================================
+   FUNCIONES DE CÁLCULO (PURAS)
+=========================================== */
+
+/** Panes que salen de una libra (454g) */
+function calcPanesPorLibra(pesoPanGramos) {
+  if (!pesoPanGramos || pesoPanGramos <= 0) return 0;
+  return 454 / pesoPanGramos;
+}
+
+/** Panes producidos dado libras y peso del pan */
+function calcPanesDeLibras(libras, pesoPanGramos) {
+  return Math.floor(libras * calcPanesPorLibra(pesoPanGramos));
+}
+
+/** Costo unitario de un pan */
+function calcCostoUnitario(costoReceta, cantidadPanes) {
+  if (!cantidadPanes || cantidadPanes <= 0) return 0;
+  return costoReceta / cantidadPanes;
+}
+
+/** Ventas promedio últimos N días para una receta */
+function calcVentasPromedio(productoId, dias = 7) {
+  const hoy = new Date();
+  let total = 0;
+  for (let i = 0; i < dias; i++) {
+    const d = new Date(hoy); d.setDate(hoy.getDate() - i);
+    const fecha = d.toISOString().split('T')[0];
+    const vendido = DB.ventas.filter(v => v.producto_id === productoId && v.fecha === fecha && v.estado !== 'cancelado')
+                             .reduce((s, v) => s + v.cantidad, 0);
+    total += vendido;
+  }
+  return total / dias;
+}
+
+/** Producción recomendada (promedio + 10% margen) */
+function calcProduccionRecomendada(productoId, margen = 0.10) {
+  const promedio = calcVentasPromedio(productoId);
+  return Math.ceil(promedio * (1 + margen));
+}
+
+/** Libras necesarias dado producción recomendada */
+function calcLibrasNecesarias(panesNecesarios, pesoPanGramos) {
+  const ppl = calcPanesPorLibra(pesoPanGramos);
+  if (ppl === 0) return 0;
+  return panesNecesarios / ppl;
+}
+
+/** Inventario disponible hoy */
+function calcInventarioHoy(productoId) {
+  const hoy = new Date().toISOString().split('T')[0];
+  const producido = DB.produccion.filter(p => p.producto_id === productoId && p.fecha === hoy)
+                                  .reduce((s, p) => s + p.panes, 0);
+  const vendido   = DB.ventas.filter(v => v.producto_id === productoId && v.fecha === hoy && v.estado !== 'cancelado')
+                              .reduce((s, v) => s + v.cantidad, 0);
+  return { producido, vendido, disponible: producido - vendido };
+}
+
+/** Flujo de caja para un día */
+function calcFlujoDia(fecha) {
+  const ventas = DB.ventas.filter(v => v.fecha === fecha && v.estado !== 'cancelado');
+  let ingresos = 0, costos = 0;
+  ventas.forEach(v => {
+    const receta = DB.recetas.find(r => r.id === v.producto_id);
+    const cu = receta ? calcCostoUnitario(receta.costo, receta.cantidad) : 0;
+    ingresos += v.cantidad * v.precio;
+    costos   += v.cantidad * cu;
+  });
+  const utilidad = ingresos - costos;
+  const margen   = ingresos > 0 ? (utilidad / ingresos) * 100 : 0;
+  return { ingresos, costos, utilidad, margen };
+}
+
+/* ==========================================
+   UTILIDADES
+=========================================== */
+
+function uid() {
+  return 'id_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+}
+
+function formatMoney(val) {
+  return '$' + (parseFloat(val) || 0).toFixed(2);
+}
+
+function formatNum(val) {
+  return (parseFloat(val) || 0).toFixed(1);
+}
+
+function today() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function getRecetaNombre(id) {
+  const r = DB.recetas.find(x => x.id === id);
+  return r ? r.nombre : '—';
+}
+
+function last7Days() {
+  const days = [];
+  const hoy = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(hoy); d.setDate(hoy.getDate() - i);
+    days.push(d.toISOString().split('T')[0]);
+  }
+  return days;
+}
+
+/* ==========================================
+   TOAST
+=========================================== */
+function toast(msg, type = 'default') {
+  const container = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  const icons = { success: '✅', error: '❌', warning: '⚠️', default: 'ℹ️' };
+  el.innerHTML = `<span>${icons[type] || 'ℹ️'}</span><span>${msg}</span>`;
+  container.appendChild(el);
+  setTimeout(() => {
+    el.style.animation = 'slideOut 0.3s ease forwards';
+    setTimeout(() => el.remove(), 300);
+  }, 3000);
+}
+
+/* ==========================================
+   NAVEGACIÓN
+=========================================== */
+function navigate(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+  const pageEl = document.getElementById('page-' + page);
+  const navEl  = document.querySelector(`[data-page="${page}"]`);
+  if (pageEl) pageEl.classList.add('active');
+  if (navEl)  navEl.classList.add('active');
+
+  const titles = {
+    dashboard: 'Dashboard',
+    analisis: 'Análisis Inteligente',
+    recetas: 'Recetas',
+    produccion: 'Producción',
+    ventas: 'Ventas y Pedidos',
+    inventario: 'Control de Inventario',
+    flujo: 'Flujo de Caja'
+  };
+
+  document.getElementById('page-title').textContent = titles[page] || page;
+  renderPage(page);
+}
+
+function renderPage(page) {
+  const map = {
+    dashboard: renderDashboard,
+    analisis: renderAnalisis,
+    recetas: renderTablaRecetas,
+    produccion: () => { renderTablaProduccion(); renderSelectProductos(); renderRecomendacionProduccion(); },
+    ventas: () => { renderTablaVentas(); renderVentasStats(); },
+    inventario: () => { renderTablaInventario(); renderInventarioStats(); },
+    flujo: renderFlujo
+  };
+  if (map[page]) map[page]();
+}
+
+/* ==========================================
+   MODALES
+=========================================== */
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) closeModal(overlay.id);
+  });
+});
+
+function openModalReceta(id = null) {
+  document.getElementById('receta-edit-id').value = id || '';
+  document.getElementById('modal-receta-title').textContent = id ? 'Editar Receta' : 'Nueva Receta';
+  document.getElementById('receta-calc').innerHTML = '<span style="color:var(--text-muted)">Completa los campos para ver el cálculo</span>';
+
+  if (id) {
+    const r = DB.recetas.find(x => x.id === id);
+    if (r) {
+      document.getElementById('receta-nombre').value   = r.nombre;
+      document.getElementById('receta-peso').value     = r.peso;
+      document.getElementById('receta-cantidad').value = r.cantidad;
+      document.getElementById('receta-costo').value    = r.costo;
+      document.getElementById('receta-precio').value   = r.precio;
+      document.getElementById('receta-color').value    = r.color || 'orange';
+      calcularReceta();
+    }
+  } else {
+    document.getElementById('receta-nombre').value   = '';
+    document.getElementById('receta-peso').value     = '';
+    document.getElementById('receta-cantidad').value = '';
+    document.getElementById('receta-costo').value    = '';
+    document.getElementById('receta-precio').value   = '';
+  }
+
+  openModal('modal-receta');
+}
+
+function openModalSale(id = null) {
+  document.getElementById('venta-edit-id').value = id || '';
+  document.getElementById('modal-venta-title').textContent = id ? 'Editar Pedido' : 'Nuevo Pedido';
+  document.getElementById('venta-calc').innerHTML = '<span style="color:var(--text-muted)">Ingresa cantidad y precio para ver total</span>';
+
+  const sel = document.getElementById('venta-producto');
+  sel.innerHTML = '<option value="">Seleccionar...</option>';
+  DB.recetas.forEach(r => {
+    sel.innerHTML += `<option value="${r.id}">${r.nombre}</option>`;
+  });
+
+  if (id) {
+    const v = DB.ventas.find(x => x.id === id);
+    if (v) {
+      document.getElementById('venta-fecha').value    = v.fecha;
+      document.getElementById('venta-cliente').value  = v.cliente;
+      document.getElementById('venta-producto').value = v.producto_id;
+      document.getElementById('venta-cantidad').value = v.cantidad;
+      document.getElementById('venta-precio').value   = v.precio;
+      document.getElementById('venta-estado').value   = v.estado;
+      calcularVenta();
+    }
+  } else {
+    document.getElementById('venta-fecha').value    = today();
+    document.getElementById('venta-cliente').value  = '';
+    document.getElementById('venta-producto').value = '';
+    document.getElementById('venta-cantidad').value = '';
+    document.getElementById('venta-precio').value   = '';
+    document.getElementById('venta-estado').value   = 'pendiente';
+  }
+
+  openModal('modal-venta');
+}
+
+/* ==========================================
+   CÁLCULOS EN FORMULARIOS
+=========================================== */
+function calcularReceta() {
+  const peso     = parseFloat(document.getElementById('receta-peso').value) || 0;
+  const cantidad = parseFloat(document.getElementById('receta-cantidad').value) || 0;
+  const costo    = parseFloat(document.getElementById('receta-costo').value) || 0;
+  const precio   = parseFloat(document.getElementById('receta-precio').value) || 0;
+
+  if (peso <= 0 || cantidad <= 0) {
+    document.getElementById('receta-calc').innerHTML = '<span style="color:var(--text-muted)">Ingresa peso y cantidad de panes</span>';
+    return;
+  }
+
+  const ppl = calcPanesPorLibra(peso);
+  const cu  = calcCostoUnitario(costo, cantidad);
+  const margen = precio > 0 ? ((precio - cu) / precio * 100) : 0;
+
+  document.getElementById('receta-calc').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;">
+      <div><div style="font-size:11px;color:var(--text-muted);margin-bottom:3px;">PANES POR LIBRA</div><strong>${ppl.toFixed(1)}</strong></div>
+      <div><div style="font-size:11px;color:var(--text-muted);margin-bottom:3px;">COSTO UNITARIO</div><strong>${formatMoney(cu)}</strong></div>
+      <div><div style="font-size:11px;color:var(--text-muted);margin-bottom:3px;">MARGEN BRUTO</div><strong style="color:${margen>30?'var(--green)':margen>15?'var(--yellow)':'var(--red)'}">${margen.toFixed(1)}%</strong></div>
+      <div><div style="font-size:11px;color:var(--text-muted);margin-bottom:3px;">UTILIDAD/PAN</div><strong>${formatMoney(precio - cu)}</strong></div>
+    </div>
+  `;
+}
+
+function calcularProduccion() {
+  const libras = parseFloat(document.getElementById('prod-libras').value) || 0;
+  const prodId = document.getElementById('prod-producto').value;
+  const receta = DB.recetas.find(r => r.id === prodId);
+
+  if (!receta || libras <= 0) {
+    document.getElementById('prod-calc').innerHTML = '<span style="color:var(--text-muted)">Selecciona producto e ingresa libras</span>';
+    return;
+  }
+
+  const ppl   = calcPanesPorLibra(receta.peso);
+  const panes = calcPanesDeLibras(libras, receta.peso);
+  const costo = calcCostoUnitario(receta.costo, receta.cantidad);
+
+  document.getElementById('prod-calc').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+      <div><div style="font-size:11px;color:var(--text-muted);margin-bottom:3px;">PANES A PRODUCIR</div><strong style="font-size:20px;color:var(--crust)">${panes}</strong></div>
+      <div><div style="font-size:11px;color:var(--text-muted);margin-bottom:3px;">PANES / LIBRA</div><strong>${ppl.toFixed(1)}</strong></div>
+      <div><div style="font-size:11px;color:var(--text-muted);margin-bottom:3px;">COSTO LOTE</div><strong>${formatMoney(panes * costo)}</strong></div>
+    </div>
+  `;
+}
+
+function calcularVenta() {
+  const qty    = parseFloat(document.getElementById('venta-cantidad').value) || 0;
+  const precio = parseFloat(document.getElementById('venta-precio').value) || 0;
+  const prodId = document.getElementById('venta-producto').value;
+  const receta = DB.recetas.find(r => r.id === prodId);
+
+  if (qty <= 0) {
+    document.getElementById('venta-calc').innerHTML = '<span style="color:var(--text-muted)">Ingresa cantidad</span>';
+    return;
+  }
+
+  const total = qty * precio;
+  const cu = receta ? calcCostoUnitario(receta.costo, receta.cantidad) : 0;
+  const utilidad = total - (qty * cu);
+
+  document.getElementById('venta-calc').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+      <div><div style="font-size:11px;color:var(--text-muted);margin-bottom:3px;">TOTAL PEDIDO</div><strong style="font-size:18px;color:var(--crust)">${formatMoney(total)}</strong></div>
+      <div><div style="font-size:11px;color:var(--text-muted);margin-bottom:3px;">COSTO</div><strong>${formatMoney(qty * cu)}</strong></div>
+      <div><div style="font-size:11px;color:var(--text-muted);margin-bottom:3px;">UTILIDAD</div><strong style="color:${utilidad>=0?'var(--green)':'var(--red)'}">${formatMoney(utilidad)}</strong></div>
+    </div>
+  `;
+}
+
+function autoFillVentaPrecio() {
+  const prodId = document.getElementById('venta-producto').value;
+  const receta = DB.recetas.find(r => r.id === prodId);
+  if (receta) {
+    document.getElementById('venta-precio').value = receta.precio;
+    calcularVenta();
+  }
+}
+
+/* ==========================================
+   CRUD — RECETAS
+=========================================== */
+function guardarReceta() {
+  const id      = document.getElementById('receta-edit-id').value;
+  const nombre  = document.getElementById('receta-nombre').value.trim();
+  const peso    = parseFloat(document.getElementById('receta-peso').value);
+  const cantidad = parseInt(document.getElementById('receta-cantidad').value);
+  const costo   = parseFloat(document.getElementById('receta-costo').value);
+  const precio  = parseFloat(document.getElementById('receta-precio').value);
+  const color   = document.getElementById('receta-color').value;
+
+  if (!nombre || !peso || !cantidad || !costo || !precio) {
+    toast('Completa todos los campos', 'error');
+    return;
+  }
+  if (peso <= 0 || cantidad <= 0) {
+    toast('Peso y cantidad deben ser mayores a 0', 'error');
+    return;
+  }
+
+  const receta = { nombre, peso, cantidad, costo, precio, color };
+
+  if (id) {
+    const idx = DB.recetas.findIndex(r => r.id === id);
+    if (idx !== -1) DB.recetas[idx] = { ...DB.recetas[idx], ...receta };
+    toast('Receta actualizada ✅', 'success');
+  } else {
+    DB.recetas.push({ id: uid(), ...receta });
+    toast('Receta guardada ✅', 'success');
+  }
+
+  DB.save();
+  closeModal('modal-receta');
+  renderTablaRecetas();
+}
+
+function eliminarReceta(id) {
+  if (!confirm('¿Eliminar esta receta?')) return;
+  DB.recetas = DB.recetas.filter(r => r.id !== id);
+  DB.save();
+  renderTablaRecetas();
+  toast('Receta eliminada', 'warning');
+}
+
+function renderTablaRecetas() {
+  const tbody = document.getElementById('tabla-recetas');
+  if (!DB.recetas.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text-muted)">Sin recetas. Agrega una.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = DB.recetas.map(r => {
+    const ppl    = calcPanesPorLibra(r.peso);
+    const cu     = calcCostoUnitario(r.costo, r.cantidad);
+    const margen = r.precio > 0 ? ((r.precio - cu) / r.precio * 100) : 0;
+    const mcls   = margen > 30 ? 'badge-success' : margen > 15 ? 'badge-warning' : 'badge-danger';
+    return `<tr>
+      <td><strong>${r.nombre}</strong></td>
+      <td class="td-mono">${r.peso}g</td>
+      <td class="td-mono">${r.cantidad}</td>
+      <td class="td-mono">${formatMoney(r.costo)}</td>
+      <td class="td-mono">${formatMoney(cu)}</td>
+      <td class="td-mono">${formatMoney(r.precio)}</td>
+      <td class="td-mono">${ppl.toFixed(1)}</td>
+      <td><span class="badge ${mcls}">${margen.toFixed(1)}%</span></td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="openModalReceta('${r.id}')">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="eliminarReceta('${r.id}')">🗑️</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+/* ==========================================
+   CRUD — PRODUCCIÓN
+=========================================== */
+function guardarProduccion() {
+  const fecha    = document.getElementById('prod-fecha').value;
+  const prodId   = document.getElementById('prod-producto').value;
+  const libras   = parseFloat(document.getElementById('prod-libras').value);
+  const turno    = document.getElementById('prod-turno').value;
+  const notas    = document.getElementById('prod-notas').value.trim();
+  const receta   = DB.recetas.find(r => r.id === prodId);
+
+  if (!fecha || !prodId || !libras || libras <= 0) {
+    toast('Completa todos los campos requeridos', 'error');
+    return;
+  }
+  if (!receta) { toast('Producto no encontrado', 'error'); return; }
+
+  const panes = calcPanesDeLibras(libras, receta.peso);
+  DB.produccion.push({ id: uid(), fecha, producto_id: prodId, libras, panes, turno, notas });
+  DB.save();
+  limpiarFormProduccion();
+  renderTablaProduccion();
+  toast(`Producción registrada: ${panes} panes ✅`, 'success');
+  actualizarBadge();
+}
+
+function limpiarFormProduccion() {
+  document.getElementById('prod-fecha').value    = today();
+  document.getElementById('prod-producto').value = '';
+  document.getElementById('prod-libras').value   = '';
+  document.getElementById('prod-notas').value    = '';
+  document.getElementById('prod-calc').innerHTML = '<span style="color:var(--text-muted)">Ingresa libras para ver el cálculo automático</span>';
+}
+
+function eliminarProduccion(id) {
+  if (!confirm('¿Eliminar este registro?')) return;
+  DB.produccion = DB.produccion.filter(p => p.id !== id);
+  DB.save();
+  renderTablaProduccion();
+  toast('Registro eliminado', 'warning');
+}
+
+function renderTablaProduccion() {
+  const tbody = document.getElementById('tabla-produccion');
+  if (!tbody) return;
+  const prods = [...DB.produccion].sort((a,b) => b.fecha.localeCompare(a.fecha));
+  if (!prods.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-muted)">Sin registros de producción.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = prods.map(p => `<tr>
+    <td class="td-mono">${p.fecha}</td>
+    <td><strong>${getRecetaNombre(p.producto_id)}</strong></td>
+    <td class="td-mono">${p.libras} lb</td>
+    <td class="td-mono"><strong>${p.panes}</strong> uds</td>
+    <td><span class="badge badge-neutral">${p.turno}</span></td>
+    <td style="color:var(--text-muted);font-size:12px">${p.notas || '—'}</td>
+    <td><button class="btn btn-danger btn-sm" onclick="eliminarProduccion('${p.id}')">🗑️</button></td>
+  </tr>`).join('');
+}
+
+function renderSelectProductos() {
+  const sel = document.getElementById('prod-producto');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Seleccionar...</option>';
+  DB.recetas.forEach(r => { sel.innerHTML += `<option value="${r.id}">${r.nombre}</option>`; });
+}
+
+function renderRecomendacionProduccion() {
+  const el = document.getElementById('prod-recomendacion');
+  if (!el || DB.recetas.length === 0) return;
+
+  el.innerHTML = DB.recetas.map(r => {
+    const rec    = calcProduccionRecomendada(r.id);
+    const libras = calcLibrasNecesarias(rec, r.peso).toFixed(2);
+    const prom   = calcVentasPromedio(r.id).toFixed(1);
+    return `
+    <div style="padding:12px 0;border-bottom:1px solid var(--border);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <strong style="font-size:13px">${r.nombre}</strong>
+        <span class="badge badge-success">✅ Recomendado</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:12px;">
+        <div><div style="color:var(--text-muted);font-size:10px;margin-bottom:2px">PROMEDIO/DÍA</div><strong class="td-mono">${prom} uds</strong></div>
+        <div><div style="color:var(--text-muted);font-size:10px;margin-bottom:2px">PRODUCIR HOY</div><strong class="td-mono" style="color:var(--crust)">${rec} uds</strong></div>
+        <div><div style="color:var(--text-muted);font-size:10px;margin-bottom:2px">LIBRAS NECES.</div><strong class="td-mono">${libras} lb</strong></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ==========================================
+   CRUD — VENTAS
+=========================================== */
+function guardarVenta() {
+  const id      = document.getElementById('venta-edit-id').value;
+  const fecha   = document.getElementById('venta-fecha').value;
+  const cliente = document.getElementById('venta-cliente').value.trim();
+  const prodId  = document.getElementById('venta-producto').value;
+  const cantidad = parseInt(document.getElementById('venta-cantidad').value);
+  const precio  = parseFloat(document.getElementById('venta-precio').value);
+  const estado  = document.getElementById('venta-estado').value;
+
+  if (!fecha || !prodId || !cantidad || !precio) {
+    toast('Completa todos los campos requeridos', 'error');
+    return;
+  }
+  if (cantidad <= 0 || precio <= 0) {
+    toast('Cantidad y precio deben ser mayores a 0', 'error');
+    return;
+  }
+
+  const venta = { fecha, cliente: cliente || 'Cliente anónimo', producto_id: prodId, cantidad, precio, estado };
+
+  if (id) {
+    const idx = DB.ventas.findIndex(v => v.id === id);
+    if (idx !== -1) DB.ventas[idx] = { ...DB.ventas[idx], ...venta };
+    toast('Pedido actualizado ✅', 'success');
+  } else {
+    DB.ventas.push({ id: uid(), ...venta });
+    toast('Pedido guardado ✅', 'success');
+  }
+
+  DB.save();
+  closeModal('modal-venta');
+  renderTablaVentas();
+  renderVentasStats();
+  actualizarBadge();
+}
+
+function eliminarVenta(id) {
+  if (!confirm('¿Eliminar este pedido?')) return;
+  DB.ventas = DB.ventas.filter(v => v.id !== id);
+  DB.save();
+  renderTablaVentas();
+  renderVentasStats();
+  toast('Pedido eliminado', 'warning');
+}
+
+function renderTablaVentas() {
+  const tbody = document.getElementById('tabla-ventas');
+  if (!tbody) return;
+  const ventas = [...DB.ventas].sort((a,b) => b.fecha.localeCompare(a.fecha));
+  if (!ventas.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:30px;color:var(--text-muted)">Sin ventas registradas.</td></tr>';
+    return;
+  }
+  const stateMap = { entregado: 'badge-success', pendiente: 'badge-warning', cancelado: 'badge-danger' };
+  tbody.innerHTML = ventas.map(v => {
+    const total = v.cantidad * v.precio;
+    return `<tr>
+      <td class="td-mono">${v.fecha}</td>
+      <td>${v.cliente}</td>
+      <td><strong>${getRecetaNombre(v.producto_id)}</strong></td>
+      <td class="td-mono">${v.cantidad} uds</td>
+      <td class="td-mono">${formatMoney(v.precio)}</td>
+      <td class="td-mono"><strong>${formatMoney(total)}</strong></td>
+      <td><span class="badge ${stateMap[v.estado] || 'badge-neutral'}">${v.estado}</span></td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="openModalSale('${v.id}')">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="eliminarVenta('${v.id}')">🗑️</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderVentasStats() {
+  const el = document.getElementById('ventas-stats');
+  if (!el) return;
+  const hoy = today();
+  const ventasHoy = DB.ventas.filter(v => v.fecha === hoy && v.estado !== 'cancelado');
+  const totalHoy  = ventasHoy.reduce((s,v) => s + v.cantidad, 0);
+  const ingrHoy   = ventasHoy.reduce((s,v) => s + v.cantidad * v.precio, 0);
+  const pendientes = DB.ventas.filter(v => v.estado === 'pendiente').length;
+
+  el.innerHTML = `
+    <div class="stat-card orange"><div class="stat-icon">🛒</div><div class="stat-label">Pedidos Hoy</div><div class="stat-value">${ventasHoy.length}</div></div>
+    <div class="stat-card green"><div class="stat-icon">🍞</div><div class="stat-label">Unidades Hoy</div><div class="stat-value">${totalHoy}</div></div>
+    <div class="stat-card yellow"><div class="stat-icon">⏳</div><div class="stat-label">Pendientes</div><div class="stat-value">${pendientes}</div></div>
+    <div class="stat-card blue" style="--color:#2980B9"><div class="stat-icon">💵</div><div class="stat-label">Ingresos Hoy</div><div class="stat-value" style="font-size:22px">${formatMoney(ingrHoy)}</div></div>
+  `;
+}
+
+/* ==========================================
+   INVENTARIO
+=========================================== */
+function renderTablaInventario() {
+  const tbody = document.getElementById('tabla-inventario');
+  if (!tbody) return;
+  if (!DB.recetas.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text-muted)">Sin productos registrados.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = DB.recetas.map(r => {
+    const inv = calcInventarioHoy(r.id);
+    const pct = inv.producido > 0 ? Math.max(0, Math.min(100, (inv.disponible / inv.producido) * 100)) : 0;
+    let estado, cls, rowCls;
+    if (inv.disponible < 0) { estado = 'FALTANTE'; cls = 'badge-danger'; rowCls = 'inv-row-danger'; }
+    else if (pct < 20)      { estado = 'BAJO STOCK'; cls = 'badge-warning'; rowCls = 'inv-row-warning'; }
+    else                    { estado = 'ÓPTIMO'; cls = 'badge-success'; rowCls = 'inv-row-success'; }
+
+    const barCls = inv.disponible < 0 ? 'red' : pct < 20 ? 'orange' : 'green';
+
+    return `<tr class="${rowCls}">
+      <td><strong>${r.nombre}</strong></td>
+      <td class="td-mono">${inv.producido}</td>
+      <td class="td-mono">${inv.vendido}</td>
+      <td class="td-mono"><strong style="color:${inv.disponible < 0 ? 'var(--red)' : 'inherit'}">${inv.disponible}</strong></td>
+      <td><span class="badge ${cls}">${estado}</span></td>
+      <td style="min-width:120px">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;font-family:'DM Mono',monospace">${pct.toFixed(0)}%</div>
+        <div class="progress-bar-wrap"><div class="progress-bar ${barCls}" style="width:${pct}%"></div></div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderInventarioStats() {
+  const el = document.getElementById('inv-stats');
+  if (!el) return;
+  let faltantes = 0, bajoStock = 0, optimo = 0;
+  DB.recetas.forEach(r => {
+    const inv = calcInventarioHoy(r.id);
+    const pct = inv.producido > 0 ? (inv.disponible / inv.producido) * 100 : 100;
+    if (inv.disponible < 0) faltantes++;
+    else if (pct < 20) bajoStock++;
+    else optimo++;
+  });
+
+  el.innerHTML = `
+    <div class="stat-card red"><div class="stat-icon">🚨</div><div class="stat-label">Con Faltantes</div><div class="stat-value">${faltantes}</div></div>
+    <div class="stat-card yellow"><div class="stat-icon">⚠️</div><div class="stat-label">Bajo Stock</div><div class="stat-value">${bajoStock}</div></div>
+    <div class="stat-card green"><div class="stat-icon">✅</div><div class="stat-label">Óptimo</div><div class="stat-value">${optimo}</div></div>
+    <div class="stat-card orange"><div class="stat-icon">📦</div><div class="stat-label">Total Productos</div><div class="stat-value">${DB.recetas.length}</div></div>
+  `;
+}
+
+function actualizarBadge() {
+  let faltantes = 0;
+  DB.recetas.forEach(r => {
+    if (calcInventarioHoy(r.id).disponible < 0) faltantes++;
+  });
+  const badge = document.getElementById('badge-inventario');
+  if (badge) {
+    badge.textContent = faltantes;
+    badge.classList.toggle('show', faltantes > 0);
+  }
+}
+
+/* ==========================================
+   FLUJO DE CAJA
+=========================================== */
+let chartFlujoInstance = null;
+
+function renderFlujo() {
+  const dias = last7Days();
+  const stats = dias.map(d => ({ fecha: d, ...calcFlujoDia(d) }));
+
+  const totalIngr  = stats.reduce((s,d) => s + d.ingresos, 0);
+  const totalCosto = stats.reduce((s,d) => s + d.costos, 0);
+  const totalUtil  = stats.reduce((s,d) => s + d.utilidad, 0);
+  const margenProm = totalIngr > 0 ? (totalUtil / totalIngr * 100) : 0;
+
+  const el = document.getElementById('flujo-stats');
+  if (el) {
+    el.innerHTML = `
+      <div class="cf-card"><div class="cf-icon">📈</div><div class="cf-label">Ingresos 7 días</div><div class="cf-value positive">${formatMoney(totalIngr)}</div></div>
+      <div class="cf-card"><div class="cf-icon">📉</div><div class="cf-label">Costos 7 días</div><div class="cf-value negative">${formatMoney(totalCosto)}</div></div>
+      <div class="cf-card"><div class="cf-icon">💰</div><div class="cf-label">Utilidad 7 días</div><div class="cf-value ${totalUtil>=0?'positive':'negative'}">${formatMoney(totalUtil)}</div></div>
+      <div class="cf-card"><div class="cf-icon">📊</div><div class="cf-label">Margen Promedio</div><div class="cf-value">${margenProm.toFixed(1)}%</div></div>
+    `;
+  }
+
+  const tbody = document.getElementById('tabla-flujo');
+  if (tbody) {
+    tbody.innerHTML = [...stats].reverse().map(d => `<tr>
+      <td class="td-mono">${d.fecha}</td>
+      <td class="td-mono" style="color:var(--green)">${formatMoney(d.ingresos)}</td>
+      <td class="td-mono" style="color:var(--red)">${formatMoney(d.costos)}</td>
+      <td class="td-mono" style="color:${d.utilidad>=0?'var(--green)':'var(--red)'}"><strong>${formatMoney(d.utilidad)}</strong></td>
+      <td><span class="badge ${d.margen>=30?'badge-success':d.margen>=15?'badge-warning':'badge-danger'}">${d.margen.toFixed(1)}%</span></td>
+    </tr>`).join('');
+  }
+
+  // Chart Flujo
+  const ctx = document.getElementById('chartFlujo');
+  if (ctx) {
+    if (chartFlujoInstance) chartFlujoInstance.destroy();
+    chartFlujoInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: dias.map(d => d.slice(5)),
+        datasets: [
+          { label: 'Ingresos', data: stats.map(d => +d.ingresos.toFixed(2)), backgroundColor: 'rgba(61,122,90,0.7)', borderRadius: 6 },
+          { label: 'Costos',   data: stats.map(d => +d.costos.toFixed(2)),   backgroundColor: 'rgba(192,57,43,0.7)',  borderRadius: 6 },
+          { label: 'Utilidad', data: stats.map(d => +d.utilidad.toFixed(2)), backgroundColor: 'rgba(200,114,42,0.8)', borderRadius: 6 },
+        ]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { x: { grid: { display: false } }, y: { grid: { color: 'rgba(0,0,0,0.05)' } } } }
+    });
+  }
+}
+
+/* ==========================================
+   ANÁLISIS INTELIGENTE
+=========================================== */
+function renderAnalisis() {
+  const el = document.getElementById('analisis-content');
+  if (!el || DB.recetas.length === 0) {
+    el.innerHTML = '<div class="card"><div class="empty-state"><div class="empty-icon">📖</div><p>Agrega recetas primero para ver el análisis.</p></div></div>';
+    return;
+  }
+
+  let html = '';
+
+  DB.recetas.forEach(r => {
+    const prom   = calcVentasPromedio(r.id);
+    const rec    = calcProduccionRecomendada(r.id);
+    const libras = calcLibrasNecesarias(rec, r.peso).toFixed(2);
+    const cu     = calcCostoUnitario(r.costo, r.cantidad);
+    const inv    = calcInventarioHoy(r.id);
+    const ppl    = calcPanesPorLibra(r.peso).toFixed(1);
+
+    const utilDia = prom * (r.precio - cu);
+    const estado  = inv.disponible < 0 ? 'danger' : (inv.disponible / Math.max(inv.producido, 1)) < 0.2 ? 'warning' : 'success';
+
+    html += `
+    <div class="recommendation-box" style="margin-bottom:20px;">
+      <h3>🥖 ${r.nombre}</h3>
+      <div class="rec-value">${rec} <span style="font-size:18px;opacity:0.8">unidades</span></div>
+      <p>Producción recomendada para mañana (promedio ${prom.toFixed(1)}/día + 10% margen)</p>
+      <div class="rec-grid">
+        <div class="rec-item">
+          <div class="ri-label">Libras a usar</div>
+          <div class="ri-val">${libras} lb</div>
+        </div>
+        <div class="rec-item">
+          <div class="ri-label">Panes/libra</div>
+          <div class="ri-val">${ppl}</div>
+        </div>
+        <div class="rec-item">
+          <div class="ri-label">Utilidad estimada</div>
+          <div class="ri-val">${formatMoney(utilDia)}</div>
+        </div>
+      </div>
+    </div>
+    <div class="grid-3" style="margin-bottom:20px;">
+      <div class="stat-card orange">
+        <div class="stat-label">Costo Unitario</div>
+        <div class="stat-value" style="font-size:22px">${formatMoney(cu)}</div>
+        <div class="stat-sub">Precio venta: ${formatMoney(r.precio)}</div>
+      </div>
+      <div class="stat-card ${estado === 'success' ? 'green' : estado === 'warning' ? 'yellow' : 'red'}">
+        <div class="stat-label">Inventario Hoy</div>
+        <div class="stat-value" style="font-size:22px">${inv.disponible}</div>
+        <div class="stat-sub">${inv.producido} producidos — ${inv.vendido} vendidos</div>
+      </div>
+      <div class="stat-card blue">
+        <div class="stat-label">Venta Promedio/día</div>
+        <div class="stat-value" style="font-size:22px">${prom.toFixed(0)}</div>
+        <div class="stat-sub">Últimos 7 días</div>
+      </div>
+    </div>
+    <div class="divider"></div>`;
+  });
+
+  el.innerHTML = html;
+}
+
+/* ==========================================
+   DASHBOARD
+=========================================== */
+let chartPVInstance = null;
+let chartTendInstance = null;
+let chartProdInstance = null;
+
+function renderDashboard() {
+  const hoy    = today();
+  const dias   = last7Days();
+
+  // Stats globales
+  const ventasHoy  = DB.ventas.filter(v => v.fecha === hoy && v.estado !== 'cancelado');
+  const prodHoy    = DB.produccion.filter(p => p.fecha === hoy);
+  const totalVUds  = ventasHoy.reduce((s,v) => s + v.cantidad, 0);
+  const totalPUds  = prodHoy.reduce((s,p) => s + p.panes, 0);
+  const ingrHoy    = ventasHoy.reduce((s,v) => s + v.cantidad * v.precio, 0);
+  const flujoHoy   = calcFlujoDia(hoy);
+
+  document.getElementById('dash-stats').innerHTML = `
+    <div class="stat-card orange"><div class="stat-icon">🏭</div><div class="stat-label">Producido Hoy</div><div class="stat-value">${totalPUds}</div><div class="stat-sub">unidades</div></div>
+    <div class="stat-card green"><div class="stat-icon">🛒</div><div class="stat-label">Vendido Hoy</div><div class="stat-value">${totalVUds}</div><div class="stat-sub">unidades</div></div>
+    <div class="stat-card ${totalPUds - totalVUds < 0 ? 'red' : 'blue'}"><div class="stat-icon">📦</div><div class="stat-label">Inventario Hoy</div><div class="stat-value">${totalPUds - totalVUds}</div><div class="stat-sub">disponible</div></div>
+    <div class="stat-card yellow"><div class="stat-icon">💰</div><div class="stat-label">Utilidad Hoy</div><div class="stat-value" style="font-size:20px">${formatMoney(flujoHoy.utilidad)}</div><div class="stat-sub">margen ${flujoHoy.margen.toFixed(1)}%</div></div>
+  `;
+
+  // Alertas
+  const alertsEl = document.getElementById('dashboard-alerts');
+  const alerts = [];
+  DB.recetas.forEach(r => {
+    const inv = calcInventarioHoy(r.id);
+    const pct = inv.producido > 0 ? (inv.disponible / inv.producido) * 100 : 100;
+    if (inv.disponible < 0)      alerts.push({ type: 'danger',  text: r.nombre, qty: `${Math.abs(inv.disponible)} FALTANTE` });
+    else if (pct < 20)           alerts.push({ type: 'warning', text: r.nombre, qty: `${inv.disponible} restantes` });
+    else                         alerts.push({ type: 'success', text: r.nombre, qty: `${inv.disponible} ok` });
+  });
+
+  if (!alerts.length) {
+    alertsEl.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin alertas</p></div>';
+  } else {
+    alertsEl.innerHTML = '<div class="alert-list">' + alerts.map(a => `
+      <div class="alert-item ${a.type}">
+        <span class="alert-dot"></span>
+        <span class="alert-info">${a.text}</span>
+        <span class="alert-qty">${a.qty}</span>
+      </div>`).join('') + '</div>';
+  }
+
+  // Chart Prod vs Ventas
+  const pvLabels = dias.map(d => d.slice(5));
+  const pvProd   = dias.map(d => DB.produccion.filter(p => p.fecha === d).reduce((s,p) => s + p.panes, 0));
+  const pvVentas = dias.map(d => DB.ventas.filter(v => v.fecha === d && v.estado !== 'cancelado').reduce((s,v) => s + v.cantidad, 0));
+
+  const ctxPV = document.getElementById('chartProdVentas');
+  if (ctxPV) {
+    if (chartPVInstance) chartPVInstance.destroy();
+    chartPVInstance = new Chart(ctxPV, {
+      type: 'line',
+      data: {
+        labels: pvLabels,
+        datasets: [
+          { label: 'Producción', data: pvProd,   borderColor: '#C8722A', backgroundColor: 'rgba(200,114,42,0.1)', fill: true, tension: 0.4, pointRadius: 4 },
+          { label: 'Ventas',     data: pvVentas, borderColor: '#3D7A5A', backgroundColor: 'rgba(61,122,90,0.1)',  fill: true, tension: 0.4, pointRadius: 4 },
+        ]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } } } }
+    });
+  }
+
+  // Chart Tendencia Semanal
+  const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const tendencia = Array(7).fill(0);
+  const tendCount = Array(7).fill(0);
+  DB.ventas.filter(v => v.estado !== 'cancelado').forEach(v => {
+    const d = new Date(v.fecha + 'T00:00:00');
+    tendencia[d.getDay()] += v.cantidad;
+    tendCount[d.getDay()]++;
+  });
+  const tendPromedio = tendencia.map((t, i) => tendCount[i] > 0 ? +(t / tendCount[i]).toFixed(1) : 0);
+
+  const ctxTend = document.getElementById('chartTendencia');
+  if (ctxTend) {
+    if (chartTendInstance) chartTendInstance.destroy();
+    chartTendInstance = new Chart(ctxTend, {
+      type: 'bar',
+      data: {
+        labels: dayNames,
+        datasets: [{ label: 'Ventas promedio', data: tendPromedio, backgroundColor: dias.map((d, i) => new Date(d + 'T00:00:00').getDay() === new Date().getDay() ? '#C8722A' : 'rgba(200,114,42,0.35)'), borderRadius: 8 }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } } } }
+    });
+  }
+
+  // Chart Top Productos
+  const prodTotals = DB.recetas.map(r => ({
+    nombre: r.nombre,
+    total: DB.ventas.filter(v => v.producto_id === r.id && v.estado !== 'cancelado').reduce((s,v) => s + v.cantidad, 0)
+  })).sort((a,b) => b.total - a.total);
+
+  const ctxProd = document.getElementById('chartProductos');
+  if (ctxProd) {
+    if (chartProdInstance) chartProdInstance.destroy();
+    chartProdInstance = new Chart(ctxProd, {
+      type: 'doughnut',
+      data: {
+        labels: prodTotals.map(p => p.nombre),
+        datasets: [{ data: prodTotals.map(p => p.total), backgroundColor: ['#C8722A','#3D7A5A','#D4A017','#2980B9','#8E44AD'], borderWidth: 0, hoverOffset: 8 }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, cutout: '65%' }
+    });
+  }
+
+  actualizarBadge();
+}
+
+/* ==========================================
+   REFRESCO GLOBAL
+=========================================== */
+function refreshData() {
+  const current = document.querySelector('.nav-item.active')?.dataset.page || 'dashboard';
+  renderPage(current);
+  toast('Datos actualizados', 'success');
+}
+
+/* ==========================================
+   INICIALIZACIÓN
+=========================================== */
+function init() {
+  // Fecha actual en topbar
+  const d = new Date();
+  document.getElementById('page-date').textContent = d.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+  // Cargar datos
+  DB.load();
+
+  // Inputs de fecha por defecto
+  document.getElementById('prod-fecha').value = today();
+  document.getElementById('venta-fecha').value = today();
+
+  // Render inicial
+  renderDashboard();
+  actualizarBadge();
+
+  // Shortcut teclado: Escape cierra modales
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', init);
+
+</script>
+</body>
+</html>
