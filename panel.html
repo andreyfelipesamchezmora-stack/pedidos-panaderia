@@ -1557,9 +1557,36 @@ async function eliminar(id,nombre){
 }
 
 function nuevoCliente(){
-  let nombre=prompt("Nombre:");
-  let tipo=prompt("moto / auto / recoge / lejano");
-  if(nombre){clientes.push({nombre,tipo});localStorage.setItem("clientes",JSON.stringify(clientes));cargar();}
+  let nombre=prompt("Nombre del nuevo cliente:");
+  if(!nombre||!nombre.trim()){return;}
+  nombre=nombre.trim();
+  let tipo=prompt("Tipo de ruta:\nmoto / auto / recoge / lejano")||"moto";
+  tipo=tipo.trim().toLowerCase();
+  if(!["moto","auto","recoge","lejano"].includes(tipo))tipo="moto";
+
+  // Evitar duplicados
+  if(clientes.find(function(c){return c.nombre.toUpperCase()===nombre.toUpperCase();})){
+    alert("El cliente '"+nombre+"' ya existe.");return;
+  }
+
+  // Agregar al array en memoria y a _clientesBase (para que el recaudo lo ordene)
+  var nuevoObj={nombre:nombre,tipo:tipo};
+  clientes.push(nuevoObj);
+  window.clientes=clientes;
+  // Añadir también a _clientesBase para que el panel recaudo lo reconozca en orden
+  if(typeof _clientesBase!=='undefined'&&Array.isArray(_clientesBase)){
+    if(!_clientesBase.find(function(c){return c.nombre.toUpperCase()===nombre.toUpperCase();})){
+      _clientesBase.push(nuevoObj);
+    }
+  }
+
+  // Persistir en localStorage
+  try{localStorage.setItem("clientes",JSON.stringify(clientes));}catch(e){}
+
+  // Sincronizar con Supabase si está disponible
+  try{if(window.SyncForzarSubirPanel)setTimeout(window.SyncForzarSubirPanel,800);}catch(e){}
+
+  cargar();
 }
 
 function filtrar(txt){
@@ -6604,7 +6631,8 @@ window.actualizarMarquee = function(){
       +'</span>';
   }).join('');
 
-  marquee.innerHTML='<div class="obs-marquee-track" id="_obsTrack">'+itemsHTML+'</div>';
+  // Duplicar el contenido para loop infinito sin salto visible
+  marquee.innerHTML='<div class="obs-marquee-track" id="_obsTrack">'+itemsHTML+itemsHTML+'</div>';
 
   // Esperar 2 frames para que el browser mida el ancho real del track
   requestAnimationFrame(function(){
@@ -6612,27 +6640,27 @@ window.actualizarMarquee = function(){
       var track=document.getElementById('_obsTrack');
       if(!track)return;
 
-      var cW=marquee.offsetWidth;   // ancho visible del contenedor
-      var tW=track.scrollWidth;     // ancho total del contenido
+      var tW=track.scrollWidth;     // ancho total (contenido duplicado)
+      var halfW=tW/2;               // ancho de UNA copia del contenido
 
-      if(cW<=0||tW<=0)return;
+      if(halfW<=0)return;
 
-      // Recorrido total: entra desde la derecha (cW) + sale por la izquierda (tW)
-      var totalPx=cW+tW;
-      var speed=100; // px/s \u2014 sube para m\u00e1s r\u00e1pido, baja para m\u00e1s lento
-      var dur=(totalPx/speed).toFixed(2);
+      // Velocidad: px/s
+      var speed=100;
+      var dur=(halfW/speed).toFixed(2);
 
-      // Keyframes con p\u00edxeles exactos: empieza FUERA A LA DERECHA, termina FUERA A LA IZQUIERDA
-      // El reset del loop (saltar de -tW a +cW) ocurre fuera de pantalla \u2192 invisible
+      // Keyframe: empieza en 0, avanza exactamente halfW (una copia completa)
+      // Al llegar a -halfW el browser hace el reset al 0 → pero como el contenido
+      // está duplicado, la imagen es idéntica → salto 100% invisible
       var kfId='_obsKF';
       var old=document.getElementById(kfId);
       if(old)old.remove();
       var kfStyle=document.createElement('style');
       kfStyle.id=kfId;
-      kfStyle.textContent='@keyframes _obsScroll{from{transform:translateX('+cW+'px)}to{transform:translateX(-'+tW+'px)}}';
+      kfStyle.textContent='@keyframes _obsScroll{from{transform:translateX(0)}to{transform:translateX(-'+halfW+'px)}}';
       document.head.appendChild(kfStyle);
 
-      // Aplicar animaci\u00f3n \u2014 force reflow antes para reiniciar limpiamente
+      // Aplicar animación — force reflow antes para reiniciar limpiamente
       track.style.animation='none';
       void track.offsetWidth; // reflow
       track.style.animation='_obsScroll '+dur+'s linear infinite';
