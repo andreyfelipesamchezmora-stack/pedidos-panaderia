@@ -1295,39 +1295,55 @@ let _clientesBase = [
     {nombre:"CAMBULOS",tipo:"lejano"},{nombre:"LA CORUÑA",tipo:"lejano"},{nombre:"RUTH",tipo:"lejano"}
 ];
 
-// MERGE base hardcoded + guardados en localStorage (sin duplicar, conservando todo).
-// 🛡️ PRIORIDAD AL ORDEN GUARDADO DEL USUARIO. Si el usuario reordenó los clientes
-// (drag & drop), ese orden se respeta. _clientesBase solo aporta datos de clientes
-// que falten pero NO cambia el orden si ya hay un orden guardado.
+// MERGE base hardcoded + guardados en localStorage.
+// Lógica inteligente: si localStorage tiene al menos el 80% de los clientes de
+// _clientesBase, se respeta ese orden (drag & drop del usuario).
+// Si localStorage está incompleto/viejo, se usa _clientesBase como orden base
+// y se agregan al final los clientes extras.
 (function(){
-  var lsGuardados = _clientesGuardados; // ya cargados arriba
+  var lsGuardados = _clientesGuardados;
 
-  // Si hay clientes guardados con orden del usuario, usarlos directamente como base
-  if(Array.isArray(lsGuardados) && lsGuardados.length > 0){
-    // El usuario tiene su propio orden — respetarlo completamente
-    var mapa = {};
-    var orden = [];
+  // Contar coincidencias entre lsGuardados y _clientesBase
+  var baseSet = {};
+  _clientesBase.forEach(function(c){ if(c&&c.nombre) baseSet[c.nombre.toUpperCase().trim()]=true; });
+  var lsSet = {};
+  (lsGuardados||[]).forEach(function(c){
+    var n = c&&c.nombre ? c.nombre.toUpperCase().trim() : '';
+    if(n) lsSet[n]=true;
+  });
+  var coincidencias = Object.keys(baseSet).filter(function(n){ return lsSet[n]; }).length;
+  var useLS = (lsGuardados&&lsGuardados.length>0 && coincidencias >= _clientesBase.length * 0.8);
+
+  var mapa = {};
+  var orden = [];
+
+  if(useLS){
+    // El usuario tiene su propio orden con suficientes clientes — respetarlo
     lsGuardados.forEach(function(c){
       if(c && c.nombre && !mapa[c.nombre]){ mapa[c.nombre] = c; orden.push(c.nombre); }
     });
-    // Solo agregar clientes de _clientesBase que NO estén en el guardado (sin cambiar orden)
+    // Agregar clientes de _clientesBase que falten al final
     _clientesBase.forEach(function(c){
-      if(c && c.nombre && !mapa[c.nombre]){
+      if(c && c.nombre && !mapa[c.nombre]){ mapa[c.nombre] = c; orden.push(c.nombre); }
+    });
+  } else {
+    // Orden incompleto/viejo o vacío — usar _clientesBase como base
+    _clientesBase.forEach(function(c){
+      if(c && c.nombre && !mapa[c.nombre]){ mapa[c.nombre] = c; orden.push(c.nombre); }
+    });
+    // Aplicar datos extras de localStorage (sin cambiar orden)
+    (lsGuardados||[]).forEach(function(c){
+      if(!c || !c.nombre) return;
+      if(mapa[c.nombre]){
+        mapa[c.nombre] = Object.assign({}, mapa[c.nombre], c);
+      } else {
         mapa[c.nombre] = c;
         orden.push(c.nombre);
       }
     });
-    clientes = orden.map(function(n){ return mapa[n]; });
-  } else {
-    // No hay orden guardado — usar _clientesBase como orden inicial
-    var mapa = {};
-    var orden = [];
-    _clientesBase.forEach(function(c){
-      if(c && c.nombre && !mapa[c.nombre]){ mapa[c.nombre] = c; orden.push(c.nombre); }
-    });
-    clientes = orden.map(function(n){ return mapa[n]; });
   }
 
+  clientes = orden.map(function(n){ return mapa[n]; });
   try { window.clientes = clientes; } catch(e){}
   try { localStorage.setItem("clientes", JSON.stringify(clientes)); } catch(e){}
 })();
@@ -14388,51 +14404,77 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
 </script>
 <script>
 // ================================================================
-// ORDEN RESPETANDO AL USUARIO — localStorage tiene prioridad sobre
-// _clientesBase para que el drag & drop del usuario se respete.
+// ORDEN RESPETANDO AL USUARIO — _clientesBase define qué clientes
+// existen, pero si el usuario los reordenó con drag & drop, ese
+// orden personalizado se respeta encima del orden base.
 // ================================================================
 (function(){
   'use strict';
 
-  // ── 1. MAPA DE POSICIÓN — prioriza localStorage (orden del usuario) ──
+  // ── 1. MAPA DE POSICIÓN — combina base + drag & drop del usuario ──
   function _buildPosMap(){
     var mapa = {};
     var idx  = 0;
 
-    // Fuente 1: localStorage 'clientes' — contiene el orden personalizado del usuario (drag & drop)
-    try {
-      var lsC = JSON.parse(localStorage.getItem('clientes')||'[]');
-      if(Array.isArray(lsC) && lsC.length > 0){
-        lsC.forEach(function(c){
-          var n = (typeof c === 'string' ? c : (c && c.nombre ? c.nombre : '')).toUpperCase().trim();
-          if(n && mapa[n] === undefined){ mapa[n] = idx++; }
-        });
-        // Si hay orden guardado del usuario, retornar directamente
-        if(idx > 0) return mapa;
-      }
-    } catch(e){}
+    // Paso 1: construir lista maestra en orden correcto.
+    // El orden correcto = orden de localStorage si existe, sino _clientesBase.
+    // PERO: si localStorage tiene MENOS clientes que _clientesBase,
+    // significa que es un orden viejo/incompleto → usar _clientesBase como base
+    // y solo reordenar los clientes que aparezcan en ambos.
 
-    // Fuente 2 (fallback): _clientesBase — solo si localStorage está vacío
+    var baseNombres = [];
     try {
       if(typeof _clientesBase !== 'undefined' && Array.isArray(_clientesBase)){
         _clientesBase.forEach(function(c){
-          var n = (c && c.nombre ? c.nombre : '').toUpperCase().trim();
-          if(n && mapa[n] === undefined){ mapa[n] = idx++; }
+          if(c && c.nombre) baseNombres.push(c.nombre.toUpperCase().trim());
         });
       }
     } catch(e){}
 
-    // Fuente 3: window.clientes — por si hay clientes nuevos agregados después
+    var lsNombres = [];
     try {
-      var wc = window.clientes;
-      if(Array.isArray(wc)){
-        wc.forEach(function(c){
+      var lsC = JSON.parse(localStorage.getItem('clientes')||'[]');
+      if(Array.isArray(lsC)){
+        lsC.forEach(function(c){
           var n = (typeof c === 'string' ? c : (c && c.nombre ? c.nombre : '')).toUpperCase().trim();
-          if(n && mapa[n] === undefined){ mapa[n] = idx++; }
+          if(n) lsNombres.push(n);
         });
       }
     } catch(e){}
 
+    // Si localStorage tiene el mismo conjunto de clientes que _clientesBase
+    // (o más, por clientes nuevos agregados), usar ese orden (drag & drop).
+    // Si localStorage tiene MENOS (orden viejo/incompleto), usar _clientesBase.
+    var baseSet = {};
+    baseNombres.forEach(function(n){ baseSet[n] = true; });
+    var lsSet = {};
+    lsNombres.forEach(function(n){ lsSet[n] = true; });
+
+    // Contar cuántos de _clientesBase están en localStorage
+    var coincidencias = baseNombres.filter(function(n){ return lsSet[n]; }).length;
+    var useLS = (lsNombres.length > 0 && coincidencias >= baseNombres.length * 0.8);
+
+    var ordenFinal = useLS ? lsNombres : baseNombres;
+
+    // Agregar al final cualquier cliente extra que no esté en el orden elegido
+    var enOrden = {};
+    ordenFinal.forEach(function(n){ enOrden[n] = true; });
+
+    // Si usamos _clientesBase, agregar los extras de localStorage al final
+    if(!useLS){
+      lsNombres.forEach(function(n){ if(!enOrden[n]){ ordenFinal.push(n); enOrden[n]=true; } });
+    }
+    // Agregar los de window.clientes que tampoco estén
+    try {
+      if(Array.isArray(window.clientes)){
+        window.clientes.forEach(function(c){
+          var n = (typeof c==='string'?c:(c&&c.nombre?c.nombre:'')).toUpperCase().trim();
+          if(n && !enOrden[n]){ ordenFinal.push(n); enOrden[n]=true; }
+        });
+      }
+    } catch(e){}
+
+    ordenFinal.forEach(function(n){ if(mapa[n]===undefined) mapa[n] = idx++; });
     return mapa;
   }
 
