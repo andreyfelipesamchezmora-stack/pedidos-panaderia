@@ -14308,11 +14308,209 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
   console.log('✅ PARCHE FIX CARTERA+RECAUDO aplicado — historial rápido, ✕ funcional, todos los clientes, recaudo actualiza siempre');
 })();
 </script>
+<script>
+(function(){
+  'use strict';
+
+  // ── FORZAR CARTERA ──────────────────────────────────────────────
+  function _vnForzarCartera(){
+    var rC = window.renderCartera;
+    if(rC && typeof rC.__force === 'function') rC.__force();
+    else if(typeof rC === 'function') rC();
+  }
+  window._vnForzarCartera = _vnForzarCartera;
+
+  // ── FORZAR RECAUDO (ignora anti-titileo) ───────────────────────
+  function _vnForzarRecaudo(){
+    var rR = window.renderRecaudo;
+    if(rR && typeof rR.__force === 'function'){
+      rR.__force();
+    } else if(typeof rR === 'function'){
+      try {
+        var hoy = new Date().toISOString().slice(0,10);
+        var key = 'recaudo_' + hoy;
+        var obj = {};
+        try { obj = JSON.parse(localStorage.getItem(key)||'{}'); } catch(e){}
+        obj.__forceRender = Date.now();
+        localStorage.setItem(key, JSON.stringify(obj));
+      } catch(e){}
+      rR();
+    }
+  }
+  window._vnForzarRecaudo = _vnForzarRecaudo;
+
+  // ── ORDEN CANÓNICO DE CLIENTES ──────────────────────────────────
+  function _vnOrdenCanonicoClientes(){
+    var todos = [], vistos = {};
+    function agregar(arr){
+      if(!Array.isArray(arr)) return;
+      arr.forEach(function(c){
+        var n = typeof c === 'string' ? c.trim() : (c && c.nombre ? c.nombre.trim() : '');
+        if(n && !vistos[n.toUpperCase()]){ vistos[n.toUpperCase()] = true; todos.push(n); }
+      });
+    }
+    try { if(typeof _clientesBase !== 'undefined') agregar(_clientesBase); } catch(e){}
+    agregar(window.clientes);
+    try { agregar(JSON.parse(localStorage.getItem('clientes')||'[]')); } catch(e){}
+    return todos;
+  }
+
+  // ── FIX 1: RESET DEFINITIVO CON ORDEN CORRECTO ─────────────────
+  window._vnResetRecaudo = function(){
+    if(!confirm('¿Limpiar checkboxes del día?\n\nSe conservan montos y datos de deuda.')) return;
+    var hoyStr = (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10);
+    var fk = 'recaudo_' + hoyStr;
+    var estadoActual = {};
+    try { estadoActual = JSON.parse(localStorage.getItem(fk)||'{}'); } catch(e){}
+    var orden = _vnOrdenCanonicoClientes();
+    var nuevoEstado = {};
+
+    // Primero: clientes en orden canónico del panel principal
+    orden.forEach(function(nombre){
+      var prev = estadoActual[nombre] || {};
+      nuevoEstado[nombre] = Object.assign({}, prev, {
+        recaudoDomi: 0,
+        recibido: false,
+        domiIncluirDeuda: false,
+        domiIncluirDeudaMia: false
+      });
+    });
+
+    // Segundo: clientes extras (nuevos, no están en la base) — van al final
+    Object.keys(estadoActual).forEach(function(nombre){
+      if(nombre.startsWith('__') || nuevoEstado[nombre]) return;
+      var prev = estadoActual[nombre] || {};
+      nuevoEstado[nombre] = Object.assign({}, prev, {
+        recaudoDomi: 0,
+        recibido: false,
+        domiIncluirDeuda: false,
+        domiIncluirDeudaMia: false
+      });
+    });
+
+    // Invalidar caché anti-titileo
+    nuevoEstado.__forceRender = Date.now();
+    localStorage.setItem(fk, JSON.stringify(nuevoEstado));
+    _vnForzarRecaudo();
+  };
+
+  // ── PARCHAR BOTÓN RESET ─────────────────────────────────────────
+  function _vnParchearBotonReset(){
+    var btn = document.getElementById('btnResetRecaudo');
+    if(btn){
+      btn.onclick = function(){ window._vnResetRecaudo(); };
+      return true;
+    }
+    return false;
+  }
+
+  var _rpi = 0;
+  var _rpiv = setInterval(function(){
+    _rpi++;
+    if(_vnParchearBotonReset() || _rpi > 60) clearInterval(_rpiv);
+  }, 300);
+
+  // ── FIX 2: Re-parchar después de cada render (botón se recrea) ──
+  var _origRRfinal = window.renderRecaudo;
+  window.renderRecaudo = async function(){
+    if(typeof _origRRfinal === 'function') await _origRRfinal.apply(this, arguments);
+    setTimeout(_vnParchearBotonReset, 500);
+  };
+
+  // ── FIX 3: guardarEstado invalida caché anti-titileo ───────────
+  if(typeof window.recaudoGuardarEstado === 'function'){
+    var _origRGE = window.recaudoGuardarEstado;
+    window.recaudoGuardarEstado = function(obj){
+      if(obj && typeof obj === 'object') obj.__forceRender = Date.now();
+      _origRGE.call(this, obj);
+    };
+  }
+
+  // ── FIX 4: abrirRecaudo fuerza render limpio al abrir ───────────
+  var _origAbrirRecaudo = window.abrirRecaudo;
+  window.abrirRecaudo = async function(){
+    if(typeof _origAbrirRecaudo === 'function') await _origAbrirRecaudo.apply(this, arguments);
+    setTimeout(function(){ _vnForzarRecaudo(); }, 200);
+  };
+
+  // ── FIX 5: vnDeudaEliminar ✕ historial — escape correcto ────────
+  window.vnDeudaEliminar = function(nombre, id){
+    if(!confirm('¿Eliminar esta línea del historial?')) return;
+    var DK2 = 'vn_deudas_v20';
+    var d;
+    try { d = JSON.parse(localStorage.getItem(DK2)||'{}'); } catch(e){ d = {}; }
+    if(!d[nombre]) return;
+    try { localStorage.setItem('vn_deudas_bk_'+Date.now(), JSON.stringify(d)); } catch(e){}
+    d[nombre].h = (d[nombre].h || []).filter(function(x){ return x.id !== id; });
+    var sc = 0, sm = 0;
+    d[nombre].h.forEach(function(x){
+      if(x.tipo === 'saldo_ini'){
+        if(x.sub === 'cliente') sc = Number(x.monto)||0;
+        else sm = Number(x.monto)||0;
+      } else if(x.tipo === 'edicion'){
+        var m = (x.nota||'').match(/debe=(\d+).*debo=(\d+)/);
+        if(m){ sc = Number(m[1])||0; sm = Number(m[2])||0; }
+      } else if(x.tipo === 'deuda'){
+        if(x.sub === 'cliente') sc += Number(x.monto)||0;
+        else sm += Number(x.monto)||0;
+      } else if(x.tipo === 'pago'){
+        if(x.sub === 'cliente') sc = Math.max(sc-(Number(x.monto)||0), 0);
+        else sm = Math.max(sm-(Number(x.monto)||0), 0);
+      }
+    });
+    d[nombre].sc = sc; d[nombre].sm = sm;
+    localStorage.setItem(DK2, JSON.stringify(d));
+    _vnForzarCartera();
+  };
+
+  // ── FIX 6: select clientes Cartera — incluir TODOS ─────────────
+  var _origRenderCartera = window.renderCartera;
+  window.renderCartera = async function(filtroMora, filtroNombre){
+    if(typeof _origRenderCartera === 'function'){
+      await _origRenderCartera.apply(this, arguments);
+    }
+    setTimeout(function(){
+      var sel = document.getElementById('vnCartClienteSel');
+      if(!sel) return;
+      var todosNombres = {};
+      try { if(typeof _clientesBase !== 'undefined' && Array.isArray(_clientesBase))
+        _clientesBase.forEach(function(c){ if(c && c.nombre) todosNombres[c.nombre] = true; });
+      } catch(e){}
+      if(Array.isArray(window.clientes))
+        window.clientes.forEach(function(c){
+          var n = typeof c==='string'?c:(c&&c.nombre?c.nombre:'');
+          if(n) todosNombres[n] = true;
+        });
+      try { var lsC=JSON.parse(localStorage.getItem('clientes')||'[]');
+        if(Array.isArray(lsC)) lsC.forEach(function(c){
+          var n=typeof c==='string'?c:(c&&c.nombre?c.nombre:''); if(n) todosNombres[n]=true;
+        });
+      } catch(e){}
+      try { var vnd=JSON.parse(localStorage.getItem('vn_deudas_v20')||'{}');
+        Object.keys(vnd).forEach(function(n){ if(n) todosNombres[n]=true; });
+      } catch(e){}
+      var lista = Object.keys(todosNombres).sort(function(a,b){ return a.localeCompare(b,'es'); });
+      var selActual = sel.value || window._vnCarteraClienteSel || '';
+      var optsHtml = '<option value="">— Seleccionar cliente —</option>';
+      lista.forEach(function(n){
+        optsHtml += '<option value="'+n.replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'"'+(n===selActual?' selected':'')+'>'+n.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</option>';
+      });
+      sel.innerHTML = optsHtml;
+      if(selActual) sel.value = selActual;
+    }, 60);
+  };
+
+  // ── FIX 7: abrirCartera fuerza render limpio ────────────────────
+  var _origAbrirCartera = window.abrirCartera;
+  window.abrirCartera = function(){
+    if(typeof _origAbrirCartera === 'function') _origAbrirCartera.apply(this, arguments);
+    setTimeout(function(){ _vnForzarCartera(); }, 80);
+  };
+
+  console.log('✅ PARCHE DEFINITIVO: Reset ordenado + ✕ historial + todos los clientes + recaudo siempre actualiza');
+})();
+</script>
 <div id="mcOverlayGlobal" style="display:none;">
-  <div id="mcBoxGlobal"></div>
-</div>
-</body>
-</html>
   <div id="mcBoxGlobal"></div>
 </div>
 </body>
