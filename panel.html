@@ -4005,38 +4005,48 @@ async function renderCartera(filtroMora, filtroNombre) {
   filtroMora = filtroMora || 'todos';
   filtroNombre = filtroNombre || '';
 
-  // Use setTimeout to allow UI to render the loading skeleton before blocking operations
-  await new Promise(resolve => setTimeout(resolve, 10));
+  // Cargar todos los datos de localStorage UNA SOLA VEZ para optimizar
+  let localStorageData = {};
+  try {
+    localStorageData.vnDeudas = JSON.parse(localStorage.getItem('vn_deudas_v20') || '{}');
+    localStorageData.clientes = JSON.parse(localStorage.getItem('clientes') || '[]');
+    localStorageData.recaudoEstado = JSON.parse(localStorage.getItem('recaudoEstado') || '{}');
+  } catch(e) {
+    localStorageData.vnDeudas = {};
+    localStorageData.clientes = [];
+    localStorageData.recaudoEstado = {};
+  }
 
   let lista = await carteraCargarDatos();
- 
+
   let listaFiltrada = lista.slice();
   if (filtroMora === '0-30')  listaFiltrada = listaFiltrada.filter(c => c.diasMora <= 30);
   if (filtroMora === '31-60') listaFiltrada = listaFiltrada.filter(c => c.diasMora > 30 && c.diasMora <= 60);
   if (filtroMora === '61+')   listaFiltrada = listaFiltrada.filter(c => c.diasMora > 60);
   if (filtroNombre) listaFiltrada = listaFiltrada.filter(c => c.nombre.toLowerCase().includes(filtroNombre.toLowerCase()));
- 
+
   let totalCartera    = lista.reduce((s,c) => s+c.deuda, 0);
   let carteraVencida  = lista.filter(c=>c.diasMora>30).reduce((s,c)=>s+c.deuda,0);
   let cartVencer      = lista.filter(c=>c.diasMora<=30).reduce((s,c)=>s+c.deuda,0);
   let totalPedidosTodos = lista.reduce((s,c)=>s+c.totalPedidos,0);
   let pctRecuperacion = totalPedidosTodos > 0 ? Math.round(((totalPedidosTodos - totalCartera)/totalPedidosTodos)*100) : 0;
- 
-  // ========== DATOS DEUDAS V20 (multi-cliente) ==========
-  let vnDeudasStore = {};
-  try { vnDeudasStore = JSON.parse(localStorage.getItem('vn_deudas_v20') || '{}'); } catch(e) { vnDeudasStore = {}; }
 
+  // ========== DATOS DEUDAS V20 (multi-cliente) - OPTIMIZADO ==========
+  let vnDeudasStore = localStorageData.vnDeudas;
   let vnDeudasLista = [];
+  let totalPorCobrar = 0;
+  let totalPorPagar = 0;
+
   Object.keys(vnDeudasStore).forEach(function(n){
     let d = vnDeudasStore[n] || {};
     let sc = Number(d.sc)||0, sm = Number(d.sm)||0;
-    if(sc>0 || sm>0) vnDeudasLista.push({nombre:n, sc:sc, sm:sm, h:d.h||[]});
+    if(sc>0 || sm>0) {
+      vnDeudasLista.push({nombre:n, sc:sc, sm:sm, h:d.h||[]});
+      totalPorCobrar += sc;
+      totalPorPagar += sm;
+    }
   });
   vnDeudasLista.sort(function(a,b){return (b.sc+b.sm)-(a.sc+a.sm);});
-
-  let totalPorCobrar = vnDeudasLista.reduce(function(s,x){return s+x.sc;},0);
-  let totalPorPagar  = vnDeudasLista.reduce(function(s,x){return s+x.sm;},0);
-  let totalCarteraV20 = totalPorCobrar + totalPorPagar;
 
   // ========== MERGE vn_deudas_v20 en la lista de Cartera ==========
   let _existentes = {};
@@ -4080,48 +4090,32 @@ async function renderCartera(filtroMora, filtroNombre) {
   let selNombre = window._vnCarteraClienteSel || '';
   let selData = (selNombre && vnDeudasStore[selNombre]) ? vnDeudasStore[selNombre] : {sc:0,sm:0,h:[]};
 
-  // Lista desplegable de clientes (del panel principal) - MEJORADO para mostrar TODOS los clientes
+  // Lista desplegable de clientes - OPTIMIZADO: cargar de todas las fuentes en un solo paso
   let _nombresSet = {};
 
-  // 1. Cargar desde la variable global clientes
-  try {
-    if(typeof clientes !== 'undefined' && Array.isArray(clientes)) {
-      clientes.forEach(function(c){
-        let n = typeof c==='string' ? c : (c && c.nombre ? c.nombre : '');
-        if(n) _nombresSet[n] = true;
-      });
-    }
-  } catch(e) {}
+  // Función auxiliar para extraer nombre de cliente
+  function extraerNombre(c) {
+    return typeof c==='string' ? c : (c && c.nombre ? c.nombre : '');
+  }
 
-  // 2. Cargar desde window.clientes
-  try {
-    if(Array.isArray(window.clientes)) {
-      window.clientes.forEach(function(c){
-        let n = typeof c==='string' ? c : (c && c.nombre ? c.nombre : '');
-        if(n) _nombresSet[n] = true;
-      });
-    }
-  } catch(e) {}
+  // 1. Cargar desde todas las fuentes de clientes en un solo bloque
+  let fuentesClientes = [];
+  if(typeof clientes !== 'undefined' && Array.isArray(clientes)) fuentesClientes.push(clientes);
+  if(Array.isArray(window.clientes)) fuentesClientes.push(window.clientes);
+  if(Array.isArray(localStorageData.clientes)) fuentesClientes.push(localStorageData.clientes);
 
-  // 3. Cargar desde localStorage 'clientes'
-  try {
-    let raw = JSON.parse(localStorage.getItem('clientes')||'[]');
-    if(Array.isArray(raw)) {
-      raw.forEach(function(c){
-        let n = typeof c==='string' ? c : (c && c.nombre ? c.nombre : '');
-        if(n) _nombresSet[n] = true;
-      });
-    }
-  } catch(e) {}
+  fuentesClientes.forEach(function(fuente){
+    fuente.forEach(function(c){
+      let n = extraerNombre(c);
+      if(n) _nombresSet[n] = true;
+    });
+  });
 
-  // 4. Incluir clientes que ya tienen deuda en vn_deudas_v20
+  // 2. Incluir clientes de vn_deudas_v20
   Object.keys(vnDeudasStore).forEach(function(n){ if(n) _nombresSet[n] = true; });
 
-  // 5. Incluir clientes del recaudo (recaudoEstado)
-  try {
-    let recaudoEstado = JSON.parse(localStorage.getItem('recaudoEstado')||'{}');
-    Object.keys(recaudoEstado).forEach(function(n){ if(n) _nombresSet[n] = true; });
-  } catch(e) {}
+  // 3. Incluir clientes del recaudoEstado
+  Object.keys(localStorageData.recaudoEstado).forEach(function(n){ if(n) _nombresSet[n] = true; });
 
   let _nombresClientes = Object.keys(_nombresSet).sort(function(a,b){return a.localeCompare(b,'es');});
   let vnClientesOpts = '<option value="">— Seleccionar cliente —</option>';
@@ -11221,23 +11215,38 @@ window.vnDeudaSetInicial = function(nombre, tipo, monto){
   dGuardar(d);
 };
 
-// Eliminar linea historial
+// Eliminar linea historial - MEJORADO para proteger datos
 window.vnDeudaEliminar = function(nombre, id){
   if(!confirm('¿Eliminar esta línea?')) return;
-  var d=dLeer(); if(!d[nombre]) return;
-  // Backup automático
+  var d=dLeer(); if(!d[nombre]) {
+    alert('No se encontró el cliente: '+nombre);
+    return;
+  }
+
+  // Backup automático ANTES de cualquier modificación
   try {
     var bk='vn_deudas_bk_'+Date.now();
     localStorage.setItem(bk, JSON.stringify(d));
   } catch(e){}
+
   // Find the item to delete before removing it
   var itemToDelete = (d[nombre].h||[]).find(function(x){return x.id===id;});
   if(!itemToDelete) {
-    alert('No se encontró el item a eliminar');
+    alert('No se encontró el item a eliminar con ID: '+id);
     return;
   }
+
+  // Guardar información del item para rollback si es necesario
+  var itemInfo = {
+    tipo: itemToDelete.tipo,
+    monto: itemToDelete.monto,
+    sub: itemToDelete.sub
+  };
+
+  // Eliminar el item
   d[nombre].h=(d[nombre].h||[]).filter(function(x){return x.id!==id;});
-  // Recalcular saldos
+
+  // Recalcular saldos desde cero para asegurar consistencia
   var sc=0,sm=0;
   d[nombre].h.forEach(function(x){
     if(x.tipo==='saldo_ini'){ if(x.sub==='cliente') sc=x.monto; else sm=x.monto; }
@@ -11246,7 +11255,10 @@ window.vnDeudaEliminar = function(nombre, id){
     else if(x.tipo==='pago'){ if(x.sub==='cliente') sc=Math.max(sc-x.monto,0); else sm=Math.max(sm-x.monto,0); }
   });
   d[nombre].sc=sc; d[nombre].sm=sm;
+
+  // Guardar cambios
   dGuardar(d);
+
   // Force re-render
   if(typeof renderCartera==='function') renderCartera();
 };
