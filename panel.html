@@ -13418,6 +13418,58 @@ window.vnDiagVentas = function(){
     return out;
   }
 
+  // 🛡️ MERGE ESPECÍFICO PARA CLIENTES — por NOMBRE, NO por _itemKeyArr.
+  // Razón: los clientes son {nombre, tipo} sin id/fecha/monto, así que
+  // _itemKeyArr colisionaba ("moto|||" para todos los moto) y borraba clientes.
+  // Esta función:
+  //   - Toma TODOS los clientes locales + remotos sin duplicar por nombre.
+  //   - Respeta el orden de _clientesBase para los hardcoded (no rompe Recaudo/Cartera).
+  //   - Pone los clientes NUEVOS (creados por el usuario) al final, conservando
+  //     el orden en que el local los tiene (los nuevos NUNCA se pierden).
+  function _mergeClientes(loc, rem) {
+    var locArr = Array.isArray(loc) ? loc : [];
+    var remArr = Array.isArray(rem) ? rem : [];
+    var mapa = {};
+    // 1) Locales primero: si el usuario acaba de crear un cliente, está acá
+    locArr.forEach(function(c){
+      if(c && c.nombre && !mapa[c.nombre]) mapa[c.nombre] = c;
+    });
+    // 2) Remotos completan/actualizan campos, pero NO borran locales
+    remArr.forEach(function(c){
+      if(!c || !c.nombre) return;
+      if(mapa[c.nombre]){
+        mapa[c.nombre] = Object.assign({}, mapa[c.nombre], c);
+      } else {
+        mapa[c.nombre] = c;
+      }
+    });
+    // 3) Orden: primero _clientesBase (canónico), luego los extras en el
+    //    orden que ya tenían en local (clientes nuevos al final).
+    var orden = [];
+    try {
+      if(typeof _clientesBase !== 'undefined' && Array.isArray(_clientesBase)){
+        _clientesBase.forEach(function(c){
+          if(c && c.nombre && mapa[c.nombre] && orden.indexOf(c.nombre) === -1){
+            orden.push(c.nombre);
+          }
+        });
+      }
+    } catch(e){}
+    // Extras del local (clientes nuevos): conservar su orden tal cual
+    locArr.forEach(function(c){
+      if(c && c.nombre && orden.indexOf(c.nombre) === -1 && mapa[c.nombre]){
+        orden.push(c.nombre);
+      }
+    });
+    // Extras del remoto que no estén ni en base ni en local: al final
+    remArr.forEach(function(c){
+      if(c && c.nombre && orden.indexOf(c.nombre) === -1 && mapa[c.nombre]){
+        orden.push(c.nombre);
+      }
+    });
+    return orden.map(function(n){ return mapa[n]; });
+  }
+
   // Merge específico para vn_deudas_v20 (estructura {nombre: {sc, sm, h:[]}})
   function _mergeDeudasV20(loc, rem) {
     var locObj = (loc && typeof loc === 'object' && !Array.isArray(loc)) ? loc : {};
@@ -13518,7 +13570,12 @@ window.vnDiagVentas = function(){
                  lsKey === 'clientes') {
         // Arrays: merge por clave única
         if (Array.isArray(remoto) || Array.isArray(loc)) {
-          nuevoData = _mergeArrays(loc, remoto);
+          // 🛡️ Clientes usa merge propio (por nombre), no _itemKeyArr
+          if (lsKey === 'clientes') {
+            nuevoData = _mergeClientes(loc, remoto);
+          } else {
+            nuevoData = _mergeArrays(loc, remoto);
+          }
         } else {
           nuevoData = remoto;
         }
@@ -13677,7 +13734,12 @@ window.vnDiagVentas = function(){
                      lsKey === 'cuotas_obligaciones' || lsKey === 'obs_marquee' ||
                      lsKey === 'clientes') {
             if (Array.isArray(datosLocales) || Array.isArray(datosRemotos)) {
-              datosFinales = _mergeArrays(datosLocales, datosRemotos);
+              // 🛡️ Clientes usa merge propio (por nombre), no _itemKeyArr
+              if (lsKey === 'clientes') {
+                datosFinales = _mergeClientes(datosLocales, datosRemotos);
+              } else {
+                datosFinales = _mergeArrays(datosLocales, datosRemotos);
+              }
             }
           } else if (lsKey === 'cuentasMemoria') {
             // Merge cuentas por nombre
