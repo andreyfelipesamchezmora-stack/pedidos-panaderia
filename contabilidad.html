@@ -183,6 +183,43 @@ html, body { height:100%;font-family:var(--font);background:var(--bg);color:var(
 </style>
 </head>
 <body>
+<script>
+// ================================================================
+// 🛡️ LIMPIEZA RETROACTIVA — DESVINCULACIÓN PANEL ↔ CONTABILIDAD
+// Purga de mc_local TODAS las entradas inyectadas por el panel
+// relacionadas con deudas ("Le debo a X", "Deuda de X", "Pago deuda X",
+// tipo:'deuda'). Corre una sola vez al cargar.
+// ================================================================
+(function(){
+  try {
+    var raw = localStorage.getItem('mc_local');
+    if(!raw) return;
+    var arr;
+    try { arr = JSON.parse(raw); } catch(e){ return; }
+    if(!Array.isArray(arr) || arr.length === 0) return;
+
+    function esDeudaPanel(m){
+      if(!m) return false;
+      if(String(m.tipo||'').toLowerCase() === 'deuda') return true;
+      var d = String(m.descripcion||'').toLowerCase();
+      if(/\ble\s+debo\s+a\b/.test(d)) return true;
+      if(/^debo\s+a\b/.test(d)) return true;
+      if(/\bdeuda\s+de\b/.test(d)) return true;
+      if(/\byo\s+le\s+debo\b/.test(d)) return true;
+      if(/\bpago\s+deuda\b/.test(d)) return true;
+      return false;
+    }
+
+    var antes = arr.length;
+    var limpio = arr.filter(function(m){ return !esDeudaPanel(m); });
+    var quitados = antes - limpio.length;
+    if(quitados > 0){
+      localStorage.setItem('mc_local', JSON.stringify(limpio));
+      console.log('🧹 Contabilidad: '+quitados+' entrada(s) de deuda del panel purgadas de mc_local');
+    }
+  } catch(e){ console.warn('Limpieza retroactiva:', e); }
+})();
+</script>
 
 <!-- Topbar -->
 <div class="topbar">
@@ -566,7 +603,9 @@ var Data = (function() {
   }
 
   // Filtro: pagos / deudas de clientes (cartera/recaudo) NO deben aparecer
-  // en contabilidad.
+  // en contabilidad. 🛡️ El usuario solicitó desvinculación TOTAL:
+  // cualquier "Le debo a X", "Deuda de X", "Pago deuda X" y tipo 'deuda'
+  // queda OCULTO. La contabilidad maneja solo registros manuales.
   function _esPagoODeudaCliente(m){
     if (!m) return false;
     // 1) Flags explícitos del panel/cartera/recaudo
@@ -575,6 +614,9 @@ var Data = (function() {
         m._origen === 'cartera' || m._origen === 'recaudo' ||
         m.fuente === 'cartera' || m.fuente === 'recaudo' ||
         m.modulo === 'cartera' || m.modulo === 'recaudo') return true;
+
+    // 1.5) Tipo "deuda" — siempre filtrar (es exclusivo del panel)
+    if (String(m.tipo||'').toLowerCase() === 'deuda') return true;
 
     // 2) Categoría conocida de cartera/recaudo
     var cat = String(m.categoria||'').toUpperCase();
@@ -588,6 +630,14 @@ var Data = (function() {
     if (/cobro\s+(?:cliente|deuda|cartera)\b/.test(d)) return true;
     if (/recaudo\s+(?:cliente|de|cartera)\b/.test(d)) return true;
     if (/\bsaldo\s+cliente\b/.test(d)) return true;
+
+    // 4) 🛡️ NUEVOS PATRONES — "Le debo a..." / "Debo a..." / "Deuda de..."
+    //    (inyectados por versiones anteriores del panel)
+    if (/\ble\s+debo\s+a\b/.test(d)) return true;
+    if (/^debo\s+a\b/.test(d)) return true;
+    if (/\bdeuda\s+de\b/.test(d)) return true;
+    if (/\byo\s+le\s+debo\b/.test(d)) return true;
+
     return false;
   }
 
