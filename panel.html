@@ -340,7 +340,7 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
 }
 #bendajeBox { background: #fff3cd; }
 
-.video-sidebar { display: flex; justify-content: center; align-items: center; margin-top: 195px; }
+.video-sidebar { display: none !important; }
 
 #meDebeValor::placeholder { color: red; font-weight: bold; }
 #leDeboValor::placeholder { color: blue; font-weight: bold; }
@@ -972,6 +972,46 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
 </head>
 
 <body>
+<script>
+// ================================================================
+// 🛡️ LIMPIEZA RETROACTIVA — purgar inyecciones viejas del panel
+// que ensuciaban contabilidad ("Le debo a X", "Deuda de X",
+// "Pago deuda X", tipo:'deuda'). Corre una sola vez al iniciar
+// y también prepara el array en memoria para que NO vuelva a
+// subirlas a Supabase.
+// ================================================================
+(function(){
+  try {
+    var raw = localStorage.getItem('mc_local');
+    if(!raw) return;
+    var arr;
+    try { arr = JSON.parse(raw); } catch(e){ return; }
+    if(!Array.isArray(arr) || arr.length === 0) return;
+
+    function esDeudaPanel(m){
+      if(!m) return false;
+      if(String(m.tipo||'').toLowerCase() === 'deuda') return true;
+      var d = String(m.descripcion||'').toLowerCase();
+      if(/\ble\s+debo\s+a\b/.test(d)) return true;
+      if(/^debo\s+a\b/.test(d)) return true;
+      if(/\bdeuda\s+de\b/.test(d)) return true;
+      if(/\byo\s+le\s+debo\b/.test(d)) return true;
+      if(/\bpago\s+deuda\b/.test(d)) return true;
+      return false;
+    }
+
+    var antes = arr.length;
+    var limpio = arr.filter(function(m){ return !esDeudaPanel(m); });
+    if(limpio.length !== antes){
+      localStorage.setItem('mc_local', JSON.stringify(limpio));
+      // Dejar también lista la variable global para que el resto del
+      // panel use la versión limpia desde el primer momento.
+      try { window.movimientosContables = limpio; } catch(e){}
+      console.log('🧹 Panel: '+(antes-limpio.length)+' entrada(s) de deuda purgadas de mc_local');
+    }
+  } catch(e){ console.warn('Limpieza retroactiva panel:', e); }
+})();
+</script>
 <div id="contenidoContabilidad"></div>
 <div id="flujoCajaWrap"></div>
 <div class="container">
@@ -1061,11 +1101,7 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
 
 </div>
 
-  <div class="video-sidebar">
-    <video autoplay muted loop style="width:100%;height:auto;object-fit:contain;display:block;">
-      <source src="" type="video/mp4">
-    </video>
-  </div>
+  <!-- 🛡️ Video del sidebar eliminado por solicitud del usuario -->
 </div>
 
 <!-- MAIN -->
@@ -1296,57 +1332,75 @@ let _clientesBase = [
 ];
 
 // MERGE base hardcoded + guardados en localStorage (sin duplicar, conservando todo).
-// 🛡️ PRIORIDAD AL ORDEN DE _clientesBase. Los clientes guardados que NO estén
-// en la base se añaden al final (esos son clientes nuevos creados por el usuario).
+// 🛡️ PRIORIDAD AL ORDEN DEL USUARIO. Si en localStorage hay un orden personalizado
+// (drag-and-drop), ESE es el orden definitivo. _clientesBase solo aporta clientes
+// que falten en el localStorage (primera carga o clientes nuevos hardcoded).
 (function(){
   var mapa = {};
   var orden = [];
-  // 1) Primero, _clientesBase define EL ORDEN CANÓNICO
-  _clientesBase.forEach(function(c){
-    if(c && c.nombre && !mapa[c.nombre]){ mapa[c.nombre] = c; orden.push(c.nombre); }
-  });
-  // 2) Si en localStorage hay datos extras (campos personalizados, tipo cambiado),
-  //    los aplicamos AL CLIENTE DE LA BASE pero SIN cambiar el orden
-  _clientesGuardados.forEach(function(c){
-    if(!c || !c.nombre) return;
-    if(mapa[c.nombre]){
-      // Cliente ya existe en la base: actualizar campos pero MANTENER posición
-      mapa[c.nombre] = Object.assign({}, mapa[c.nombre], c);
-    } else {
-      // Cliente nuevo (creado por el usuario, no está en la base): añadir al final
-      mapa[c.nombre] = c;
-      orden.push(c.nombre);
-    }
-  });
+
+  // 1) PRIMERO: orden personalizado del usuario (localStorage = drag-and-drop)
+  //    Si tiene datos, ESTE es el orden canónico, no _clientesBase.
+  var tieneOrdenPersonal = Array.isArray(_clientesGuardados) && _clientesGuardados.length > 0;
+
+  if(tieneOrdenPersonal){
+    _clientesGuardados.forEach(function(c){
+      if(c && c.nombre && !mapa[c.nombre]){
+        mapa[c.nombre] = c;
+        orden.push(c.nombre);
+      }
+    });
+    // 2) Después: añadir clientes de _clientesBase que NO estén en el orden personal
+    //    (clientes nuevos hardcoded añadidos al código después de que el usuario guardó)
+    _clientesBase.forEach(function(c){
+      if(c && c.nombre && !mapa[c.nombre]){
+        mapa[c.nombre] = c;
+        orden.push(c.nombre);
+      }
+    });
+  } else {
+    // Primera vez (localStorage vacío): usar _clientesBase como orden inicial
+    _clientesBase.forEach(function(c){
+      if(c && c.nombre && !mapa[c.nombre]){
+        mapa[c.nombre] = c;
+        orden.push(c.nombre);
+      }
+    });
+  }
+
   clientes = orden.map(function(n){ return mapa[n]; });
   try { window.clientes = clientes; } catch(e){}
   try { localStorage.setItem("clientes", JSON.stringify(clientes)); } catch(e){}
 })();
 
-// 🛡️ GUARDIÁN DE ORDEN: si en algún momento window.clientes pierde clientes
-// o se desordena (sync, merge, etc.), restaurar el orden canónico de _clientesBase
+// 🛡️ GUARDIÁN DE ORDEN: solo asegura que NO falten clientes; NO reordena.
+// El orden del usuario (drag-and-drop) es sagrado y nunca debe perderse.
 window._clientesOrdenarPorBase = function(){
   try {
     var actuales = Array.isArray(window.clientes) ? window.clientes : [];
-    var mapa = {};
+    var mapaNombres = {};
+    var ordenActual = [];
+
+    // Capturar orden actual del usuario (autoridad)
     actuales.forEach(function(c){
-      if(c && c.nombre && !mapa[c.nombre]) mapa[c.nombre] = c;
-    });
-    // Reconstruir: primero los de _clientesBase, luego los extras
-    var orden = [];
-    _clientesBase.forEach(function(c){
-      if(!c || !c.nombre) return;
-      if(!mapa[c.nombre]) mapa[c.nombre] = c;  // si falta, agregar
-      orden.push(c.nombre);
-    });
-    // Añadir clientes extras (no están en base) al final
-    actuales.forEach(function(c){
-      if(c && c.nombre && orden.indexOf(c.nombre) === -1){
-        orden.push(c.nombre);
+      if(c && c.nombre && !mapaNombres[c.nombre]){
+        mapaNombres[c.nombre] = c;
+        ordenActual.push(c.nombre);
       }
     });
-    var nuevoArr = orden.map(function(n){ return mapa[n]; });
-    if(nuevoArr.length >= actuales.length){
+
+    // Solo AÑADIR clientes de _clientesBase que falten — sin reordenar los existentes
+    var hayCambios = false;
+    _clientesBase.forEach(function(c){
+      if(c && c.nombre && !mapaNombres[c.nombre]){
+        mapaNombres[c.nombre] = c;
+        ordenActual.push(c.nombre);
+        hayCambios = true;
+      }
+    });
+
+    if(hayCambios){
+      var nuevoArr = ordenActual.map(function(n){ return mapaNombres[n]; });
       window.clientes = nuevoArr;
       clientes = nuevoArr;
       localStorage.setItem("clientes", JSON.stringify(nuevoArr));
@@ -3920,7 +3974,7 @@ function recaudoInyectarSugeridos(rows) {
 }
 // ──────────────────────────────────────────────────────────────────────────
   
-// Toggle recibido
+// Toggle recibido — SIN re-render destructivo (evita bugs de checkboxes)
 function recaudoToggleRecibido(nombre){
   let cb = document.getElementById('rec_rec_' + nombre);
   let estado = recaudoLeerEstado();
@@ -3932,7 +3986,10 @@ function recaudoToggleRecibido(nombre){
   if(tr){
     tr.style.background = cb.checked ? 'rgba(74,222,128,0.13)' : '';
   }
-  setTimeout(function(){ renderRecaudo(); }, 300);
+  // 🛡️ NO re-renderizar — solo actualizar totales si están en pantalla
+  if(typeof window._recaudoActualizarTotales === 'function'){
+    try { window._recaudoActualizarTotales(); } catch(e){}
+  }
 }
 
 async function abrirRecaudo(){
@@ -4397,14 +4454,9 @@ function carteraRegistrarPagoTiberio() {
     cuentasGuardar();
   }
  
-  // 5. MOVIMIENTOS CONTABLES
-  movimientosContables.push({
-    tipo: 'ingreso',
-    monto: monto,
-    cuenta: nombreBanco,
-    descripcion: 'Pago deuda ' + tiberioNombre + (nota ? ' - ' + nota : ''),
-    fecha: new Date().toISOString()
-  });
+  // 5. MOVIMIENTOS CONTABLES — 🛡️ DESVINCULADO: no inyectar pagos de deuda
+  //    a contabilidad. La contabilidad maneja sus propias entradas manualmente.
+  // (push eliminado intencionalmente)
  
   window._carteraMetodoSeleccionado = '';
   renderCartera();
@@ -4714,14 +4766,9 @@ function recaudoConfirmarPago(nombre, monto){
   }
  
   // 5. Movimientos contables
+  // 🛡️ DESVINCULADO: no inyectar pagos de deuda a contabilidad
   if(!Array.isArray(movimientosContables)) movimientosContables = [];
-  movimientosContables.push({
-    tipo: 'ingreso',
-    monto: monto,
-    cuenta: nombreBanco,
-    descripcion: 'Pago deuda ' + nombre,
-    fecha: new Date().toISOString()
-  });
+  // (push eliminado intencionalmente — la contabilidad es independiente)
  
   // Cerrar modal y refrescar
   cerrarMC();
@@ -5497,7 +5544,10 @@ function recaudoCalcularDesgloseMetodos(rows){
   }
 
   recaudoGuardarEstado(estado);
-  setTimeout(function(){ renderRecaudo(); }, 300);
+  // 🛡️ Sin re-render destructivo — solo actualizar totales
+  if(typeof window._recaudoActualizarTotales === 'function'){
+    try { window._recaudoActualizarTotales(); } catch(e){}
+  }
 }
 
 // Toggle: incluir la deuda del cliente en el total de recaudo domi
@@ -5523,8 +5573,10 @@ function recaudoToggleDomiDeuda(nombre){
   }
   // Si se desactiva, NO desactivar automáticamente el domi normal
   recaudoGuardarEstado(estado);
-  // Re-renderizar en background para no bloquear clicks
-  setTimeout(function(){ renderRecaudo(); }, 300);
+  // 🛡️ Sin re-render destructivo
+  if(typeof window._recaudoActualizarTotales === 'function'){
+    try { window._recaudoActualizarTotales(); } catch(e){}
+  }
 }
 
 // Toggle: incluir la deuda MÍA en el total de recaudo domi (RESTA)
@@ -5547,7 +5599,10 @@ function recaudoToggleDomiDeudaMia(nombre){
     }
   }
   recaudoGuardarEstado(estado);
-  setTimeout(function(){ renderRecaudo(); }, 300);
+  // 🛡️ Sin re-render destructivo
+  if(typeof window._recaudoActualizarTotales === 'function'){
+    try { window._recaudoActualizarTotales(); } catch(e){}
+  }
 }
 
 // Toggle azul domi: checkbox en columna "Yo le debo" para incluir deuda mía en recaudo domi (RESTA)
@@ -5573,7 +5628,10 @@ function recaudoToggleAzulDomi(nombre){
     }
   }
   recaudoGuardarEstado(estado);
-  setTimeout(function(){ renderRecaudo(); }, 300);
+  // 🛡️ Sin re-render destructivo
+  if(typeof window._recaudoActualizarTotales === 'function'){
+    try { window._recaudoActualizarTotales(); } catch(e){}
+  }
 }
 
 function _contaTabs(activa){
@@ -6880,30 +6938,130 @@ window.recaudoConfirmarPago=function(nombre,monto){
   var ca={};try{ca=JSON.parse(localStorage.getItem('cartera_deudas')||'{}');}catch(x){}if(!ca[nombre])ca[nombre]={};ca[nombre].deudasPagadas=monto;ca[nombre].fechaPago=hoy;ca[nombre].metodoPago=met;ca[nombre].banco=nb;localStorage.setItem('cartera_deudas',JSON.stringify(ca));
   var hi=[];try{hi=JSON.parse(localStorage.getItem('cartera_pagos_historial')||'[]');}catch(x){}hi.push({cliente:nombre,monto:monto,metodo:met,banco:nb,cuentaIdx:ci,nota:'Desde recaudo diario',fecha:hoy});localStorage.setItem('cartera_pagos_historial',JSON.stringify(hi));
   if(ci>=0&&cuentasMemoria[ci]){cuentasMemoria[ci].saldo+=monto;cuentasGuardar();}
-  if(!Array.isArray(movimientosContables))movimientosContables=[];movimientosContables.push({tipo:'ingreso',monto:monto,cuenta:nb,descripcion:'Pago deuda '+nombre,fecha:new Date().toISOString()});
+  // 🛡️ DESVINCULADO: no inyectar pagos de deuda a contabilidad
   cerrarMC();renderRecaudo();
 };
 
 // =====================================================
-// BOTÓN CAMUFLADO — SIN REGISTRAR GASTO VISIBLE
+// BOTÓN CAMUFLADO — MODAL SELECTOR DE CLIENTE
+// Abre un mini-modal donde el usuario elige a qué cliente
+// bajarle $10.000 (sin condiciones ni aleatoriedad).
 // =====================================================
-window.rcamoClick=function(){
-  var m=40000;
-  // Solo restar del efectivo, SIN registrar en gastos ni movimientos
-  if(Array.isArray(cuentasMemoria)){var idx=cuentasMemoria.findIndex(function(c){return c.tipo==='EFECTIVO';});if(idx>=0){cuentasMemoria[idx].saldo-=m;cuentasGuardar();}}
-  // Restar $10.000 de factura random
-  _restarFacturasRandom();
-  renderRecaudo();
+window.rcamoClick = function(){
+  // Si ya está abierto, no duplicar
+  if(document.getElementById('_rcamoOverlay')) return;
+
+  // Cargar pedidos del día para listar clientes con factura > 0
+  var fecha = (typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10);
+
+  (async function(){
+    var pedidosDelDia = [];
+    try{
+      var res = await db.from('pedidos').select('*').eq('fecha', fecha);
+      if(res && Array.isArray(res.data)) pedidosDelDia = res.data;
+    }catch(e){ console.warn('rcamo: error cargando pedidos', e); }
+
+    // Filtrar solo los que tienen total > 10000 (sino el descuento no tiene sentido)
+    var elegibles = pedidosDelDia
+      .filter(function(p){ return p && (Number(p.total)||0) > 10000; })
+      .sort(function(a,b){ return (a.cliente||'').localeCompare(b.cliente||''); });
+
+    // Construir overlay
+    var ov = document.createElement('div');
+    ov.id = '_rcamoOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;';
+    ov.onclick = function(e){ if(e.target === ov) _rcamoCerrar(); };
+
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#1e293b;border:1px solid rgba(251,191,36,0.25);border-radius:16px;padding:22px;width:min(440px,95vw);max-height:80vh;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 60px rgba(0,0,0,0.6);';
+
+    var titulo = document.createElement('div');
+    titulo.style.cssText = 'display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:12px;';
+    titulo.innerHTML = '<div><div style="font-size:16px;font-weight:800;color:#fbbf24;">Descuento rápido</div><div style="font-size:11px;color:#94a3b8;margin-top:2px;">Selecciona el cliente al que aplicar -$10.000</div></div>'+
+                      '<button id="_rcamoX" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;line-height:1;">×</button>';
+    box.appendChild(titulo);
+
+    if(elegibles.length === 0){
+      var vacio = document.createElement('div');
+      vacio.style.cssText = 'padding:20px;text-align:center;color:#94a3b8;font-size:13px;';
+      vacio.textContent = 'No hay facturas del día con monto mayor a $10.000.';
+      box.appendChild(vacio);
+    } else {
+      // Buscador
+      var buscador = document.createElement('input');
+      buscador.type = 'text';
+      buscador.placeholder = '🔍 Buscar cliente...';
+      buscador.style.cssText = 'width:100%;padding:10px 12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:#e2e8f0;font-size:13px;outline:none;';
+      box.appendChild(buscador);
+
+      // Lista
+      var lista = document.createElement('div');
+      lista.style.cssText = 'flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;max-height:50vh;padding-right:4px;';
+
+      function renderLista(filtro){
+        lista.innerHTML = '';
+        var visibles = elegibles.filter(function(p){
+          if(!filtro) return true;
+          return (p.cliente||'').toLowerCase().indexOf(filtro.toLowerCase()) > -1;
+        });
+        if(visibles.length === 0){
+          var nf = document.createElement('div');
+          nf.style.cssText = 'padding:12px;text-align:center;color:#64748b;font-size:12px;';
+          nf.textContent = 'Sin resultados.';
+          lista.appendChild(nf);
+          return;
+        }
+        visibles.forEach(function(p){
+          var btn = document.createElement('button');
+          btn.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;color:#e2e8f0;font-size:13px;cursor:pointer;text-align:left;transition:background .15s,border-color .15s;';
+          btn.onmouseenter = function(){ this.style.background='rgba(251,191,36,0.08)'; this.style.borderColor='rgba(251,191,36,0.3)'; };
+          btn.onmouseleave = function(){ this.style.background='rgba(255,255,255,0.03)'; this.style.borderColor='rgba(255,255,255,0.07)'; };
+          btn.innerHTML = '<span style="font-weight:700;">'+(p.cliente||'?')+'</span>'+
+                          '<span style="color:#fcd34d;font-weight:800;">$'+(Number(p.total)||0).toLocaleString('es-CO')+'</span>';
+          btn.onclick = function(){ _rcamoAplicar(p); };
+          lista.appendChild(btn);
+        });
+      }
+
+      buscador.oninput = function(){ renderLista(this.value); };
+      renderLista('');
+      box.appendChild(lista);
+    }
+
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+
+    document.getElementById('_rcamoX').onclick = _rcamoCerrar;
+
+    function _rcamoCerrar(){
+      var o = document.getElementById('_rcamoOverlay');
+      if(o) o.remove();
+    }
+
+    async function _rcamoAplicar(pedido){
+      _rcamoCerrar();
+      var nuevoTotal = Math.max((Number(pedido.total)||0) - 10000, 0);
+      try{
+        await db.from('pedidos').update({ total: nuevoTotal }).eq('id', pedido.id);
+      }catch(e){ console.error('rcamo aplicar:', e); alert('Error al aplicar descuento.'); return; }
+
+      // Restar también del efectivo (igual que la versión original)
+      if(Array.isArray(cuentasMemoria)){
+        var idx = cuentasMemoria.findIndex(function(c){ return c.tipo === 'EFECTIVO'; });
+        if(idx >= 0){
+          cuentasMemoria[idx].saldo -= 40000;
+          if(typeof cuentasGuardar === 'function') cuentasGuardar();
+        }
+      }
+
+      if(typeof cargar === 'function') cargar();
+      if(typeof renderRecaudo === 'function') setTimeout(renderRecaudo, 300);
+    }
+
+    // Foco en el buscador si existe
+    setTimeout(function(){ var b = box.querySelector('input'); if(b) b.focus(); }, 50);
+  })();
 };
-async function _restarFacturasRandom(){
-  var fecha=cajaFechaHoy();var res;try{res=await db.from('pedidos').select('*').eq('fecha',fecha);}catch(e){return;}
-  if(!res||res.error||!Array.isArray(res.data))return;
-  var estado={};try{estado=JSON.parse(localStorage.getItem('recaudo_'+fecha)||'{}');}catch(e){}
-  var elegibles=res.data.filter(function(p){var total=Number(p.total)||0;if(total<=10000)return false;try{var _cl2=Array.isArray(window.clientes)?window.clientes:JSON.parse(localStorage.getItem('clientes')||'[]');var _ci2=_cl2.find(function(c){return(typeof c==='string'?c:(c&&c.nombre||''))===p.cliente;});if(_ci2&&((_ci2.tipo||'').toLowerCase()==='lejano'))return false;}catch(e2){}var est=estado[p.cliente]||{};if((Number(est.deudaCliente)||0)>0||(Number(est.deudaMia)||0)>0)return false;try{if(typeof recaudoGetDeudaHistorica==='function'){var h=recaudoGetDeudaHistorica(p.cliente);if(h.deudaCliente>0||h.deudaMia>0)return false;}}catch(e){}return true;});
-  if(elegibles.length===0)return;var pedido=elegibles[Math.floor(Math.random()*elegibles.length)];
-  try{await db.from('pedidos').update({total:Math.max((Number(pedido.total)||0)-10000,0)}).eq('id',pedido.id);}catch(e){}
-  if(typeof cargar==='function')cargar();
-}
 
 // =====================================================
 // DRAG & DROP
@@ -7185,8 +7343,7 @@ window.recaudoConfirmarPagoV3 = function(nombre){
     cuentasGuardar();
   }
 
-  if(!Array.isArray(movimientosContables)) movimientosContables = [];
-  movimientosContables.push({tipo:'ingreso',monto:monto,cuenta:nb,descripcion:'Pago deuda '+nombre,fecha:new Date().toISOString()});
+  // 🛡️ DESVINCULADO: no inyectar pagos de deuda a contabilidad
 
   cerrarMC();
   renderRecaudo();
@@ -11292,10 +11449,9 @@ window.vnDeudaAgregar = function(nombre, tipo, monto, nota){
   var _fl=_dFechaLocal();
   d[nombre].h.push({id:'d'+Date.now(),fecha:_fl,hora:new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}),tipo:'deuda',sub:tipo,monto:monto,saldo:tipo==='cliente'?d[nombre].sc:d[nombre].sm,nota:nota||''});
   dGuardar(d);
-  if(Array.isArray(window.movimientosContables)){
-    window.movimientosContables.push({tipo:'deuda',monto:monto,cuenta:'—',descripcion:(tipo==='cliente'?'Deuda de ':'Le debo a ')+nombre+(nota?' - '+nota:''),fecha:new Date().toISOString()});
-    if(typeof window._mcPersist==='function') window._mcPersist();
-  }
+  // 🛡️ DESVINCULADO DE CONTABILIDAD: las deudas son solo del panel,
+  // NO se inyectan en movimientosContables. La contabilidad maneja
+  // sus propias entradas manualmente.
 };
 
 // Pagar deuda
@@ -11309,10 +11465,8 @@ window.vnDeudaPagar = function(nombre, tipo, monto, metodo, banco, ci, nota){
   if(ci>=0 && Array.isArray(window.cuentasMemoria) && window.cuentasMemoria[ci]){
     window.cuentasMemoria[ci].saldo+=monto; if(typeof cuentasGuardar==='function') cuentasGuardar();
   }
-  if(Array.isArray(window.movimientosContables)){
-    window.movimientosContables.push({tipo:'ingreso',monto:monto,cuenta:banco||'Efectivo',descripcion:'Pago deuda '+nombre+(nota?' - '+nota:''),fecha:new Date().toISOString()});
-    if(typeof window._mcPersist==='function') window._mcPersist();
-  }
+  // 🛡️ DESVINCULADO DE CONTABILIDAD: los pagos de deuda son solo del
+  // panel/cartera, NO se inyectan en movimientosContables.
 };
 
 // Set saldo inicial
@@ -14124,7 +14278,10 @@ async function cargarClientesDesdeSupabase(){
   }
 
   if(Array.isArray(data) && data.length > 0){
-    // MERGE por nombre: nunca borra clientes locales que no estén en Supabase.
+    // 🛡️ MERGE PRESERVANDO ORDEN LOCAL DEL USUARIO.
+    // El orden de window.clientes (drag-and-drop del usuario) NUNCA se altera
+    // por datos remotos. Supabase solo actualiza CAMPOS de clientes existentes
+    // o añade clientes nuevos AL FINAL.
     var _mapa = {};
     var _orden = [];
     (Array.isArray(clientes) ? clientes : []).forEach(function(c){
@@ -14133,8 +14290,10 @@ async function cargarClientesDesdeSupabase(){
     data.forEach(function(c){
       if(!c || !c.nombre) return;
       if(_mapa[c.nombre]){
-        _mapa[c.nombre] = Object.assign({}, _mapa[c.nombre], c); // remoto actualiza campos
+        // Cliente ya existe localmente: actualizar campos pero MANTENER posición
+        _mapa[c.nombre] = Object.assign({}, _mapa[c.nombre], c);
       } else {
+        // Cliente nuevo (vino solo de Supabase): añadir al final
         _mapa[c.nombre] = c;
         _orden.push(c.nombre);
       }
@@ -14480,8 +14639,9 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
   };
 
   // ─────────────────────────────────────────────────────────────────
-  // FIX 8: Toggle de checkboxes — invalidar caché para que el render
-  // siempre refleje el cambio inmediatamente
+  // FIX 8: Toggle de checkboxes — invalidar firma anti-titileo
+  // (los toggles originales ya NO re-renderizan; solo actualizan totales,
+  // pero seguimos invalidando la firma por si llega un sync remoto)
   // ─────────────────────────────────────────────────────────────────
   var _toggleFns = ['recaudoToggleRecibido','recaudoToggleDomi','recaudoToggleDomiDeuda',
                     'recaudoToggleDomiDeudaMia','recaudoToggleAzulDomi'];
@@ -14499,6 +14659,8 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
         localStorage.setItem(k2, JSON.stringify(o2));
       } catch(e){}
       orig.apply(this, arguments);
+      // Asegurar que totales se actualicen aunque el toggle original no lo haya hecho
+      try { if(typeof window._recaudoActualizarTotales === 'function') window._recaudoActualizarTotales(); } catch(e){}
     };
   });
 
@@ -14516,26 +14678,18 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
 (function(){
   'use strict';
 
-  // ── 1. MAPA DE POSICIÓN CANÓNICO (construido de _clientesBase) ──
-  // Se construye una sola vez y nunca cambia.
+  // ── 1. MAPA DE POSICIÓN BASADO EN ORDEN DEL USUARIO ─────────────
+  // 🛡️ El orden del Recaudo SIEMPRE refleja el orden del panel principal
+  // (drag-and-drop del usuario). Si el usuario reordenó las tarjetas,
+  // el Recaudo respeta ESE orden. _clientesBase solo es respaldo.
   function _buildPosMap(){
     var mapa = {};
     var idx  = 0;
 
-    // Fuente 1: _clientesBase — la lista hardcoded del panel (orden original)
-    try {
-      if(typeof _clientesBase !== 'undefined' && Array.isArray(_clientesBase)){
-        _clientesBase.forEach(function(c){
-          var n = (c && c.nombre ? c.nombre : '').toUpperCase().trim();
-          if(n && mapa[n] === undefined){ mapa[n] = idx++; }
-        });
-      }
-    } catch(e){}
-
-    // Fuente 2: window.clientes — por si hay clientes nuevos agregados después
+    // Fuente 1 (AUTORIDAD): window.clientes — orden actual del usuario en el panel
     try {
       var wc = window.clientes;
-      if(Array.isArray(wc)){
+      if(Array.isArray(wc) && wc.length > 0){
         wc.forEach(function(c){
           var n = (typeof c === 'string' ? c : (c && c.nombre ? c.nombre : '')).toUpperCase().trim();
           if(n && mapa[n] === undefined){ mapa[n] = idx++; }
@@ -14543,12 +14697,22 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
       }
     } catch(e){}
 
-    // Fuente 3: localStorage clientes — por si acaso
+    // Fuente 2: localStorage clientes — por si window.clientes no está sincronizado
     try {
       var lsC = JSON.parse(localStorage.getItem('clientes')||'[]');
       if(Array.isArray(lsC)){
         lsC.forEach(function(c){
           var n = (typeof c === 'string' ? c : (c && c.nombre ? c.nombre : '')).toUpperCase().trim();
+          if(n && mapa[n] === undefined){ mapa[n] = idx++; }
+        });
+      }
+    } catch(e){}
+
+    // Fuente 3: _clientesBase — respaldo final por si algo faltó
+    try {
+      if(typeof _clientesBase !== 'undefined' && Array.isArray(_clientesBase)){
+        _clientesBase.forEach(function(c){
+          var n = (c && c.nombre ? c.nombre : '').toUpperCase().trim();
           if(n && mapa[n] === undefined){ mapa[n] = idx++; }
         });
       }
@@ -14722,91 +14886,194 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
 </script>
 <script>
 // ================================================================
-// PARCHE FINAL — CHECKBOXES SNAPPY + SYNC RECAUDO + LIMPIEZA FOOTER
+// PARCHE FINAL — CHECKBOXES INSTANTÁNEOS + SYNC RECAUDO + LIMPIEZA FOOTER
 // ================================================================
 (function(){
   'use strict';
 
   // ─────────────────────────────────────────────────────────────────
-  // FIX A: Checkboxes del recaudo — respuesta INMEDIATA al primer click
+  // FIX A: Checkboxes del recaudo — RESPUESTA INSTANTÁNEA, SIN RE-RENDER
   //
-  // Problema original: cada toggle hacía setTimeout(renderRecaudo, 300).
-  // Si el usuario hacía click 2 veces seguido, el segundo click llegaba
-  // mientras el render reemplazaba el DOM → el checkbox no respondía o
-  // necesitaba múltiples clicks.
+  // Problema: cada toggle disparaba setTimeout(renderRecaudo, 300) que
+  // DESTRUÍA y RECREABA toda la tabla. Si el usuario hacía clicks rápidos,
+  // los checkboxes nuevos no estaban enlazados aún → clicks perdidos,
+  // deselecciones falsas, lag.
   //
-  // Solución: aplicar el cambio visual de la fila INMEDIATAMENTE,
-  // persistir el estado al instante, y hacer DEBOUNCE del render
-  // global (300ms desde el ÚLTIMO click, no desde el primero). Así
-  // múltiples clicks seguidos no se pisan entre sí.
+  // Solución: NO re-renderizar la tabla nunca tras un toggle. Solo
+  // actualizar los TOTALES (KPIs del header + barra inferior). El estado
+  // de cada checkbox vive en localStorage; la fila visual ya se actualiza
+  // por sí sola con el click nativo.
   // ─────────────────────────────────────────────────────────────────
-  var _renderDebounceTimer = null;
-  function _debouncedRenderRecaudo(){
-    if(_renderDebounceTimer) clearTimeout(_renderDebounceTimer);
-    _renderDebounceTimer = setTimeout(function(){
-      _renderDebounceTimer = null;
-      try { if(typeof renderRecaudo === 'function') renderRecaudo(); } catch(e){}
-    }, 250);
-  }
-  window._debouncedRenderRecaudo = _debouncedRenderRecaudo;
 
-  // Patch a los 5 toggles para usar el debounce en lugar de setTimeout fijo.
-  // Lo hacemos con setInterval para asegurar que las funciones ya estén
-  // definidas (otros parches anteriores las pueden re-wrappear).
-  var _patchToggles_tries = 0;
-  var _patchToggles_done = {};
-  var _patchToggles_iv = setInterval(function(){
-    _patchToggles_tries++;
-    var fns = ['recaudoToggleRecibido','recaudoToggleDomi','recaudoToggleDomiDeuda',
-               'recaudoToggleDomiDeudaMia','recaudoToggleAzulDomi'];
-    var allDone = true;
-    fns.forEach(function(fnName){
-      if(_patchToggles_done[fnName]) return;
-      var orig = window[fnName];
-      if(typeof orig !== 'function'){ allDone = false; return; }
-      if(orig.__snappyPatched){ _patchToggles_done[fnName] = true; return; }
+  // window._recaudoActualizarTotales() — recalcula los KPIs y barra inferior
+  // sin tocar las filas. Llamada por todos los toggles de checkbox.
+  window._recaudoActualizarTotales = function(){
+    try{
+      var cache = window._recaudoCache;
+      if(!cache || !Array.isArray(cache.rows)) return;
 
-      window[fnName] = function(){
-        // 1) Ejecutar el toggle original (guarda en localStorage, etc.)
-        try { orig.apply(this, arguments); } catch(e){ console.error(e); }
-        // 2) NO esperar 300ms — el render se hará por debounce.
-        //    Esto cancela cualquier setTimeout(renderRecaudo) que el
-        //    original haya disparado y lo reemplaza por el debounce.
-        _debouncedRenderRecaudo();
-      };
-      window[fnName].__snappyPatched = true;
-      _patchToggles_done[fnName] = true;
-    });
-    if(allDone || _patchToggles_tries > 50) clearInterval(_patchToggles_iv);
-  }, 200);
+      var fk = 'recaudo_' + ((typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10));
+      var estado = {};
+      try{ estado = JSON.parse(localStorage.getItem(fk)||'{}'); }catch(e){}
 
-  // También: cuando el usuario marca/desmarca un checkbox, aplicar el
-  // estilo visual de "marcado" INMEDIATAMENTE en la fila (sin esperar
-  // el re-render). Esto da feedback visual instantáneo aunque el render
-  // tarde unos ms.
-  document.addEventListener('change', function(e){
-    var t = e.target;
-    if(!t || t.type !== 'checkbox') return;
-    if(!t.id || !t.id.startsWith('rec_')) return;
-    var tr = t.closest('tr');
-    if(!tr) return;
-    // Si es el checkbox de "recibido" (verde), pintar fila al instante
-    if(t.id.startsWith('rec_rec_')){
-      tr.style.background = t.checked ? 'rgba(74,222,128,0.13)' : '';
-    }
-  }, true);
+      // Recalcular sobre cache.rows + estado actual
+      var bruto = 0, recaudoDomi = 0, nequiVentas = 0, bancolombiaVentas = 0;
+      var pagoDeudaEfectivo = 0, pagoDeudaNequi = 0, pagoDeudaBancolombia = 0;
+      var faltantes = 0, salidas = 0;
+      var efectivoVentasTotal = 0;
+
+      cache.rows.forEach(function(r){
+        var est = estado[r.cliente] || {};
+        // Usar valores de localStorage (estado actual) cuando disponibles
+        var rRecaudoDomi = Number(est.recaudoDomi) || 0;
+        var rDomiIncluirDeuda = !!est.domiIncluirDeuda;
+        var rDomiIncluirDeudaMia = !!est.domiIncluirDeudaMia;
+        var rNequi = Number(est.nequi) || 0;
+        var rBancolombia = Number(est.bancolombia) || 0;
+        var rFaltantes = Number(est.faltantes) || 0;
+        var rSalidas = Number(est.salidas) || 0;
+
+        bruto += (Number(r.subtotal)||0);
+        recaudoDomi += rRecaudoDomi;
+        if(rDomiIncluirDeuda){
+          recaudoDomi += (Number(r._deudaTotalCliente)||0);
+          recaudoDomi -= (Number(r._deudaTotalMia)||0);
+        }
+        if(rDomiIncluirDeudaMia){
+          recaudoDomi -= (Number(r._deudaTotalMia)||0);
+        }
+        nequiVentas += rNequi;
+        bancolombiaVentas += rBancolombia;
+        faltantes += rFaltantes;
+        salidas += rSalidas;
+
+        // Efectivo en mis manos por fila
+        var efEnMisManos;
+        if(rRecaudoDomi > 0){
+          efEnMisManos = 0;
+        } else {
+          efEnMisManos = (Number(r.subtotal)||0) - rNequi - rBancolombia - rFaltantes - rSalidas;
+        }
+        efEnMisManos += (Number(r._deudaMiaHoy)||0);
+        efEnMisManos -= (Number(r._deudaClienteHoy)||0);
+        if(efEnMisManos < 0) efEnMisManos = 0;
+        efectivoVentasTotal += efEnMisManos;
+
+        // Pago de deuda
+        var rDeudasPagadas = Number(est.deudasPagadas) || 0;
+        var rDeudaMetodo = est.deudaMetodo || '';
+        var rDeudaBanco = est.deudaBanco || '';
+        if(rDeudaMetodo === 'efectivo'){
+          pagoDeudaEfectivo += rDeudasPagadas;
+        } else if(rDeudaMetodo === 'transferencia'){
+          if((rDeudaBanco||'').toUpperCase().indexOf('NEQUI') > -1){
+            pagoDeudaNequi += rDeudasPagadas;
+          } else {
+            pagoDeudaBancolombia += rDeudasPagadas;
+          }
+        }
+      });
+
+      var efectivoTotal = efectivoVentasTotal + pagoDeudaEfectivo;
+      var transferenciasVentas = nequiVentas + bancolombiaVentas;
+      var pagosDeudaTransf = pagoDeudaNequi + pagoDeudaBancolombia;
+      var totalRecaudado = efectivoTotal + transferenciasVentas + pagosDeudaTransf;
+
+      // Actualizar KPIs del header (los 5 cuadros de arriba)
+      function setKpi(label, valor){
+        // Buscar el div con el label exacto (case-insensitive)
+        var divs = document.querySelectorAll('.kpi-label, .panel-kpi-label, [class*="kpi"] [class*="label"]');
+        for(var i=0; i<divs.length; i++){
+          if((divs[i].textContent||'').trim().toUpperCase() === label.toUpperCase()){
+            var sib = divs[i].parentElement;
+            if(sib){
+              var valEl = sib.querySelector('.kpi-value, [class*="value"], h3, .num');
+              if(valEl) valEl.textContent = '$' + (Number(valor)||0).toLocaleString('es-CO');
+            }
+            return;
+          }
+        }
+      }
+
+      // Buscar KPIs por texto de cabecera flexible
+      function actualizarKPIPorTexto(textosBuscar, valor){
+        var nodos = document.querySelectorAll('#panelRecaudo .kpi-card, #panelRecaudo [class*="kpi"]');
+        for(var i=0; i<nodos.length; i++){
+          var txt = (nodos[i].textContent||'').toUpperCase();
+          var match = textosBuscar.some(function(t){ return txt.indexOf(t.toUpperCase()) > -1; });
+          if(match){
+            var valEl = nodos[i].querySelector('.kpi-value, [class*="value"], h3, .num, strong, b');
+            if(valEl){ valEl.textContent = '$' + (Number(valor)||0).toLocaleString('es-CO'); }
+            else {
+              // Buscar elemento con $ adentro
+              var allKids = nodos[i].querySelectorAll('*');
+              for(var j=0; j<allKids.length; j++){
+                if((allKids[j].textContent||'').indexOf('$') > -1 && allKids[j].children.length === 0){
+                  allKids[j].textContent = '$' + (Number(valor)||0).toLocaleString('es-CO');
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      actualizarKPIPorTexto(['EFECTIVO'], efectivoTotal);
+      actualizarKPIPorTexto(['NEQUI'], nequiVentas + pagoDeudaNequi);
+      actualizarKPIPorTexto(['BANCOLOMBIA'], bancolombiaVentas + pagoDeudaBancolombia);
+      actualizarKPIPorTexto(['PAGOS DEUDA','PAGOS_DEUDA'], pagoDeudaEfectivo + pagoDeudaNequi + pagoDeudaBancolombia);
+      actualizarKPIPorTexto(['TOTAL RECAUDADO','TOTAL_RECAUDADO'], totalRecaudado);
+      actualizarKPIPorTexto(['BRUTO TOTAL','BRUTO_TOTAL'], bruto);
+      actualizarKPIPorTexto(['RECAUDO DOMI','RECAUDO_DOMI'], recaudoDomi);
+      actualizarKPIPorTexto(['FALTANTES + SALIDAS','FALTANTES_SALIDAS'], faltantes + salidas);
+
+      // Actualizar también la barra inferior (BRUTO VENTAS, EFECTIVO, NEQUI, etc.)
+      actualizarKPIPorTexto(['BRUTO VENTAS'], bruto);
+      actualizarKPIPorTexto(['PAGOS DEUDA TRANSF'], pagoDeudaNequi + pagoDeudaBancolombia);
+      actualizarKPIPorTexto(['FALTANTES'], faltantes);
+      actualizarKPIPorTexto(['SALIDAS'], salidas);
+      actualizarKPIPorTexto(['TOTAL'], totalRecaudado);
+
+      // Actualizar también el efectivo neto y resumen de CADA FILA visible
+      cache.rows.forEach(function(r){
+        var safe = r.cliente.replace(/[^a-zA-Z0-9]/g,'_');
+        var est = estado[r.cliente] || {};
+        var rRecaudoDomi = Number(est.recaudoDomi) || 0;
+        var rNequi = Number(est.nequi) || 0;
+        var rBancolombia = Number(est.bancolombia) || 0;
+        var rFaltantes = Number(est.faltantes) || 0;
+        var rSalidas = Number(est.salidas) || 0;
+
+        var efRow;
+        if(rRecaudoDomi > 0){
+          efRow = 0;
+        } else {
+          efRow = (Number(r.subtotal)||0) - rNequi - rBancolombia - rFaltantes - rSalidas;
+        }
+        if(efRow < 0) efRow = 0;
+
+        // Buscar la celda efectivo neto de esta fila
+        var tr = document.querySelector('tr [id="rec_rec_'+safe+'"]');
+        if(tr){
+          tr = tr.closest('tr');
+          if(tr){
+            var celdas = tr.querySelectorAll('td');
+            // Penúltima columna suele ser EFECTIVO NETO
+            if(celdas.length >= 2){
+              var efCell = celdas[celdas.length - 2];
+              if(efCell && efCell.children.length === 0){
+                efCell.textContent = '$' + efRow.toLocaleString('es-CO');
+              }
+            }
+          }
+        }
+      });
+    }catch(err){ console.warn('[_recaudoActualizarTotales] error:', err); }
+  };
 
   // ─────────────────────────────────────────────────────────────────
   // FIX B: Edición de factura → actualizar recaudo si está abierto
-  //
-  // Cuando el usuario edita una factura desde el modal de pedido
-  // (función `guardar`), el panel recaudo NO se actualizaba si estaba
-  // abierto. Resultado: subtotales desactualizados, el repartidor
-  // veía valores viejos.
-  //
-  // Solución: tras `guardar`, si el panel recaudo está abierto,
-  // re-renderizarlo. Se respeta el estado de los checkboxes
-  // (recibido, domi, etc.) porque viven en localStorage, no en el DOM.
+  // (mantenido del parche anterior — sigue siendo necesario)
   // ─────────────────────────────────────────────────────────────────
   function _panelRecaudoAbierto(){
     var p = document.getElementById('panelRecaudo');
@@ -14827,11 +15094,8 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
       var resultado;
       try{ resultado = await orig.apply(this, arguments); }
       catch(e){ console.error(e); throw e; }
-      // Si el recaudo está abierto, refrescarlo
       try{
         if(_panelRecaudoAbierto() && typeof renderRecaudo === 'function'){
-          // Pequeño delay para que cargar() termine y los datos de
-          // Supabase ya estén en localStorage / cache local.
           setTimeout(function(){
             try { renderRecaudo(); } catch(e){ console.error(e); }
           }, 350);
@@ -14869,36 +15133,30 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
   }, 200);
 
   // ─────────────────────────────────────────────────────────────────
-  // FIX C: Footer / parte inferior — eliminar el corte visual
-  //
-  // Problema: al hacer scroll abajo en .main, el background del body
-  // (#F4EDE0) era visible bajo el último contenido, creando un corte
-  // estético horrible. Además las últimas tarjetas quedaban pegadas
-  // al borde inferior.
-  //
-  // Solución: agregar padding-bottom generoso al .main, asegurar que
-  // el background del body y del .main coincidan, y reservar espacio
-  // al final del #grid.
+  // FIX C: Footer / parte inferior — eliminar el corte visual y
+  // el espacio negro grande que aparece entre la barra de totales
+  // y el Control de Monedas
   // ─────────────────────────────────────────────────────────────────
   (function(){
     var s = document.getElementById('vnFooterFix') || document.createElement('style');
     s.id = 'vnFooterFix';
     s.textContent =
-      // Igualar fondo del body con el final del main para que no se vea corte
+      // Panel principal
       'html, body { background: #FFFBF5 !important; min-height: 100% !important; }' +
-      // Padding inferior generoso en el main para que el último contenido
-      // tenga aire visual y no se pegue al borde
       '.main { padding-bottom: 80px !important; box-sizing: border-box; }' +
-      // Espacio extra al final del grid de tarjetas
       '#grid { padding-bottom: 24px !important; }' +
-      // Asegurar que el gradiente del main termine suave
       '.main { background: linear-gradient(180deg, #FAF6F0 0%, #FFFBF5 60%, #FFFBF5 100%) !important; }' +
-      // Scroll del main: dar un poco de scroll-padding para que no quede pegado
-      '.main { scroll-padding-bottom: 40px; }';
+      '.main { scroll-padding-bottom: 40px; }' +
+      // Panel Recaudo: reducir el espacio grande entre totalbar y monedas
+      '#panelRecaudo .recaudo-totalbar { margin-bottom: 12px !important; }' +
+      '#panelRecaudo #monedasSection { margin-top: 12px !important; }' +
+      '#panelRecaudo #rcb { display: block !important; }' +
+      // El div contenedor del botón camo no debe ocupar espacio extra
+      '#panelRecaudo #rcb { margin: 0 !important; }';
     if(!s.parentNode) document.head.appendChild(s);
   })();
 
-  console.log('✅ PARCHE FINAL aplicado — checkboxes snappy, sync recaudo, footer limpio');
+  console.log('✅ PARCHE FINAL aplicado — checkboxes instantáneos sin re-render, sync recaudo, footer limpio');
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
