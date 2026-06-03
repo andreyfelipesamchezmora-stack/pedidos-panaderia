@@ -1364,19 +1364,27 @@ let _clientesBase = [
   var mapa = {};
   var orden = [];
 
+  // 🛡️ Lista negra de clientes eliminados (persistente)
+  var eliminados = {};
+  try { eliminados = JSON.parse(localStorage.getItem('clientes_eliminados')||'{}'); }catch(e){}
+  function _estaEliminado(n){
+    var k = (n||'').toUpperCase().trim();
+    return !!eliminados[k];
+  }
+
   // 1) PRIMERO: orden personalizado del usuario (localStorage = drag-and-drop)
   //    Si tiene datos, ESTE es el orden canónico, no _clientesBase.
   var tieneOrdenPersonal = Array.isArray(_clientesGuardados) && _clientesGuardados.length > 0;
 
   if(tieneOrdenPersonal){
     _clientesGuardados.forEach(function(c){
-      if(c && c.nombre && !mapa[c.nombre]){
+      if(c && c.nombre && !mapa[c.nombre] && !_estaEliminado(c.nombre)){
         mapa[c.nombre] = c;
         orden.push(c.nombre);
       }
     });
     // 2) Después: añadir clientes de _clientesBase que NO estén en el orden personal
-    //    (clientes nuevos hardcoded añadidos al código después de que el usuario guardó)
+    //    NI en la lista negra (clientes nuevos hardcoded añadidos al código después)
     _clientesBase.forEach(function(c){
       if(c && c.nombre && !mapa[c.nombre]){
         mapa[c.nombre] = c;
@@ -1386,7 +1394,7 @@ let _clientesBase = [
   } else {
     // Primera vez (localStorage vacío): usar _clientesBase como orden inicial
     _clientesBase.forEach(function(c){
-      if(c && c.nombre && !mapa[c.nombre]){
+      if(c && c.nombre && !mapa[c.nombre] && !_estaEliminado(c.nombre)){
         mapa[c.nombre] = c;
         orden.push(c.nombre);
       }
@@ -1414,10 +1422,13 @@ window._clientesOrdenarPorBase = function(){
       }
     });
 
-    // Solo AÑADIR clientes de _clientesBase que falten — sin reordenar los existentes
+    // Solo AÑADIR clientes de _clientesBase que falten Y que NO estén eliminados
+    var elim = (typeof window._clientesEliminadosGet === 'function')
+                ? window._clientesEliminadosGet() : {};
+    function _kElim(n){ return (n||'').toUpperCase().trim(); }
     var hayCambios = false;
     _clientesBase.forEach(function(c){
-      if(c && c.nombre && !mapaNombres[c.nombre]){
+      if(c && c.nombre && !mapaNombres[c.nombre] && !elim[_kElim(c.nombre)]){
         mapaNombres[c.nombre] = c;
         ordenActual.push(c.nombre);
         hayCambios = true;
@@ -1641,11 +1652,84 @@ async function guardar(){
   cerrarModal(); cargar();
 }
 
+// ─────────────────────────────────────────────────────────────────
+// 🛡️ LISTA NEGRA DE CLIENTES ELIMINADOS
+// Cuando el usuario elimina un cliente, el nombre se añade a esta
+// lista para impedir que _clientesBase (hardcoded) o un sync remoto
+// lo resuciten al recargar la página. Solo sale de la lista si el
+// usuario crea de nuevo un cliente con el mismo nombre.
+// ─────────────────────────────────────────────────────────────────
+window._clientesEliminadosKey = function(n){ return (n||'').toUpperCase().trim(); };
+window._clientesEliminadosGet = function(){
+  try { return JSON.parse(localStorage.getItem('clientes_eliminados')||'{}'); }
+  catch(e){ return {}; }
+};
+window._clientesEliminadosSet = function(n){
+  var key = window._clientesEliminadosKey(n);
+  if(!key) return;
+  var b = window._clientesEliminadosGet();
+  b[key] = Date.now();
+  try { localStorage.setItem('clientes_eliminados', JSON.stringify(b)); }catch(e){}
+};
+window._clientesEliminadosQuitar = function(n){
+  var key = window._clientesEliminadosKey(n);
+  if(!key) return;
+  var b = window._clientesEliminadosGet();
+  if(b[key] !== undefined){
+    delete b[key];
+    try { localStorage.setItem('clientes_eliminados', JSON.stringify(b)); }catch(e){}
+  }
+};
+window._clientesEliminadosEsta = function(n){
+  var key = window._clientesEliminadosKey(n);
+  if(!key) return false;
+  var b = window._clientesEliminadosGet();
+  return b[key] !== undefined;
+};
+// Filtro reutilizable: dado un array de clientes, devuelve el array sin los eliminados
+window._clientesFiltrarEliminados = function(arr){
+  if(!Array.isArray(arr)) return arr;
+  var b = window._clientesEliminadosGet();
+  if(Object.keys(b).length === 0) return arr;
+  return arr.filter(function(c){
+    var n = (typeof c === 'string') ? c : (c && c.nombre ? c.nombre : '');
+    return !b[window._clientesEliminadosKey(n)];
+  });
+};
+
 async function eliminar(id,nombre){
   if(!confirm("Eliminar cliente?")) return;
   if(id) await db.from("pedidos").delete().eq("id",id);
-  clientes=clientes.filter(c=>c.nombre!==nombre);
-  localStorage.setItem("clientes",JSON.stringify(clientes));
+
+  // 🛡️ Añadir a la lista negra ANTES de tocar nada más
+  try { window._clientesEliminadosSet(nombre); } catch(e){}
+
+  // 1) Quitar del array en memoria
+  clientes = clientes.filter(function(c){
+    return c && c.nombre !== nombre &&
+           (typeof window._clientesEliminadosKey === 'function'
+              ? window._clientesEliminadosKey(c.nombre) !== window._clientesEliminadosKey(nombre)
+              : true);
+  });
+  try { window.clientes = clientes; } catch(e){}
+
+  // 2) También quitar de _clientesBase (hardcoded) para que no resucite
+  //    en esta sesión por algún re-merge
+  try {
+    if(Array.isArray(_clientesBase)){
+      var keyDel = window._clientesEliminadosKey(nombre);
+      _clientesBase = _clientesBase.filter(function(c){
+        return c && window._clientesEliminadosKey(c.nombre) !== keyDel;
+      });
+    }
+  } catch(e){}
+
+  // 3) Persistir y sincronizar la versión limpia
+  try { localStorage.setItem("clientes", JSON.stringify(clientes)); } catch(e){}
+
+  // 4) Forzar subida a Supabase para que el cliente desaparezca también allá
+  try { if(window.SyncForzarSubirPanel) setTimeout(window.SyncForzarSubirPanel, 400); } catch(e){}
+
   cargar();
 }
 
@@ -1661,6 +1745,10 @@ function nuevoCliente(){
   if(clientes.find(function(c){return c.nombre.toUpperCase()===nombre.toUpperCase();})){
     alert("El cliente '"+nombre+"' ya existe.");return;
   }
+
+  // 🛡️ Si el cliente estaba en la lista negra (fue eliminado antes),
+  // quitarlo: el usuario lo está recreando intencionalmente.
+  try { if(typeof window._clientesEliminadosQuitar === 'function') window._clientesEliminadosQuitar(nombre); } catch(e){}
 
   // Agregar al array en memoria y a _clientesBase (para que el recaudo lo ordene)
   var nuevoObj={nombre:nombre,tipo:tipo};
@@ -4015,6 +4103,8 @@ function recaudoInyectarSugeridos(rows) {
   
 // Toggle recibido — SIN re-render destructivo (evita bugs de checkboxes)
 function recaudoToggleRecibido(nombre){
+  // 🛡️ Marcar interacción para bloquear el eco de refreshRecaudo
+  try { window._recaudoLastInteract = Date.now(); } catch(e){}
   let cb = document.getElementById('rec_rec_' + nombre);
   let estado = recaudoLeerEstado();
   if(!estado[nombre]) estado[nombre] = {};
@@ -5572,6 +5662,8 @@ function recaudoCalcularDesgloseMetodos(rows){
 // Toggle recaudo domi: marca/desmarca y guarda el subtotal como recaudoDomi
 
   function recaudoToggleDomi(nombre, subtotal){
+  // 🛡️ Marcar interacción para bloquear el eco de refreshRecaudo
+  try { window._recaudoLastInteract = Date.now(); } catch(e){}
   let cb = document.getElementById('rec_domi_' + nombre);
   let estado = recaudoLeerEstado();
   if(!estado[nombre]) estado[nombre] = {};
@@ -5591,6 +5683,8 @@ function recaudoCalcularDesgloseMetodos(rows){
 
 // Toggle: incluir la deuda del cliente en el total de recaudo domi
 function recaudoToggleDomiDeuda(nombre){
+  // 🛡️ Marcar interacción
+  try { window._recaudoLastInteract = Date.now(); } catch(e){}
   let cb = document.getElementById('rec_domideuda_' + nombre);
   let cbDomi = document.getElementById('rec_domi_' + nombre);
   let estado = recaudoLeerEstado();
@@ -5620,6 +5714,8 @@ function recaudoToggleDomiDeuda(nombre){
 
 // Toggle: incluir la deuda MÍA en el total de recaudo domi (RESTA)
 function recaudoToggleDomiDeudaMia(nombre){
+  // 🛡️ Marcar interacción
+  try { window._recaudoLastInteract = Date.now(); } catch(e){}
   let cb = document.getElementById('rec_domideudamia_' + nombre);
   let cbDomi = document.getElementById('rec_domi_' + nombre);
   let estado = recaudoLeerEstado();
@@ -5646,6 +5742,8 @@ function recaudoToggleDomiDeudaMia(nombre){
 
 // Toggle azul domi: checkbox en columna "Yo le debo" para incluir deuda mía en recaudo domi (RESTA)
 function recaudoToggleAzulDomi(nombre){
+  // 🛡️ Marcar interacción
+  try { window._recaudoLastInteract = Date.now(); } catch(e){}
   let cb = document.getElementById('rec_azuldomi_' + nombre);
   let cbDomi = document.getElementById('rec_domi_' + nombre);
   let estado = recaudoLeerEstado();
@@ -8613,6 +8711,55 @@ window.mostrarRangoStats = function(){
     box-sizing: border-box;
     margin-top: 3px;
     margin-bottom: 4px;
+  }
+
+  /* 🛡️ QUITAR FLECHAS DE INPUTS NUMÉRICOS EN EL MODAL DE PEDIDOS
+     Las flechas (spinner) eran molestas porque se podían pulsar por error.
+     También se desactiva el cambio por scroll del ratón vía JS. */
+  #modalPedido input[type="number"]::-webkit-outer-spin-button,
+  #modalPedido input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none !important;
+    margin: 0 !important;
+  }
+  #modalPedido input[type="number"] {
+    -moz-appearance: textfield !important;
+    appearance: textfield !important;
+  }
+
+  /* 🛡️ COLOR PASTEL — diferenciar visualmente Cantidad vs Dinero
+     Cantidad: verde pastel suave.
+     Dinero: amarillo pastel suave (ya tenía borde naranja, refuerza el contraste). */
+  #modalPedido input[id^="cant"] {
+    background: #e8f8ec !important;        /* verde pastel suave */
+    border: 1.5px solid #b4e3c2 !important;
+    color: #14532d !important;             /* texto verde oscuro */
+    font-weight: 600 !important;
+  }
+  #modalPedido input[id^="cant"]:focus {
+    background: #d6f0de !important;
+    border-color: #4ade80 !important;
+    box-shadow: 0 0 0 3px rgba(74,222,128,0.18) !important;
+    outline: none !important;
+  }
+  #modalPedido input[id^="cant"]::placeholder {
+    color: #6b8775 !important;
+    opacity: 0.7;
+  }
+  #modalPedido input[id^="din"] {
+    background: #fef9e7 !important;        /* amarillo pastel suave */
+    border: 1.5px solid #f9e4a6 !important;
+    color: #78350f !important;             /* texto marrón cálido */
+    font-weight: 600 !important;
+  }
+  #modalPedido input[id^="din"]:focus {
+    background: #fdf3d4 !important;
+    border-color: #f59e0b !important;
+    box-shadow: 0 0 0 3px rgba(245,158,11,0.18) !important;
+    outline: none !important;
+  }
+  #modalPedido input[id^="din"]::placeholder {
+    color: #92765a !important;
+    opacity: 0.7;
   }
 
   /* Barra top con botón cerrar */
@@ -11999,7 +12146,7 @@ console.log('✅ Módulo V20: Deudas + Cartera limpio');
   async function subF(t,f,d){try{var r=await db.from(t).upsert({fecha:f,datos:d,updated_at:new Date().toISOString()},{onConflict:'fecha'});return!r.error;}catch(e){return false;}}
   async function baj(t){try{var r=await db.from(t).select('datos').eq('id',1).maybeSingle();return(r&&r.data)?r.data.datos:null;}catch(e){return null;}}
   async function bajF(t,f){try{var r=await db.from(t).select('datos').eq('fecha',f).maybeSingle();return(r&&r.data)?r.data.datos:null;}catch(e){return null;}}
-  function apl(t,d){if(!d)return;_s=true;var l=RMAP[t];if(t==='clientes_config'&&Array.isArray(d)&&d.length>0){/* 🛡️ MERGE en vez de sobrescribir, para respetar drag-and-drop local */var _locC=[];try{_locC=JSON.parse(LS.get('clientes')||'[]');}catch(e){}var _merged=d;try{if(typeof _mergeClientes==='function'){_merged=_mergeClientes(_locC,d);}else if(Array.isArray(_locC)&&_locC.length>0){/* fallback: respetar orden local */var _mp={};_locC.forEach(function(c){if(c&&c.nombre)_mp[c.nombre]=c;});d.forEach(function(c){if(c&&c.nombre){if(_mp[c.nombre])_mp[c.nombre]=Object.assign({},_mp[c.nombre],c);else _mp[c.nombre]=c;}});var _ord=[];_locC.forEach(function(c){if(c&&c.nombre&&_ord.indexOf(c.nombre)===-1)_ord.push(c.nombre);});d.forEach(function(c){if(c&&c.nombre&&_ord.indexOf(c.nombre)===-1)_ord.push(c.nombre);});_merged=_ord.map(function(n){return _mp[n];});}}catch(e){}window.clientes=_merged;LS.set('clientes',JSON.stringify(_merged));}else if(t==='cuentas_bancarias'&&Array.isArray(d)&&d.length>0){window.cuentasMemoria=d;LS.set('cuentasMemoria',JSON.stringify(d));}else if(t==='transferencias'){window.transferenciasMem=d;LS.set('transferenciasMem',JSON.stringify(d));}else if(t==='movimientos_contables'&&Array.isArray(d)&&d.length>0){window.movimientosContables=d;LS.set('mc_local',JSON.stringify(d));}else if(t==='gastos_manuales'&&Array.isArray(d)&&d.length>0){window.gastosMemoria=d;SS.set('gastos',JSON.stringify(d));LS.set('gm_local',JSON.stringify(d));}else if(l){LS.set(l,JSON.stringify(d));}setTimeout(function(){_s=false;},500);}
+  function apl(t,d){if(!d)return;_s=true;var l=RMAP[t];if(t==='clientes_config'&&Array.isArray(d)&&d.length>0){/* 🛡️ MERGE en vez de sobrescribir, para respetar drag-and-drop local + filtrar eliminados */var _elimAp=(typeof window._clientesEliminadosGet==='function')?window._clientesEliminadosGet():{};function _kEa(n){return(n||'').toUpperCase().trim();}var _dFilt=d.filter(function(c){return c&&c.nombre&&!_elimAp[_kEa(c.nombre)];});var _locC=[];try{_locC=JSON.parse(LS.get('clientes')||'[]');}catch(e){}_locC=_locC.filter(function(c){return c&&c.nombre&&!_elimAp[_kEa(c.nombre)];});var _merged=_dFilt;try{if(typeof _mergeClientes==='function'){_merged=_mergeClientes(_locC,_dFilt);}else if(Array.isArray(_locC)&&_locC.length>0){var _mp={};_locC.forEach(function(c){if(c&&c.nombre)_mp[c.nombre]=c;});_dFilt.forEach(function(c){if(c&&c.nombre){if(_mp[c.nombre])_mp[c.nombre]=Object.assign({},_mp[c.nombre],c);else _mp[c.nombre]=c;}});var _ord=[];_locC.forEach(function(c){if(c&&c.nombre&&_ord.indexOf(c.nombre)===-1)_ord.push(c.nombre);});_dFilt.forEach(function(c){if(c&&c.nombre&&_ord.indexOf(c.nombre)===-1)_ord.push(c.nombre);});_merged=_ord.map(function(n){return _mp[n];});}}catch(e){}window.clientes=_merged;LS.set('clientes',JSON.stringify(_merged));}else if(t==='cuentas_bancarias'&&Array.isArray(d)&&d.length>0){window.cuentasMemoria=d;LS.set('cuentasMemoria',JSON.stringify(d));}else if(t==='transferencias'){window.transferenciasMem=d;LS.set('transferenciasMem',JSON.stringify(d));}else if(t==='movimientos_contables'&&Array.isArray(d)&&d.length>0){window.movimientosContables=d;LS.set('mc_local',JSON.stringify(d));}else if(t==='gastos_manuales'&&Array.isArray(d)&&d.length>0){window.gastosMemoria=d;SS.set('gastos',JSON.stringify(d));LS.set('gm_local',JSON.stringify(d));}else if(l){LS.set(l,JSON.stringify(d));}setTimeout(function(){_s=false;},500);}
   localStorage.setItem=function(k,v){LS.set(k,v);if(_s)return;if(MAP[k]){try{sub(MAP[k],JSON.parse(v));}catch(e){}}if(k.indexOf('recaudo_')===0&&k.length>10){try{subF('recaudo_diario',k.slice(8),JSON.parse(v));}catch(e){}}if(k.indexOf('monedas_')===0&&k.length>10){try{subF('monedas_diario',k.slice(8),JSON.parse(v));}catch(e){}}};
   sessionStorage.setItem=function(k,v){SS.set(k,v);if(_s)return;if(k==='gastos'){try{sub('gastos_manuales',JSON.parse(v));}catch(e){}}};
   var _lM=0,_lG=0;
@@ -13518,8 +13665,19 @@ window.vnDiagVentas = function(){
   }
 
   // ── Refrescar recaudo (si está abierto) ──────────
+  // 🛡️ Si el usuario está clickeando checkboxes en este momento, NO
+  // re-renderizar — el eco del realtime de Supabase causaba que la
+  // tabla se reconstruyera mientras el usuario seguía interactuando,
+  // resultando en checkboxes que parecían deseleccionarse solos.
+  // Los totales/KPIs se actualizan localmente al instante via
+  // `_recaudoActualizarTotales()` desde cada toggle.
   function refreshRecaudo() {
     debounce('recaudo', function () {
+      // Si la última interacción con el recaudo fue hace < 3 segundos, abortar
+      try {
+        var lastInteract = window._recaudoLastInteract || 0;
+        if(Date.now() - lastInteract < 3000) return;
+      } catch(e){}
       var p = document.getElementById('panelRecaudo');
       if (p && p.classList.contains('open') && typeof renderRecaudo === 'function') {
         renderRecaudo();
@@ -13781,6 +13939,19 @@ window.vnDiagVentas = function(){
   function _mergeClientes(loc, rem) {
     var locArr = Array.isArray(loc) ? loc : [];
     var remArr = Array.isArray(rem) ? rem : [];
+
+    // 🛡️ Excluir clientes eliminados ANTES del merge
+    var elim = (typeof window._clientesEliminadosGet === 'function')
+                ? window._clientesEliminadosGet() : {};
+    function _kElim(n){ return (n||'').toUpperCase().trim(); }
+    function _filtrar(arr){
+      return arr.filter(function(c){
+        return c && c.nombre && !elim[_kElim(c.nombre)];
+      });
+    }
+    locArr = _filtrar(locArr);
+    remArr = _filtrar(remArr);
+
     var mapa = {};
     // 1) Locales primero: si el usuario acaba de crear un cliente, está acá
     locArr.forEach(function(c){
@@ -14365,13 +14536,20 @@ async function cargarClientesDesdeSupabase(){
     // El orden de window.clientes (drag-and-drop del usuario) NUNCA se altera
     // por datos remotos. Supabase solo actualiza CAMPOS de clientes existentes
     // o añade clientes nuevos AL FINAL.
+    // 🛡️ Además se EXCLUYEN los clientes que están en la lista negra de eliminados.
+    var _elim = (typeof window._clientesEliminadosGet === 'function')
+                ? window._clientesEliminadosGet() : {};
+    function _kE(n){ return (n||'').toUpperCase().trim(); }
     var _mapa = {};
     var _orden = [];
     (Array.isArray(clientes) ? clientes : []).forEach(function(c){
-      if(c && c.nombre && !_mapa[c.nombre]){ _mapa[c.nombre] = c; _orden.push(c.nombre); }
+      if(c && c.nombre && !_mapa[c.nombre] && !_elim[_kE(c.nombre)]){
+        _mapa[c.nombre] = c; _orden.push(c.nombre);
+      }
     });
     data.forEach(function(c){
       if(!c || !c.nombre) return;
+      if(_elim[_kE(c.nombre)]) return;  // saltar eliminados
       if(_mapa[c.nombre]){
         // Cliente ya existe localmente: actualizar campos pero MANTENER posición
         _mapa[c.nombre] = Object.assign({}, _mapa[c.nombre], c);
@@ -14975,6 +15153,40 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
   'use strict';
 
   // ─────────────────────────────────────────────────────────────────
+  // 🛡️ MARCADOR DE INTERACCIÓN DEL USUARIO CON EL RECAUDO
+  //
+  // Cada vez que el usuario interactúa con un checkbox o input del
+  // recaudo, marcamos la hora. Esto bloquea `refreshRecaudo()` durante
+  // ~3 segundos para que el ECO de Supabase (cuando guardamos un
+  // cambio local, Supabase nos lo devuelve por realtime) no destruya
+  // la tabla mientras seguimos clickeando. Sin esto, los checkboxes
+  // se "deseleccionaban solos" porque el re-render llegaba justo
+  // cuando el usuario hacía otro click.
+  // ─────────────────────────────────────────────────────────────────
+  window._recaudoLastInteract = 0;
+  function _marcarInteract(){ window._recaudoLastInteract = Date.now(); }
+
+  // Capturar cualquier click/input dentro del panel recaudo
+  document.addEventListener('click', function(e){
+    var t = e.target;
+    if(!t) return;
+    var p = document.getElementById('panelRecaudo');
+    if(!p || !p.contains(t)) return;
+    if(t.type === 'checkbox' || (t.id && t.id.startsWith('rec_'))){
+      _marcarInteract();
+    }
+  }, true);
+  document.addEventListener('change', function(e){
+    var t = e.target;
+    if(!t) return;
+    var p = document.getElementById('panelRecaudo');
+    if(!p || !p.contains(t)) return;
+    if(t.type === 'checkbox' || (t.id && t.id.startsWith('rec_'))){
+      _marcarInteract();
+    }
+  }, true);
+
+  // ─────────────────────────────────────────────────────────────────
   // FIX A: Checkboxes del recaudo — RESPUESTA INSTANTÁNEA, SIN RE-RENDER
   //
   // Problema: cada toggle disparaba setTimeout(renderRecaudo, 300) que
@@ -15238,6 +15450,25 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
       '#panelRecaudo #rcb { margin: 0 !important; }';
     if(!s.parentNode) document.head.appendChild(s);
   })();
+
+  // ─────────────────────────────────────────────────────────────────
+  // 🛡️ BLOQUEAR CAMBIO POR SCROLL DEL MOUSE en inputs del modal de pedidos
+  // Cuando un input number tiene foco y el usuario hace scroll, el navegador
+  // incrementa/decrementa el valor — eso era molesto. Lo desactivamos
+  // capturando el evento 'wheel' y dejándolo "perder foco" para que el
+  // scroll afecte al modal completo, no al input.
+  // ─────────────────────────────────────────────────────────────────
+  document.addEventListener('wheel', function(e){
+    var t = e.target;
+    if(!t) return;
+    var modal = document.getElementById('modalPedido');
+    if(!modal || !modal.contains(t)) return;
+    // Si es un input dentro del modal y tiene foco, quitarle el foco
+    // momentáneamente para que el scroll afecte al modal en vez del input.
+    if(t.tagName === 'INPUT' && t === document.activeElement){
+      t.blur();
+    }
+  }, { passive: true });
 
   console.log('✅ PARCHE FINAL aplicado — checkboxes instantáneos sin re-render, sync recaudo, footer limpio');
 })();
