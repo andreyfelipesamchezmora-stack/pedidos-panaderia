@@ -1385,8 +1385,10 @@ let _clientesBase = [
     });
     // 2) Después: añadir clientes de _clientesBase que NO estén en el orden personal
     //    NI en la lista negra (clientes nuevos hardcoded añadidos al código después)
+    // 🛡️ EL BUG ANTERIOR: faltaba !_estaEliminado, por eso clientes eliminados
+    //    reaparecían al final al recargar la página.
     _clientesBase.forEach(function(c){
-      if(c && c.nombre && !mapa[c.nombre]){
+      if(c && c.nombre && !mapa[c.nombre] && !_estaEliminado(c.nombre)){
         mapa[c.nombre] = c;
         orden.push(c.nombre);
       }
@@ -15471,6 +15473,147 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
   }, { passive: true });
 
   console.log('✅ PARCHE FINAL aplicado — checkboxes instantáneos sin re-render, sync recaudo, footer limpio');
+})();
+</script>
+<script>
+// ════════════════════════════════════════════════════════════════════
+// 🛡️ PARCHE DEFINITIVO V3 — CHECKBOXES BLINDADOS Y MARCADO INSTANTÁNEO
+// ════════════════════════════════════════════════════════════════════
+// Bug histórico: al hacer click en un checkbox del recaudo, a veces
+// quedaban "deseleccionados solos" o "tardaban en marcarse". Causas
+// que se entrelazaban:
+//
+//   1. Cada toggle guardaba en localStorage → setter override lo subía
+//      a Supabase → Supabase devolvía el evento realtime al MISMO
+//      cliente → refreshRecaudo() → renderRecaudo() → la tabla se
+//      destruía y recreaba mientras el usuario seguía clickeando.
+//
+//   2. onblur de inputs (nequi/banco/faltantes/salidas) llama
+//      renderRecaudo. Si tenías un input enfocado y clickeabas un
+//      checkbox, el blur lanzaba el render ANTES del click.
+//
+//   3. Polling cada 5s, wrappers de guardar/eliminar, etc.
+//
+// LA SOLUCIÓN: blindar `renderRecaudo` GLOBALMENTE. Cualquier llamada
+// a esa función — venga de donde venga — pasa por una guarda. Si
+// hubo interacción reciente con el panel (incluso un mousedown sobre
+// un checkbox antes de que se procese el click), la guarda ABORTA el
+// render destructivo. Solo se actualizan los totales sin tocar las
+// filas. Después de 4 segundos de inactividad, sí se permite render
+// para reflejar cambios remotos.
+// ════════════════════════════════════════════════════════════════════
+(function(){
+  'use strict';
+
+  var BLOQUEO_MS = 4000;
+  window._recaudoLastInteract = window._recaudoLastInteract || 0;
+
+  function marcar(){ window._recaudoLastInteract = Date.now(); }
+  function enInteraccion(){
+    return (Date.now() - (window._recaudoLastInteract||0)) < BLOQUEO_MS;
+  }
+  window._recaudoEnInteraccion = enInteraccion;
+
+  // ─── Capturar TODOS los eventos dentro del panel recaudo ────────
+  // Fase CAPTURE (true) garantiza que la marca quede establecida
+  // ANTES de cualquier handler de blur/change/click pueda disparar
+  // renderRecaudo.
+  function dentro(t){
+    if(!t) return false;
+    var p = document.getElementById('panelRecaudo');
+    if(!p) return false;
+    try { return p.contains(t); } catch(e){ return false; }
+  }
+  ['pointerdown','mousedown','touchstart','click','change','input','keydown','focus','blur']
+    .forEach(function(evt){
+      document.addEventListener(evt, function(e){
+        if(dentro(e.target)) marcar();
+      }, true);
+    });
+
+  // ─── Marcar también ANTES de que el usuario haga click ──────────
+  // Hover sobre el panel recaudo cuenta como "uso reciente". Esto
+  // garantiza que si el usuario está pensando entre clicks, el
+  // render no se cuele.
+  document.addEventListener('mousemove', function(e){
+    if(dentro(e.target)){
+      // No tan agresivo como un click — solo actualizar si pasó algo de tiempo
+      var ahora = Date.now();
+      if(ahora - (window._recaudoLastInteract||0) > 1000){
+        window._recaudoLastInteract = ahora;
+      }
+    }
+  }, true);
+
+  // ─── ENVOLVER renderRecaudo GLOBALMENTE ──────────────────────────
+  var _renderProgramado = null;
+  function envolver(){
+    if(typeof window.renderRecaudo !== 'function') return false;
+    if(window.renderRecaudo.__blindado) return true;
+
+    var orig = window.renderRecaudo;
+    window.renderRecaudo = async function(){
+      if(enInteraccion()){
+        // Bloqueado: solo actualizar totales (no destruye DOM)
+        try {
+          if(typeof window._recaudoActualizarTotales === 'function'){
+            window._recaudoActualizarTotales();
+          }
+        } catch(e){}
+        // Programar render diferido — se cancela si llega otra interacción
+        if(_renderProgramado) clearTimeout(_renderProgramado);
+        function tryRender(){
+          _renderProgramado = null;
+          if(!enInteraccion()){
+            try { orig.call(window); } catch(e){ console.warn('render diferido:', e); }
+          } else {
+            _renderProgramado = setTimeout(tryRender, 1000);
+          }
+        }
+        _renderProgramado = setTimeout(tryRender, BLOQUEO_MS + 200);
+        return;
+      }
+      return orig.apply(this, arguments);
+    };
+    window.renderRecaudo.__blindado = true;
+    return true;
+  }
+
+  if(!envolver()){
+    var tries = 0;
+    var iv = setInterval(function(){
+      tries++;
+      if(envolver() || tries > 40) clearInterval(iv);
+    }, 200);
+  }
+
+  // Re-envolver si algún otro parche reasigna renderRecaudo
+  setInterval(function(){
+    try {
+      if(typeof window.renderRecaudo === 'function' && !window.renderRecaudo.__blindado){
+        envolver();
+      }
+    } catch(e){}
+  }, 2000);
+
+  // ─── Wrappear localStorage.setItem para marcar interacción ──────
+  // Cuando se guarda recaudo_HOY, el setter override sube a Supabase,
+  // que devuelve el evento por realtime. Si marcamos la interacción
+  // antes del setItem, el render que dispararía el eco queda bloqueado.
+  try {
+    if(!localStorage.setItem.__recaudoMarkV3){
+      var _origLSset = localStorage.setItem.bind(localStorage);
+      localStorage.setItem = function(k, v){
+        if(typeof k === 'string' && k.indexOf('recaudo_') === 0){
+          marcar();
+        }
+        return _origLSset(k, v);
+      };
+      localStorage.setItem.__recaudoMarkV3 = true;
+    }
+  } catch(e){}
+
+  console.log('🛡️ Parche DEFINITIVO V3 cargado: renderRecaudo blindado + marcado pre-emptivo.');
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
