@@ -185,15 +185,19 @@ html, body { height:100%;font-family:var(--font);background:var(--bg);color:var(
 <body>
 <script>
 // ================================================================
-// 🛡️ LIMPIEZA RETROACTIVA — DESVINCULACIÓN PANEL ↔ CONTABILIDAD
-// Purga de mc_local y gm_local TODAS las entradas inyectadas por el panel:
-// — deudas: "Le debo a X", "Deuda de X", "Pago deuda X", tipo:'deuda'
-// — nómina: "Nómina quincenal/semanal", categoria:'Nómina'
-// Corre una sola vez al cargar.
+// 🛡️ LIMPIEZA RETROACTIVA CONSERVADORA — solo entradas con formato
+// EXACTO del panel ("Nómina quincenal — XXX" con em-dash literal,
+// "Le debo a X", "Deuda de X", "Pago deuda X", tipo:'deuda').
+// Las nóminas MANUALES (descripciones libres, categoría 'NÓMINA',
+// flag _manual:true) NO se tocan — son las que el usuario crea
+// directamente en esta página.
 // ================================================================
 (function(){
-  function esBasura(m){
+  function esBasuraDelPanel(m){
     if(!m) return false;
+    // Nunca tocar las manuales creadas en contabilidad
+    if(m._manual === true || m._fromConta === true) return false;
+    // Deudas con tipo:'deuda' — siempre del panel
     if(String(m.tipo||'').toLowerCase() === 'deuda') return true;
     var d = String(m.descripcion||'').toLowerCase();
     if(/\ble\s+debo\s+a\b/.test(d)) return true;
@@ -201,11 +205,10 @@ html, body { height:100%;font-family:var(--font);background:var(--bg);color:var(
     if(/\bdeuda\s+de\b/.test(d)) return true;
     if(/\byo\s+le\s+debo\b/.test(d)) return true;
     if(/\bpago\s+deuda\b/.test(d)) return true;
-    // Nómina del panel
-    if(/^n[óo]mina\b/.test(d)) return true;
-    if(/\bn[óo]mina\s+(?:quincenal|semanal)\b/.test(d)) return true;
-    var cat = String(m.categoria||'').toUpperCase();
-    if(/^N[ÓO]MINA$/.test(cat)) return true;
+    // 🛡️ Nómina del PANEL: SOLO el patrón EXACTO con em-dash.
+    // No tocar "Nómina enero", "NÓMINA PANADERO", "Pago Nómina", etc.
+    var dRaw = String(m.descripcion||'');
+    if(/^N[óo]mina\s+(quincenal|semanal)\s*—/i.test(dRaw)) return true;
     return false;
   }
 
@@ -217,10 +220,10 @@ html, body { height:100%;font-family:var(--font);background:var(--bg);color:var(
       try { arr = JSON.parse(raw); } catch(e){ arr = null; }
       if(Array.isArray(arr) && arr.length > 0){
         var antes = arr.length;
-        var limpio = arr.filter(function(m){ return !esBasura(m); });
+        var limpio = arr.filter(function(m){ return !esBasuraDelPanel(m); });
         if(limpio.length !== antes){
           localStorage.setItem('mc_local', JSON.stringify(limpio));
-          console.log('🧹 Contabilidad: '+(antes-limpio.length)+' entrada(s) panel→conta purgadas de mc_local');
+          console.log('🧹 Contabilidad: '+(antes-limpio.length)+' entrada(s) del panel purgadas de mc_local');
         }
       }
     }
@@ -234,15 +237,38 @@ html, body { height:100%;font-family:var(--font);background:var(--bg);color:var(
       try { arr2 = JSON.parse(raw2); } catch(e){ arr2 = null; }
       if(Array.isArray(arr2) && arr2.length > 0){
         var antes2 = arr2.length;
-        var limpio2 = arr2.filter(function(m){ return !esBasura(m); });
+        var limpio2 = arr2.filter(function(m){ return !esBasuraDelPanel(m); });
         if(limpio2.length !== antes2){
           localStorage.setItem('gm_local', JSON.stringify(limpio2));
           try { sessionStorage.setItem('gastos', JSON.stringify(limpio2)); } catch(e){}
-          console.log('🧹 Contabilidad: '+(antes2-limpio2.length)+' entrada(s) nómina purgadas de gm_local');
+          console.log('🧹 Contabilidad: '+(antes2-limpio2.length)+' entrada(s) del panel purgadas de gm_local');
         }
       }
     }
   } catch(e){ console.warn('Limpieza gm_local conta:', e); }
+
+  // 🛡️ MARCAR retroactivamente todas las entradas existentes en conta_v2
+  // como manuales. Por construcción, las entradas en conta_v2 SOLO se crean
+  // desde esta página (función add()) — así que todas son manuales legítimas.
+  // Esto blinda nóminas viejas con descripción "Nómina X" o categoría 'NÓMINA'
+  // contra el filtro.
+  try {
+    var rawV2 = localStorage.getItem('conta_v2');
+    if(rawV2){
+      var arrV2;
+      try { arrV2 = JSON.parse(rawV2); } catch(e){ arrV2 = null; }
+      if(Array.isArray(arrV2) && arrV2.length > 0){
+        var cambios = 0;
+        arrV2.forEach(function(m){
+          if(m && !m._manual){ m._manual = true; m._fromConta = true; cambios++; }
+        });
+        if(cambios > 0){
+          localStorage.setItem('conta_v2', JSON.stringify(arrV2));
+          console.log('🛡️ '+cambios+' entrada(s) de conta_v2 marcadas como manuales');
+        }
+      }
+    }
+  } catch(e){ console.warn('Marcar V2:', e); }
 })();
 </script>
 
@@ -627,13 +653,21 @@ var Data = (function() {
     return false;
   }
 
-  // Filtro: pagos / deudas de clientes / NÓMINA (cartera/recaudo/nómina) NO
-  // deben aparecer en contabilidad. 🛡️ El usuario solicitó desvinculación
-  // TOTAL: cualquier "Le debo a X", "Deuda de X", "Pago deuda X", tipo 'deuda',
-  // "Nómina quincenal", "Nómina semanal" y categoría "Nómina" queda OCULTO.
-  // La contabilidad maneja solo registros manuales.
+  // Filtro: pagos / deudas de clientes / NÓMINA del PANEL (cartera/recaudo/nómina)
+  // NO deben aparecer en contabilidad. 🛡️ El usuario solicitó desvinculación
+  // TOTAL del módulo nómina del PANEL — PERO las nóminas MANUALES que el
+  // usuario crea en esta misma página SÍ deben aparecer y ser editables.
+  //
+  // Distinción: solo se filtran entradas cuya descripción coincide EXACTAMENTE
+  // con el formato que inyectaba el panel ("Nómina quincenal — XXX" o
+  // "Nómina semanal — XXX" con em-dash). Entradas con flag `_manual:true`
+  // creadas en contabilidad nunca se filtran.
   function _esPagoODeudaCliente(m){
     if (!m) return false;
+
+    // 🛡️ 0) Si tiene flag de manual desde contabilidad, NUNCA filtrar
+    if (m._manual === true || m._fromConta === true) return false;
+
     // 1) Flags explícitos del panel/cartera/recaudo/nómina
     if (m._fromCartera || m._fromRecaudo || m._fromCliente || m._fromNomina ||
         m._esDeuda || m._esPagoCliente || m._esPago || m._esNomina ||
@@ -644,12 +678,11 @@ var Data = (function() {
     // 1.5) Tipo "deuda" — siempre filtrar (es exclusivo del panel)
     if (String(m.tipo||'').toLowerCase() === 'deuda') return true;
 
-    // 2) Categoría conocida de cartera/recaudo/nómina
+    // 2) Categoría conocida de cartera/recaudo
     var cat = String(m.categoria||'').toUpperCase();
     if (/(?:^|\s|_)(PAGO\s+DE\s+DEUDA|DEUDA(?:\s+(?:CLIENTE|MIA))?|COBRO(?:\s+CLIENTE)?|ABONO(?:\s+CLIENTE)?|CARTERA|RECAUDO\s+CLIENTE)(?:$|\s|_)/.test(cat))
       return true;
-    // 2.5) Categoría exacta NÓMINA / NOMINA viene del panel
-    if (/^N[ÓO]MINA$/.test(cat)) return true;
+    // 🛡️ Categoría 'NÓMINA' NO se filtra — el usuario la usa en manuales
 
     // 3) Descripción con palabras clave de cartera/recaudo
     var d = String(m.descripcion||'').toLowerCase();
@@ -659,18 +692,21 @@ var Data = (function() {
     if (/recaudo\s+(?:cliente|de|cartera)\b/.test(d)) return true;
     if (/\bsaldo\s+cliente\b/.test(d)) return true;
 
-    // 4) 🛡️ NUEVOS PATRONES — "Le debo a..." / "Debo a..." / "Deuda de..."
+    // 4) Patrones "Le debo a..." / "Debo a..." / "Deuda de..."
     //    (inyectados por versiones anteriores del panel)
     if (/\ble\s+debo\s+a\b/.test(d)) return true;
     if (/^debo\s+a\b/.test(d)) return true;
     if (/\bdeuda\s+de\b/.test(d)) return true;
     if (/\byo\s+le\s+debo\b/.test(d)) return true;
 
-    // 5) 🛡️ NÓMINA DEL PANEL — "Nómina quincenal", "Nómina semanal"
-    //    Cualquier descripción que empiece con "nómina" o "nomina" viene del
-    //    módulo Nómina del panel y NO debe aparecer en contabilidad.
-    if (/^n[óo]mina\b/.test(d)) return true;
-    if (/\bn[óo]mina\s+(?:quincenal|semanal)\b/.test(d)) return true;
+    // 5) 🛡️ NÓMINA DEL PANEL — patrón EXACTO con em-dash "—"
+    //    Solo el panel inyectaba con ese formato específico. Las manuales
+    //    creadas en contabilidad con descripciones como "Nómina enero",
+    //    "Nomina semana 2", "NÓMINA PANADERO", etc. PASAN sin filtrar.
+    var dRaw = String(m.descripcion||'');
+    if (/^N[óo]mina\s+(quincenal|semanal)\s*—/i.test(dRaw)) return true;
+    // Variante con guion normal si el em-dash se perdió en algún copy
+    if (/^N[óo]mina\s+(quincenal|semanal)\s+—/i.test(dRaw)) return true;
 
     return false;
   }
@@ -777,8 +813,12 @@ var Data = (function() {
     if (!desc) return null;
     var f = /^\d{4}-\d{2}-\d{2}$/.test(String(fecha||'').trim()) ? String(fecha).trim() : fechaHoy();
     var arr = readArr(V2);
+    // 🛡️ _manual:true marca esta entrada como creada desde contabilidad,
+    // garantizando que el filtro _esPagoODeudaCliente NUNCA la oculte
+    // aunque la categoría sea 'NÓMINA' o la descripción empiece con "Nómina".
     var entry = { id:uid(), tipo:tipo, monto:Number(monto), descripcion:desc,
-                  fecha:f, timestamp:Date.now(), categoria:categoria||null };
+                  fecha:f, timestamp:Date.now(), categoria:categoria||null,
+                  _manual:true, _fromConta:true };
     arr.push(entry);
     writeLS(V2, arr);
     return entry;
