@@ -1316,9 +1316,89 @@ var App = (function() {
   // ── Export ────────────────────────────────────────
   function exportarHistorial() {
     var movs = Logic.filter(Data.getAll(),'todos','','','');
-    var rows = [['Fecha','Tipo','Categoría','Monto','Descripción']];
-    movs.forEach(function(m){ rows.push([m.fecha, m.tipo, m.categoria||'', m.monto, m.descripcion]); });
-    _csv(rows, 'historial-'+Data.fechaHoy()+'.csv');
+    // 🛡️ CSV PROFESIONAL — con resumen, formato bonito, totales
+    var fechaHoy = Data.fechaHoy();
+    var fechaPretty = _csvFormatFecha(fechaHoy);
+
+    // Calcular resumen
+    var totalIngresos = 0, totalGastos = 0;
+    var porCategoria = {};
+    movs.forEach(function(m){
+      var mt = Number(m.monto)||0;
+      if(m.tipo === 'ingreso'){ totalIngresos += mt; }
+      else { totalGastos += mt; }
+      var cat = m.categoria || (m.tipo === 'ingreso' ? 'Otros ingresos' : 'Otros gastos');
+      if(!porCategoria[cat]) porCategoria[cat] = {tipo:m.tipo, total:0, count:0};
+      porCategoria[cat].total += mt;
+      porCategoria[cat].count++;
+    });
+    var balance = totalIngresos - totalGastos;
+
+    // Ordenar movimientos por fecha descendente (más reciente primero)
+    movs.sort(function(a,b){
+      var fa = String(a.fecha||''), fb = String(b.fecha||'');
+      if(fa > fb) return -1;
+      if(fa < fb) return 1;
+      return (b.timestamp||0) - (a.timestamp||0);
+    });
+
+    var rows = [];
+    // Cabecera con título y fecha
+    rows.push(['HISTORIAL DE MOVIMIENTOS — CONTABILIDAD']);
+    rows.push(['Generado el', fechaPretty]);
+    rows.push(['Total de registros', movs.length]);
+    rows.push([]);
+
+    // Resumen general
+    rows.push(['═══ RESUMEN GENERAL ═══']);
+    rows.push(['Concepto', 'Monto']);
+    rows.push(['Total ingresos',  totalIngresos]);
+    rows.push(['Total gastos',    totalGastos]);
+    rows.push(['Balance neto',    balance]);
+    rows.push([]);
+
+    // Resumen por categoría
+    var catKeys = Object.keys(porCategoria).sort(function(a,b){
+      return porCategoria[b].total - porCategoria[a].total;
+    });
+    if(catKeys.length){
+      rows.push(['═══ RESUMEN POR CATEGORÍA ═══']);
+      rows.push(['Categoría', 'Tipo', 'Cant. movs', 'Monto total']);
+      catKeys.forEach(function(cat){
+        var c = porCategoria[cat];
+        rows.push([cat, c.tipo==='ingreso'?'Ingreso':'Gasto', c.count, c.total]);
+      });
+      rows.push([]);
+    }
+
+    // Detalle
+    rows.push(['═══ DETALLE DE MOVIMIENTOS ═══']);
+    rows.push(['#', 'Fecha', 'Tipo', 'Categoría', 'Descripción', 'Monto']);
+    movs.forEach(function(m, i){
+      rows.push([
+        i+1,
+        _csvFormatFecha(m.fecha),
+        m.tipo==='ingreso' ? 'Ingreso' : 'Gasto',
+        m.categoria || '—',
+        m.descripcion || '',
+        Number(m.monto)||0
+      ]);
+    });
+    rows.push([]);
+    rows.push(['', '', '', '', 'TOTAL INGRESOS', totalIngresos]);
+    rows.push(['', '', '', '', 'TOTAL GASTOS', totalGastos]);
+    rows.push(['', '', '', '', 'BALANCE NETO', balance]);
+
+    _csv(rows, 'Historial-Contabilidad-'+fechaHoy+'.csv');
+  }
+
+  // Formatear fecha YYYY-MM-DD → DD/MM/YYYY (formato latino)
+  function _csvFormatFecha(f){
+    if(!f) return '';
+    var s = String(f).trim();
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if(m) return m[3]+'/'+m[2]+'/'+m[1];
+    return s;
   }
 
   function exportarFlujo() {
@@ -1338,11 +1418,29 @@ var App = (function() {
   }
 
   function _csv(rows, filename) {
+    // 🛡️ CSV con separador `;` para Excel español (es-CO usa coma como decimal)
+    // Los números se mantienen como números (sin comillas) para que Excel los
+    // detecte automáticamente. Las cadenas con caracteres especiales se quotan.
     var csv = rows.map(function(r){
-      return r.map(function(c){ return '"'+String(c).replace(/"/g,'""')+'"'; }).join(',');
-    }).join('\n');
+      return r.map(function(c){
+        if(c === null || c === undefined) return '';
+        if(typeof c === 'number'){
+          // Número: usar coma como decimal (locale es-CO)
+          // Para enteros: sin decimales. Para decimales: hasta 2.
+          if(Number.isInteger(c)) return String(c);
+          return String(c).replace('.', ',');
+        }
+        var s = String(c);
+        // Si contiene separador, comillas o salto de línea, encerrar en comillas
+        if(/[;"\n\r]/.test(s)){
+          return '"'+s.replace(/"/g,'""')+'"';
+        }
+        return s;
+      }).join(';');
+    }).join('\r\n');  // CRLF para mejor compatibilidad
     var a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'}));
+    // BOM UTF-8 al inicio para que Excel detecte tildes correctamente
+    a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
     a.download = filename;
     a.click();
   }
