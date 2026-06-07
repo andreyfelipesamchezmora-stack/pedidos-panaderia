@@ -7216,7 +7216,59 @@ window.cargar=async function(){
 // =====================================================
 // DEUDAS Y COMENTARIOS POR CLIENTE
 // =====================================================
-var _bG=window.guardar;window.guardar=async function(){var n=window.actualCliente;if(n){var cd={};try{cd=JSON.parse(localStorage.getItem('clientesDatos')||'{}');}catch(e){}if(!cd[n])cd[n]={};var ld=document.getElementById('leDebo'),md=document.getElementById('meDebeCheck'),ldv=document.getElementById('leDeboValor'),mdv=document.getElementById('meDebeValor'),com=document.getElementById('comentarios');cd[n].leDebo=!!(ld&&ld.checked);cd[n].meDebeCheck=!!(md&&md.checked);cd[n].leDeboValor=ldv?ldv.value:'';cd[n].meDebeValor=mdv?mdv.value:'';cd[n].comentario=com?com.value:'';localStorage.setItem('clientesDatos',JSON.stringify(cd));}if(typeof _bG==='function')await _bG();};
+var _bG=window.guardar;window.guardar=async function(){
+  var n=window.actualCliente;
+  if(n){
+    var cd={};try{cd=JSON.parse(localStorage.getItem('clientesDatos')||'{}');}catch(e){}
+    if(!cd[n])cd[n]={};
+    var ld=document.getElementById('leDebo'),md=document.getElementById('meDebeCheck'),
+        ldv=document.getElementById('leDeboValor'),mdv=document.getElementById('meDebeValor'),
+        com=document.getElementById('comentarios');
+    cd[n].leDebo=!!(ld&&ld.checked);
+    cd[n].meDebeCheck=!!(md&&md.checked);
+    cd[n].leDeboValor=ldv?ldv.value:'';
+    cd[n].meDebeValor=mdv?mdv.value:'';
+    var _txtCom = com ? com.value : '';
+    cd[n].comentario = _txtCom;
+    localStorage.setItem('clientesDatos',JSON.stringify(cd));
+
+    // 🛡️ SINCRONIZAR comentario del modal con obs_marquee (barra superior)
+    // Si el usuario escribió texto → debe aparecer también en la barra
+    // Si dejó vacío → debe desaparecer de la barra
+    try {
+      var _txt = (_txtCom||'').trim();
+      var _obs = [];
+      try { _obs = JSON.parse(localStorage.getItem('obs_marquee')||'[]'); }catch(e){}
+      var _kN = (typeof window._obsKey === 'function') ? window._obsKey(n) : (n||'').toUpperCase();
+      // Filtrar entradas viejas de este cliente
+      _obs = _obs.filter(function(x){
+        var k = (typeof window._obsKey === 'function') ? window._obsKey(x.nombre) : (x.nombre||'').toUpperCase();
+        return k !== _kN;
+      });
+      if(_txt){
+        // Hay texto → añadir a obs_marquee y quitar de lista negra
+        _obs.push({nombre:n, texto:_txt});
+        try { if(typeof window._obsQuitarBorrado === 'function') window._obsQuitarBorrado(n); }catch(eq){}
+      } else {
+        // Sin texto → no añadir Y marcar en lista negra para que no resucite
+        try { if(typeof window._obsSetBorrado === 'function') window._obsSetBorrado(n); }catch(es){}
+      }
+      localStorage.setItem('obs_marquee', JSON.stringify(_obs));
+      if(typeof actualizarMarquee === 'function') actualizarMarquee();
+
+      // También sincronizar con recaudo_FECHA[n].observacion (campo del recaudo)
+      try {
+        var _fk = 'recaudo_' + ((typeof cajaFechaHoy === 'function') ? cajaFechaHoy() : new Date().toISOString().slice(0,10));
+        var _est = {};
+        try { _est = JSON.parse(localStorage.getItem(_fk)||'{}'); }catch(e2){}
+        if(!_est[n]) _est[n] = {};
+        _est[n].observacion = _txt;
+        localStorage.setItem(_fk, JSON.stringify(_est));
+      } catch(eRec){}
+    } catch(eSync){}
+  }
+  if(typeof _bG==='function')await _bG();
+};
 var _bA=window.abrir;window.abrir=async function(n,id){if(typeof _bA==='function')await _bA(n,id);setTimeout(function(){
   var cd={};try{cd=JSON.parse(localStorage.getItem('clientesDatos')||'{}');}catch(e){}
   var d=cd[n]||{};
@@ -7230,28 +7282,34 @@ var _bA=window.abrir;window.abrir=async function(n,id){if(typeof _bA==='function
   if(ld) ld.checked = d.leDebo ? true : (!d.meDebeCheck && h.deudaMia>0);
   if(md) md.checked = d.meDebeCheck ? true : (!d.leDebo && h.deudaCliente>0);
   if(com){
-    if(d.comentario){
-      com.value=d.comentario;
-    } else {
-      // Si no hay comentario guardado, cargar la observación del recaudo como texto inicial
-      // PERO solo si el cliente NO está en la lista negra de borrados manuales.
-      var _enListaNegra = false;
-      try{ _enListaNegra = (typeof window._obsEstaBorrado === 'function') && window._obsEstaBorrado(n); }catch(eb){}
-      if(!_enListaNegra){
-        try{
-          var _obsArr=JSON.parse(localStorage.getItem('obs_marquee')||'[]');
-          var _keyN = (typeof window._obsKey === 'function') ? window._obsKey(n) : (n||'').toUpperCase();
-          var _obsEntry=_obsArr.find(function(x){
-            var k = (typeof window._obsKey === 'function') ? window._obsKey(x.nombre) : (x.nombre||'').toUpperCase();
-            return k === _keyN;
-          });
-          if(_obsEntry&&_obsEntry.texto) com.value=_obsEntry.texto;
-        }catch(eo){}
-      } else {
-        // Está en lista negra → asegurar campo vacío
-        com.value = '';
-      }
+    // 🛡️ COMENTARIO/OBSERVACIÓN SINCRONIZADOS — fuente única: obs_marquee
+    // Antes: si clientesDatos[n].comentario tenía texto viejo (huérfano),
+    // se mostraba aunque NO existiera ya la observación en la barra.
+    // Ahora: leer SIEMPRE de obs_marquee (la barra es la fuente de verdad).
+    // Si está en lista negra de borrados → vacío.
+    var _txtObs = '';
+    var _enListaNegra = false;
+    try{ _enListaNegra = (typeof window._obsEstaBorrado === 'function') && window._obsEstaBorrado(n); }catch(eb){}
+    if(!_enListaNegra){
+      try{
+        var _obsArr=JSON.parse(localStorage.getItem('obs_marquee')||'[]');
+        var _keyN = (typeof window._obsKey === 'function') ? window._obsKey(n) : (n||'').toUpperCase();
+        var _obsEntry=_obsArr.find(function(x){
+          var k = (typeof window._obsKey === 'function') ? window._obsKey(x.nombre) : (x.nombre||'').toUpperCase();
+          return k === _keyN;
+        });
+        if(_obsEntry && _obsEntry.texto) _txtObs = _obsEntry.texto;
+      }catch(eo){}
     }
+    com.value = _txtObs;
+    // Sincronizar clientesDatos.comentario con la verdad de obs_marquee
+    try {
+      if((d.comentario||'') !== _txtObs){
+        if(!cd[n]) cd[n] = {};
+        cd[n].comentario = _txtObs;
+        localStorage.setItem('clientesDatos', JSON.stringify(cd));
+      }
+    } catch(eSync){}
   }
   if(typeof calcular==='function')calcular();
 },300);};
@@ -15213,22 +15271,44 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
       var estado = {};
       try{ estado = JSON.parse(localStorage.getItem(fk)||'{}'); }catch(e){}
 
-      // Recalcular sobre cache.rows + estado actual
+      // 🛡️ Leer los valores ACTUALES de los inputs del DOM (no solo del localStorage)
+      // para que Nequi/Banco/Faltantes/Salidas se sumen al instante mientras
+      // el usuario escribe — sin esperar al onblur.
+      function leerValorInput(id){
+        var el = document.getElementById(id);
+        if(!el) return null;
+        // Quitar puntos de miles
+        var raw = String(el.value||'').replace(/[^\d-]/g, '');
+        if(!raw) return null;
+        var n = Number(raw);
+        return isNaN(n) ? null : n;
+      }
+
+      // Recalcular sobre cache.rows + estado actual + valores del DOM
       var bruto = 0, recaudoDomi = 0, nequiVentas = 0, bancolombiaVentas = 0;
       var pagoDeudaEfectivo = 0, pagoDeudaNequi = 0, pagoDeudaBancolombia = 0;
       var faltantes = 0, salidas = 0;
       var efectivoVentasTotal = 0;
+      var deudasDescontadas = 0;
 
       cache.rows.forEach(function(r){
         var est = estado[r.cliente] || {};
-        // Usar valores de localStorage (estado actual) cuando disponibles
+        var safe = r.cliente.replace(/[^a-zA-Z0-9]/g,'_');
+
+        // Para Nequi/Banco/Faltantes/Salidas: usar el valor del DOM si existe,
+        // sino del localStorage (para filas no visibles o aún no editadas)
+        var rNequi = leerValorInput('rec_nequi_'+safe);
+        if(rNequi === null) rNequi = Number(est.nequi) || 0;
+        var rBancolombia = leerValorInput('rec_banco_'+safe);
+        if(rBancolombia === null) rBancolombia = Number(est.bancolombia) || 0;
+        var rFaltantes = leerValorInput('rec_falt_'+safe);
+        if(rFaltantes === null) rFaltantes = Number(est.faltantes) || 0;
+        var rSalidas = leerValorInput('rec_sal_'+safe);
+        if(rSalidas === null) rSalidas = Number(est.salidas) || 0;
+
         var rRecaudoDomi = Number(est.recaudoDomi) || 0;
         var rDomiIncluirDeuda = !!est.domiIncluirDeuda;
         var rDomiIncluirDeudaMia = !!est.domiIncluirDeudaMia;
-        var rNequi = Number(est.nequi) || 0;
-        var rBancolombia = Number(est.bancolombia) || 0;
-        var rFaltantes = Number(est.faltantes) || 0;
-        var rSalidas = Number(est.salidas) || 0;
 
         bruto += (Number(r.subtotal)||0);
         recaudoDomi += rRecaudoDomi;
@@ -15243,6 +15323,11 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
         bancolombiaVentas += rBancolombia;
         faltantes += rFaltantes;
         salidas += rSalidas;
+
+        // Deudas descontadas (cuando se incluye deuda mía en recaudo domi)
+        if(rDomiIncluirDeudaMia || (rDomiIncluirDeuda && (Number(r._deudaTotalMia)||0) > 0)){
+          deudasDescontadas += (Number(r._deudaTotalMia)||0);
+        }
 
         // Efectivo en mis manos por fila
         var efEnMisManos;
@@ -15276,70 +15361,82 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
       var pagosDeudaTransf = pagoDeudaNequi + pagoDeudaBancolombia;
       var totalRecaudado = efectivoTotal + transferenciasVentas + pagosDeudaTransf;
 
-      // Actualizar KPIs del header (los 5 cuadros de arriba)
-      function setKpi(label, valor){
-        // Buscar el div con el label exacto (case-insensitive)
-        var divs = document.querySelectorAll('.kpi-label, .panel-kpi-label, [class*="kpi"] [class*="label"]');
-        for(var i=0; i<divs.length; i++){
-          if((divs[i].textContent||'').trim().toUpperCase() === label.toUpperCase()){
-            var sib = divs[i].parentElement;
-            if(sib){
-              var valEl = sib.querySelector('.kpi-value, [class*="value"], h3, .num');
-              if(valEl) valEl.textContent = '$' + (Number(valor)||0).toLocaleString('es-CO');
-            }
+      // 🛡️ NUEVO ENFOQUE: match EXACTO por texto del LABEL (no substring fuzzy).
+      // Esto evita que "BRUTO TOTAL" se sobrescriba con el valor de "TOTAL", etc.
+      function setKpiCardPorLabel(labelExacto, valor){
+        var labels = document.querySelectorAll('#panelRecaudo .kpi-card .kpi-label');
+        for(var i=0; i<labels.length; i++){
+          if((labels[i].textContent||'').trim().toLowerCase() === labelExacto.toLowerCase()){
+            var card = labels[i].closest('.kpi-card');
+            if(!card) continue;
+            var v = card.querySelector('.kpi-value');
+            if(v) v.textContent = '$' + (Number(valor)||0).toLocaleString('es-CO');
+            return;
+          }
+        }
+      }
+      // Barra inferior usa estructura .recaudo-mini > .lab + .val
+      function setBarraMiniPorLab(labelInclude, valor){
+        var labs = document.querySelectorAll('#panelRecaudo .recaudo-mini .lab');
+        for(var i=0; i<labs.length; i++){
+          var t = (labs[i].textContent||'').trim().toLowerCase();
+          if(t === labelInclude.toLowerCase() || t.indexOf(labelInclude.toLowerCase()) === t.length - labelInclude.length){
+            var mini = labs[i].closest('.recaudo-mini');
+            if(!mini) continue;
+            var v = mini.querySelector('.val');
+            if(v) v.textContent = '$' + (Number(valor)||0).toLocaleString('es-CO');
+            return;
+          }
+        }
+      }
+      function setBarraMiniExacto(labelExacto, valor){
+        var labs = document.querySelectorAll('#panelRecaudo .recaudo-mini .lab');
+        for(var i=0; i<labs.length; i++){
+          if((labs[i].textContent||'').trim().toLowerCase() === labelExacto.toLowerCase()){
+            var mini = labs[i].closest('.recaudo-mini');
+            if(!mini) continue;
+            var v = mini.querySelector('.val');
+            if(v) v.textContent = '$' + (Number(valor)||0).toLocaleString('es-CO');
             return;
           }
         }
       }
 
-      // Buscar KPIs por texto de cabecera flexible
-      function actualizarKPIPorTexto(textosBuscar, valor){
-        var nodos = document.querySelectorAll('#panelRecaudo .kpi-card, #panelRecaudo [class*="kpi"]');
-        for(var i=0; i<nodos.length; i++){
-          var txt = (nodos[i].textContent||'').toUpperCase();
-          var match = textosBuscar.some(function(t){ return txt.indexOf(t.toUpperCase()) > -1; });
-          if(match){
-            var valEl = nodos[i].querySelector('.kpi-value, [class*="value"], h3, .num, strong, b');
-            if(valEl){ valEl.textContent = '$' + (Number(valor)||0).toLocaleString('es-CO'); }
-            else {
-              // Buscar elemento con $ adentro
-              var allKids = nodos[i].querySelectorAll('*');
-              for(var j=0; j<allKids.length; j++){
-                if((allKids[j].textContent||'').indexOf('$') > -1 && allKids[j].children.length === 0){
-                  allKids[j].textContent = '$' + (Number(valor)||0).toLocaleString('es-CO');
-                  break;
-                }
-              }
-            }
-          }
-        }
-      }
+      // KPIs de arriba (label EXACTO, sin substring fuzzy)
+      setKpiCardPorLabel('Bruto total', bruto);
+      setKpiCardPorLabel('Recaudo domi', recaudoDomi);
+      setKpiCardPorLabel('Faltantes + Salidas', faltantes + salidas);
+      setKpiCardPorLabel('Descontado a clientes', deudasDescontadas);
+      // Si hay otra fila de KPIs (los 5 del top)
+      setKpiCardPorLabel('Efectivo', efectivoTotal);
+      setKpiCardPorLabel('Nequi', nequiVentas + pagoDeudaNequi);
+      setKpiCardPorLabel('Bancolombia', bancolombiaVentas + pagoDeudaBancolombia);
+      setKpiCardPorLabel('Pagos deuda', pagoDeudaEfectivo + pagoDeudaNequi + pagoDeudaBancolombia);
+      setKpiCardPorLabel('Total recaudado', totalRecaudado);
 
-      actualizarKPIPorTexto(['EFECTIVO'], efectivoTotal);
-      actualizarKPIPorTexto(['NEQUI'], nequiVentas + pagoDeudaNequi);
-      actualizarKPIPorTexto(['BANCOLOMBIA'], bancolombiaVentas + pagoDeudaBancolombia);
-      actualizarKPIPorTexto(['PAGOS DEUDA','PAGOS_DEUDA'], pagoDeudaEfectivo + pagoDeudaNequi + pagoDeudaBancolombia);
-      actualizarKPIPorTexto(['TOTAL RECAUDADO','TOTAL_RECAUDADO'], totalRecaudado);
-      actualizarKPIPorTexto(['BRUTO TOTAL','BRUTO_TOTAL'], bruto);
-      actualizarKPIPorTexto(['RECAUDO DOMI','RECAUDO_DOMI'], recaudoDomi);
-      actualizarKPIPorTexto(['FALTANTES + SALIDAS','FALTANTES_SALIDAS'], faltantes + salidas);
-
-      // Actualizar también la barra inferior (BRUTO VENTAS, EFECTIVO, NEQUI, etc.)
-      actualizarKPIPorTexto(['BRUTO VENTAS'], bruto);
-      actualizarKPIPorTexto(['PAGOS DEUDA TRANSF'], pagoDeudaNequi + pagoDeudaBancolombia);
-      actualizarKPIPorTexto(['FALTANTES'], faltantes);
-      actualizarKPIPorTexto(['SALIDAS'], salidas);
-      actualizarKPIPorTexto(['TOTAL'], totalRecaudado);
+      // Barra inferior (.recaudo-mini con .lab/.val) — uso match exacto
+      setBarraMiniExacto('Bruto ventas', bruto);
+      setBarraMiniExacto('💵 Efectivo', efectivoTotal);
+      setBarraMiniExacto('📱 Nequi', nequiVentas + pagoDeudaNequi);
+      setBarraMiniExacto('🏛️ Bancolombia', bancolombiaVentas + pagoDeudaBancolombia);
+      setBarraMiniExacto('🏦 Pagos deuda transf.', pagosDeudaTransf);
+      setBarraMiniExacto('Faltantes', faltantes);
+      setBarraMiniExacto('Salidas', salidas);
+      setBarraMiniExacto('✅ TOTAL', totalRecaudado);
 
       // Actualizar también el efectivo neto y resumen de CADA FILA visible
       cache.rows.forEach(function(r){
         var safe = r.cliente.replace(/[^a-zA-Z0-9]/g,'_');
         var est = estado[r.cliente] || {};
         var rRecaudoDomi = Number(est.recaudoDomi) || 0;
-        var rNequi = Number(est.nequi) || 0;
-        var rBancolombia = Number(est.bancolombia) || 0;
-        var rFaltantes = Number(est.faltantes) || 0;
-        var rSalidas = Number(est.salidas) || 0;
+        var rNequi = leerValorInput('rec_nequi_'+safe);
+        if(rNequi === null) rNequi = Number(est.nequi) || 0;
+        var rBancolombia = leerValorInput('rec_banco_'+safe);
+        if(rBancolombia === null) rBancolombia = Number(est.bancolombia) || 0;
+        var rFaltantes = leerValorInput('rec_falt_'+safe);
+        if(rFaltantes === null) rFaltantes = Number(est.faltantes) || 0;
+        var rSalidas = leerValorInput('rec_sal_'+safe);
+        if(rSalidas === null) rSalidas = Number(est.salidas) || 0;
 
         var efRow;
         if(rRecaudoDomi > 0){
@@ -15614,6 +15711,107 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
   } catch(e){}
 
   console.log('🛡️ Parche DEFINITIVO V3 cargado: renderRecaudo blindado + marcado pre-emptivo.');
+})();
+</script>
+<script>
+// ════════════════════════════════════════════════════════════════════
+// 🛡️ PARCHE V4 — SUMA EN VIVO + WRAPPER recaudoGuardarFila
+// ════════════════════════════════════════════════════════════════════
+// Problema reportado: "no suma al escribir en faltantes / nequi / bancolombia".
+// Causa: los inputs llaman renderRecaudo() en onblur, pero renderRecaudo
+// está blindado durante interacción → no se actualizan los totales.
+//
+// Solución: ejecutar _recaudoActualizarTotales() en cada keystroke/input
+// y wrappear recaudoGuardarFila para que siempre actualice totales después
+// de guardar la fila.
+// ════════════════════════════════════════════════════════════════════
+(function(){
+  'use strict';
+
+  // 1) Listener `input` global sobre el panel recaudo → actualiza totales en vivo
+  document.addEventListener('input', function(e){
+    var t = e.target;
+    if(!t || t.tagName !== 'INPUT') return;
+    var p = document.getElementById('panelRecaudo');
+    if(!p || !p.contains(t)) return;
+    // Solo nos interesan los inputs de dinero (nequi/banco/faltantes/salidas)
+    var id = t.id || '';
+    if(id.indexOf('rec_nequi_') === 0 || id.indexOf('rec_banco_') === 0 ||
+       id.indexOf('rec_falt_') === 0 || id.indexOf('rec_sal_') === 0){
+      // Marcar interacción (ya se hace por otro listener, pero por seguridad)
+      window._recaudoLastInteract = Date.now();
+      // Actualizar totales al instante
+      if(typeof window._recaudoActualizarTotales === 'function'){
+        try { window._recaudoActualizarTotales(); } catch(err){}
+      }
+    }
+  }, true);
+
+  // 2) Wrappear recaudoGuardarFila para SIEMPRE actualizar totales tras guardar
+  var _wrapTries = 0;
+  var _wrapIv = setInterval(function(){
+    _wrapTries++;
+    if(typeof window.recaudoGuardarFila === 'function' && !window.recaudoGuardarFila.__totalsPatched){
+      var _origGF = window.recaudoGuardarFila;
+      window.recaudoGuardarFila = function(){
+        try { _origGF.apply(this, arguments); } catch(e){ console.warn(e); }
+        // Después de guardar, actualizar totales
+        if(typeof window._recaudoActualizarTotales === 'function'){
+          try { window._recaudoActualizarTotales(); } catch(e){}
+        }
+      };
+      window.recaudoGuardarFila.__totalsPatched = true;
+      clearInterval(_wrapIv);
+    }
+    if(_wrapTries > 40) clearInterval(_wrapIv);
+  }, 200);
+
+  console.log('🛡️ Parche V4 cargado: suma en vivo de inputs + wrapper recaudoGuardarFila.');
+
+  // ─────────────────────────────────────────────────────────────────
+  // 🛡️ LIMPIEZA RETROACTIVA — Comentarios huérfanos en clientesDatos
+  // Si un cliente tiene `clientesDatos[n].comentario` con texto pero
+  // NO existe en obs_marquee → es un comentario huérfano (la
+  // observación se borró pero el comentario quedó). Lo limpiamos para
+  // que el modal no muestre observaciones que ya no están en la barra.
+  // Solo se ejecuta UNA VEZ por sesión (bandera en sessionStorage).
+  // ─────────────────────────────────────────────────────────────────
+  if(!sessionStorage.getItem('_comentariosHuerfanosLimpios')){
+    setTimeout(function(){
+      try {
+        var cd = {};
+        try { cd = JSON.parse(localStorage.getItem('clientesDatos')||'{}'); }catch(e){ return; }
+        var obs = [];
+        try { obs = JSON.parse(localStorage.getItem('obs_marquee')||'[]'); }catch(e){}
+        var keyFn = (typeof window._obsKey === 'function')
+          ? window._obsKey
+          : function(n){ return (n||'').toUpperCase().trim(); };
+        var obsMapa = {};
+        obs.forEach(function(o){
+          if(o && o.nombre && o.texto) obsMapa[keyFn(o.nombre)] = o.texto;
+        });
+        var cambios = 0;
+        Object.keys(cd).forEach(function(n){
+          if(!cd[n] || !cd[n].comentario) return;
+          var txtObs = obsMapa[keyFn(n)];
+          if(!txtObs){
+            // Comentario huérfano: existe en clientesDatos pero no en obs_marquee
+            cd[n].comentario = '';
+            cambios++;
+          } else if(txtObs !== cd[n].comentario){
+            // Existe en ambos pero distintos: la barra (obs_marquee) gana
+            cd[n].comentario = txtObs;
+            cambios++;
+          }
+        });
+        if(cambios > 0){
+          localStorage.setItem('clientesDatos', JSON.stringify(cd));
+          console.log('🧹 '+cambios+' comentario(s) huérfano(s) sincronizados con obs_marquee');
+        }
+        sessionStorage.setItem('_comentariosHuerfanosLimpios', '1');
+      } catch(e){ console.warn('Limpieza comentarios huérfanos:', e); }
+    }, 1500);
+  }
 })();
 </script>
 <div id="mcOverlayGlobal" style="display:none;">
