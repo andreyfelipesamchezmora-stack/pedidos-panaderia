@@ -13733,10 +13733,16 @@ window.vnDiagVentas = function(){
   // `_recaudoActualizarTotales()` desde cada toggle.
   function refreshRecaudo() {
     debounce('recaudo', function () {
-      // Si la última interacción con el recaudo fue hace < 3 segundos, abortar
+      // 🛡️ V5: ventana de bloqueo unificada (1.5s). Si hay interacción
+      // reciente, NO renderizar — solo actualizar totales (no destructivo).
       try {
         var lastInteract = window._recaudoLastInteract || 0;
-        if(Date.now() - lastInteract < 3000) return;
+        if(Date.now() - lastInteract < 1500){
+          if(typeof window._recaudoActualizarTotales === 'function'){
+            try { window._recaudoActualizarTotales(); } catch(e){}
+          }
+          return;
+        }
       } catch(e){}
       var p = document.getElementById('panelRecaudo');
       if (p && p.classList.contains('open') && typeof renderRecaudo === 'function') {
@@ -15574,35 +15580,36 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
 </script>
 <script>
 // ════════════════════════════════════════════════════════════════════
-// 🛡️ PARCHE DEFINITIVO V3 — CHECKBOXES BLINDADOS Y MARCADO INSTANTÁNEO
+// 🛡️ PARCHE V5 DEFINITIVO — RECAUDO BLINDADO CON RESPETO AL SKELETON
 // ════════════════════════════════════════════════════════════════════
-// Bug histórico: al hacer click en un checkbox del recaudo, a veces
-// quedaban "deseleccionados solos" o "tardaban en marcarse". Causas
-// que se entrelazaban:
+// HISTORIAL DE BUGS Y SU CAUSA RAÍZ:
 //
-//   1. Cada toggle guardaba en localStorage → setter override lo subía
-//      a Supabase → Supabase devolvía el evento realtime al MISMO
-//      cliente → refreshRecaudo() → renderRecaudo() → la tabla se
-//      destruía y recreaba mientras el usuario seguía clickeando.
+//   - Antes V3: cada toggle de checkbox disparaba renderRecaudo() (vía
+//     eco realtime, onblur de inputs, polling) → la tabla se destruía
+//     mientras el usuario clickeaba → checkboxes se "deseleccionaban
+//     solos" o requerían múltiples clicks.
 //
-//   2. onblur de inputs (nequi/banco/faltantes/salidas) llama
-//      renderRecaudo. Si tenías un input enfocado y clickeabas un
-//      checkbox, el blur lanzaba el render ANTES del click.
+//   - V3 introdujo bloqueo de renderRecaudo durante interacción → arregló
+//     los checkboxes, PERO causó "pantalla en blanco con skeleton" porque
+//     cuando se abría el panel, el wrapper bloqueaba el primer render
+//     legítimo. Y el listener `mousemove` mantenía el bloqueo infinito.
 //
-//   3. Polling cada 5s, wrappers de guardar/eliminar, etc.
-//
-// LA SOLUCIÓN: blindar `renderRecaudo` GLOBALMENTE. Cualquier llamada
-// a esa función — venga de donde venga — pasa por una guarda. Si
-// hubo interacción reciente con el panel (incluso un mousedown sobre
-// un checkbox antes de que se procese el click), la guarda ABORTA el
-// render destructivo. Solo se actualizan los totales sin tocar las
-// filas. Después de 4 segundos de inactividad, sí se permite render
-// para reflejar cambios remotos.
+// V5 — REGLAS CORRECTAS:
+//   1. NUNCA bloquear si el body está vacío o tiene skeleton.
+//      El render inicial siempre se permite.
+//   2. SOLO bloquear cuando hay contenido válido Y el usuario está
+//      interactuando con checkboxes/inputs (no mousemove).
+//   3. Ventana corta de 1.5s (no 4s) — suficiente para clicks rápidos.
+//   4. Antes de un render diferido, preservar el estado actual de los
+//      checkboxes leyéndolos del DOM y aplicándolos a localStorage,
+//      para que el render no los "desenmarque" (causa del bug 2).
+//   5. El listener realtime de recaudo_diario NO dispara refreshRecaudo
+//      durante interacción (solo actualiza totales).
 // ════════════════════════════════════════════════════════════════════
 (function(){
   'use strict';
 
-  var BLOQUEO_MS = 4000;
+  var BLOQUEO_MS = 1500;  // Corto para no romper UX
   window._recaudoLastInteract = window._recaudoLastInteract || 0;
 
   function marcar(){ window._recaudoLastInteract = Date.now(); }
@@ -15611,68 +15618,159 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
   }
   window._recaudoEnInteraccion = enInteraccion;
 
-  // ─── Capturar TODOS los eventos dentro del panel recaudo ────────
-  // Fase CAPTURE (true) garantiza que la marca quede establecida
-  // ANTES de cualquier handler de blur/change/click pueda disparar
-  // renderRecaudo.
+  // ─── ¿El body del recaudo está vacío / skeleton? ──────────────────
+  // Si lo está, SIEMPRE permitir render (es la carga inicial).
+  function bodyEnSkeleton(){
+    var b = document.getElementById('recaudoBody');
+    if(!b) return true;
+    // Skeleton presente o body vacío → necesita render
+    if(b.querySelector('.loading-skeleton')) return true;
+    if(!b.querySelector('.recaudo-table')) return true;
+    return false;
+  }
+
+  // ─── Marcar interacción en eventos directos del usuario ──────────
   function dentro(t){
     if(!t) return false;
     var p = document.getElementById('panelRecaudo');
     if(!p) return false;
     try { return p.contains(t); } catch(e){ return false; }
   }
-  ['pointerdown','mousedown','touchstart','click','change','input','keydown','focus','blur']
+  // 🛡️ NO usar mousemove (causaba bloqueo infinito). Solo eventos
+  // explícitos del usuario.
+  ['pointerdown','mousedown','touchstart','click','change','keydown']
     .forEach(function(evt){
       document.addEventListener(evt, function(e){
         if(dentro(e.target)) marcar();
       }, true);
     });
 
-  // ─── Marcar también ANTES de que el usuario haga click ──────────
-  // Hover sobre el panel recaudo cuenta como "uso reciente". Esto
-  // garantiza que si el usuario está pensando entre clicks, el
-  // render no se cuele.
-  document.addEventListener('mousemove', function(e){
-    if(dentro(e.target)){
-      // No tan agresivo como un click — solo actualizar si pasó algo de tiempo
-      var ahora = Date.now();
-      if(ahora - (window._recaudoLastInteract||0) > 1000){
-        window._recaudoLastInteract = ahora;
-      }
-    }
-  }, true);
+  // ─── Preservar estado del DOM antes de un render programado ───────
+  // Cuando el render diferido se ejecute, leerá del localStorage. Si el
+  // localStorage está desincronizado (eco, polling), los checkboxes se
+  // mostrarán desmarcados. Solución: ANTES del render, leer el estado
+  // ACTUAL de los checkboxes del DOM y volcarlo a localStorage.
+  function preservarEstadoDOMaLocalStorage(){
+    try {
+      var fk = 'recaudo_' + ((typeof cajaFechaHoy === 'function')
+                  ? cajaFechaHoy()
+                  : new Date().toISOString().slice(0,10));
+      var estado = {};
+      try { estado = JSON.parse(localStorage.getItem(fk)||'{}'); }catch(e){}
 
-  // ─── ENVOLVER renderRecaudo GLOBALMENTE ──────────────────────────
+      // Recorrer todos los checkboxes del recaudo y sus inputs
+      var cbs = document.querySelectorAll('#panelRecaudo input[type="checkbox"][id^="rec_"]');
+      cbs.forEach(function(cb){
+        var id = cb.id;  // ej "rec_rec_AMPARO_MOLINO_ROA"
+        // Extraer prefijo (rec_rec_, rec_domi_, rec_domideuda_, etc.) y nombre
+        var m = id.match(/^rec_([a-z]+)_(.+)$/);
+        if(!m) return;
+        var tipo = m[1];
+        var safe = m[2];
+        // Resolver el nombre real del cliente. Buscamos en cache.rows
+        var cache = window._recaudoCache;
+        if(!cache || !Array.isArray(cache.rows)) return;
+        var row = cache.rows.find(function(r){
+          return r.cliente.replace(/[^a-zA-Z0-9]/g,'_') === safe;
+        });
+        if(!row) return;
+        var nombre = row.cliente;
+        if(!estado[nombre]) estado[nombre] = {};
+
+        // Mapear tipo → campo en estado
+        if(tipo === 'rec'){
+          estado[nombre].recibido = cb.checked;
+        } else if(tipo === 'domi'){
+          if(cb.checked && !estado[nombre].recaudoDomi){
+            estado[nombre].recaudoDomi = Number(row.subtotal)||0;
+          } else if(!cb.checked){
+            estado[nombre].recaudoDomi = 0;
+          }
+        } else if(tipo === 'domideuda'){
+          estado[nombre].domiIncluirDeuda = cb.checked;
+        } else if(tipo === 'domideudamia' || tipo === 'azuldomi'){
+          estado[nombre].domiIncluirDeudaMia = cb.checked;
+        }
+      });
+
+      // También inputs de dinero
+      var inputs = document.querySelectorAll('#panelRecaudo input[id^="rec_nequi_"],#panelRecaudo input[id^="rec_banco_"],#panelRecaudo input[id^="rec_falt_"],#panelRecaudo input[id^="rec_sal_"]');
+      inputs.forEach(function(inp){
+        var id = inp.id;
+        var m = id.match(/^rec_([a-z]+)_(.+)$/);
+        if(!m) return;
+        var tipo = m[1];
+        var safe = m[2];
+        var cache = window._recaudoCache;
+        if(!cache || !Array.isArray(cache.rows)) return;
+        var row = cache.rows.find(function(r){
+          return r.cliente.replace(/[^a-zA-Z0-9]/g,'_') === safe;
+        });
+        if(!row) return;
+        var nombre = row.cliente;
+        if(!estado[nombre]) estado[nombre] = {};
+        var raw = String(inp.value||'').replace(/[^\d-]/g, '');
+        var val = raw ? Number(raw) : 0;
+        if(tipo === 'nequi') estado[nombre].nequi = val;
+        else if(tipo === 'banco') estado[nombre].bancolombia = val;
+        else if(tipo === 'falt') estado[nombre].faltantes = val;
+        else if(tipo === 'sal') estado[nombre].salidas = val;
+      });
+
+      // Guardar sin disparar sub (con _s = true momentáneo si está disponible)
+      try {
+        var hadS = window._s;
+        // No tocar _s — guardar normalmente, el override subirá; pero ya
+        // está sincronizado con el DOM así que no rompe nada.
+        localStorage.setItem(fk, JSON.stringify(estado));
+      } catch(eS){}
+    } catch(err){ console.warn('preservarEstadoDOM:', err); }
+  }
+
+  // ─── ENVOLVER renderRecaudo CON REGLAS V5 ─────────────────────────
   var _renderProgramado = null;
   function envolver(){
     if(typeof window.renderRecaudo !== 'function') return false;
-    if(window.renderRecaudo.__blindado) return true;
+    if(window.renderRecaudo.__blindadoV5) return true;
 
     var orig = window.renderRecaudo;
     window.renderRecaudo = async function(){
+      // REGLA 1: si el body está en skeleton/vacío, SIEMPRE renderizar.
+      // Nunca dejar al usuario con pantalla blanca.
+      if(bodyEnSkeleton()){
+        return orig.apply(this, arguments);
+      }
+      // REGLA 2: si hay interacción reciente, abortar y solo actualizar
+      // totales. Programar render para más tarde.
       if(enInteraccion()){
-        // Bloqueado: solo actualizar totales (no destruye DOM)
         try {
           if(typeof window._recaudoActualizarTotales === 'function'){
             window._recaudoActualizarTotales();
           }
         } catch(e){}
-        // Programar render diferido — se cancela si llega otra interacción
         if(_renderProgramado) clearTimeout(_renderProgramado);
         function tryRender(){
           _renderProgramado = null;
-          if(!enInteraccion()){
+          if(!enInteraccion() && !bodyEnSkeleton()){
+            // Preservar estado actual del DOM antes del render para
+            // que el render no "desenmarque" los checkboxes.
+            preservarEstadoDOMaLocalStorage();
             try { orig.call(window); } catch(e){ console.warn('render diferido:', e); }
+          } else if(bodyEnSkeleton()){
+            // Algo dejó el body en skeleton — forzar render inmediato
+            try { orig.call(window); } catch(e){}
           } else {
-            _renderProgramado = setTimeout(tryRender, 1000);
+            // Sigue habiendo interacción → re-programar
+            _renderProgramado = setTimeout(tryRender, 800);
           }
         }
-        _renderProgramado = setTimeout(tryRender, BLOQUEO_MS + 200);
+        _renderProgramado = setTimeout(tryRender, BLOQUEO_MS + 100);
         return;
       }
+      // No hay interacción → render normal
       return orig.apply(this, arguments);
     };
-    window.renderRecaudo.__blindado = true;
+    window.renderRecaudo.__blindadoV5 = true;
     return true;
   }
 
@@ -15684,21 +15782,18 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
     }, 200);
   }
 
-  // Re-envolver si algún otro parche reasigna renderRecaudo
+  // Re-envolver si otro parche reasigna renderRecaudo
   setInterval(function(){
     try {
-      if(typeof window.renderRecaudo === 'function' && !window.renderRecaudo.__blindado){
+      if(typeof window.renderRecaudo === 'function' && !window.renderRecaudo.__blindadoV5){
         envolver();
       }
     } catch(e){}
   }, 2000);
 
-  // ─── Wrappear localStorage.setItem para marcar interacción ──────
-  // Cuando se guarda recaudo_HOY, el setter override sube a Supabase,
-  // que devuelve el evento por realtime. Si marcamos la interacción
-  // antes del setItem, el render que dispararía el eco queda bloqueado.
+  // ─── Marcar interacción cuando se guarda recaudo_ en localStorage ──
   try {
-    if(!localStorage.setItem.__recaudoMarkV3){
+    if(!localStorage.setItem.__recaudoMarkV5){
       var _origLSset = localStorage.setItem.bind(localStorage);
       localStorage.setItem = function(k, v){
         if(typeof k === 'string' && k.indexOf('recaudo_') === 0){
@@ -15706,76 +15801,44 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
         }
         return _origLSset(k, v);
       };
-      localStorage.setItem.__recaudoMarkV3 = true;
+      localStorage.setItem.__recaudoMarkV5 = true;
     }
   } catch(e){}
 
-  console.log('🛡️ Parche DEFINITIVO V3 cargado: renderRecaudo blindado + marcado pre-emptivo.');
-})();
-</script>
-<script>
-// ════════════════════════════════════════════════════════════════════
-// 🛡️ PARCHE V4 — SUMA EN VIVO + WRAPPER recaudoGuardarFila
-// ════════════════════════════════════════════════════════════════════
-// Problema reportado: "no suma al escribir en faltantes / nequi / bancolombia".
-// Causa: los inputs llaman renderRecaudo() en onblur, pero renderRecaudo
-// está blindado durante interacción → no se actualizan los totales.
-//
-// Solución: ejecutar _recaudoActualizarTotales() en cada keystroke/input
-// y wrappear recaudoGuardarFila para que siempre actualice totales después
-// de guardar la fila.
-// ════════════════════════════════════════════════════════════════════
-(function(){
-  'use strict';
-
-  // 1) Listener `input` global sobre el panel recaudo → actualiza totales en vivo
+  // ─── SUMA EN VIVO de inputs (Nequi/Banco/Faltantes/Salidas) ───────
   document.addEventListener('input', function(e){
     var t = e.target;
     if(!t || t.tagName !== 'INPUT') return;
-    var p = document.getElementById('panelRecaudo');
-    if(!p || !p.contains(t)) return;
-    // Solo nos interesan los inputs de dinero (nequi/banco/faltantes/salidas)
+    if(!dentro(t)) return;
     var id = t.id || '';
     if(id.indexOf('rec_nequi_') === 0 || id.indexOf('rec_banco_') === 0 ||
-       id.indexOf('rec_falt_') === 0 || id.indexOf('rec_sal_') === 0){
-      // Marcar interacción (ya se hace por otro listener, pero por seguridad)
-      window._recaudoLastInteract = Date.now();
-      // Actualizar totales al instante
+       id.indexOf('rec_falt_') === 0  || id.indexOf('rec_sal_') === 0){
+      marcar();
       if(typeof window._recaudoActualizarTotales === 'function'){
         try { window._recaudoActualizarTotales(); } catch(err){}
       }
     }
   }, true);
 
-  // 2) Wrappear recaudoGuardarFila para SIEMPRE actualizar totales tras guardar
+  // ─── Wrappear recaudoGuardarFila para que SIEMPRE actualice totales ─
   var _wrapTries = 0;
   var _wrapIv = setInterval(function(){
     _wrapTries++;
-    if(typeof window.recaudoGuardarFila === 'function' && !window.recaudoGuardarFila.__totalsPatched){
+    if(typeof window.recaudoGuardarFila === 'function' && !window.recaudoGuardarFila.__totalsPatchedV5){
       var _origGF = window.recaudoGuardarFila;
       window.recaudoGuardarFila = function(){
         try { _origGF.apply(this, arguments); } catch(e){ console.warn(e); }
-        // Después de guardar, actualizar totales
         if(typeof window._recaudoActualizarTotales === 'function'){
           try { window._recaudoActualizarTotales(); } catch(e){}
         }
       };
-      window.recaudoGuardarFila.__totalsPatched = true;
+      window.recaudoGuardarFila.__totalsPatchedV5 = true;
       clearInterval(_wrapIv);
     }
     if(_wrapTries > 40) clearInterval(_wrapIv);
   }, 200);
 
-  console.log('🛡️ Parche V4 cargado: suma en vivo de inputs + wrapper recaudoGuardarFila.');
-
-  // ─────────────────────────────────────────────────────────────────
-  // 🛡️ LIMPIEZA RETROACTIVA — Comentarios huérfanos en clientesDatos
-  // Si un cliente tiene `clientesDatos[n].comentario` con texto pero
-  // NO existe en obs_marquee → es un comentario huérfano (la
-  // observación se borró pero el comentario quedó). Lo limpiamos para
-  // que el modal no muestre observaciones que ya no están en la barra.
-  // Solo se ejecuta UNA VEZ por sesión (bandera en sessionStorage).
-  // ─────────────────────────────────────────────────────────────────
+  // ─── LIMPIEZA RETROACTIVA — Comentarios huérfanos ─────────────────
   if(!sessionStorage.getItem('_comentariosHuerfanosLimpios')){
     setTimeout(function(){
       try {
@@ -15795,11 +15858,9 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
           if(!cd[n] || !cd[n].comentario) return;
           var txtObs = obsMapa[keyFn(n)];
           if(!txtObs){
-            // Comentario huérfano: existe en clientesDatos pero no en obs_marquee
             cd[n].comentario = '';
             cambios++;
           } else if(txtObs !== cd[n].comentario){
-            // Existe en ambos pero distintos: la barra (obs_marquee) gana
             cd[n].comentario = txtObs;
             cambios++;
           }
@@ -15812,8 +15873,11 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
       } catch(e){ console.warn('Limpieza comentarios huérfanos:', e); }
     }, 1500);
   }
+
+  console.log('🛡️ PARCHE V5 cargado: renderRecaudo blindado con respeto al skeleton + suma en vivo.');
 })();
 </script>
+
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
 </div>
