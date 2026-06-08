@@ -3,6 +3,169 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+// ════════════════════════════════════════════════════════════════════
+// 🛡️ INTERCEPTOR PRIORITARIO DE setItem — PROTECCIÓN DE recaudo_*
+// ════════════════════════════════════════════════════════════════════
+// Se inyecta AL INICIO del <head>, ANTES de cualquier otro script,
+// para que se ejecute ANTES del IIFE de sync que hace
+//   LS.set = localStorage.setItem.bind(localStorage);
+// Cuando ese IIFE bindee, capturará NUESTRA versión interceptada.
+// Así protegemos el localStorage incluso cuando el listener realtime
+// llama LS.set directamente (saltándose el override posterior).
+//
+// REGLA: si se está escribiendo `recaudo_*` y el usuario tuvo interacción
+// reciente con el panel del Recaudo (< 1.5 s), MERGEAMOS con el estado
+// ACTUAL del DOM antes de escribir. Así el eco remoto NUNCA puede
+// "desmarcar" un checkbox que el usuario acaba de marcar localmente.
+// ════════════════════════════════════════════════════════════════════
+(function(){
+  'use strict';
+
+  // Si ya intervenimos antes, no duplicar
+  if(Storage.prototype.setItem.__recaudoGuard) return;
+
+  var _origSetItem = Storage.prototype.setItem;
+  window._recaudoLastInteract = window._recaudoLastInteract || 0;
+
+  function enInteraccionRecaudo(){
+    return (Date.now() - (window._recaudoLastInteract||0)) < 1500;
+  }
+
+  // Marca interacción cualquier evento sobre el panel del Recaudo
+  // (esto es complementario al listener del PARCHE V5; aquí ponemos
+  // un listener temprano para asegurar marca antes incluso del DOMReady)
+  function _instalarMarcadorTemprano(){
+    if(window.__recaudoMarkerInstalled) return;
+    window.__recaudoMarkerInstalled = true;
+    function dentro(t){
+      if(!t) return false;
+      var p = document.getElementById('panelRecaudo');
+      if(!p) return false;
+      try { return p.contains(t); } catch(e){ return false; }
+    }
+    ['pointerdown','mousedown','touchstart','click','change','keydown','input']
+      .forEach(function(evt){
+        document.addEventListener(evt, function(e){
+          if(dentro(e.target)) window._recaudoLastInteract = Date.now();
+        }, true);
+      });
+  }
+  if(document.readyState !== 'loading') _instalarMarcadorTemprano();
+  else document.addEventListener('DOMContentLoaded', _instalarMarcadorTemprano);
+
+  // Lee el estado ACTUAL del DOM del recaudo (checkboxes + inputs)
+  // y lo aplica sobre el objeto remoto que se va a guardar.
+  // Devuelve el objeto mergeado.
+  function mergearRemotoConDOM(remoto){
+    if(!remoto || typeof remoto !== 'object') return remoto;
+    var p = document.getElementById('panelRecaudo');
+    if(!p || !p.classList.contains('open')) return remoto;
+    var cache = window._recaudoCache;
+    if(!cache || !Array.isArray(cache.rows)) return remoto;
+
+    // Construir mapa safe → nombre real
+    var safeToNombre = {};
+    cache.rows.forEach(function(r){
+      if(r && r.cliente){
+        safeToNombre[r.cliente.replace(/[^a-zA-Z0-9]/g,'_')] = r.cliente;
+      }
+    });
+
+    // Clonar remoto para no mutar
+    var resultado = {};
+    Object.keys(remoto).forEach(function(k){
+      // Conservar campos especiales (__forceRender, etc.)
+      if(k.indexOf('__') === 0){ resultado[k] = remoto[k]; return; }
+      resultado[k] = Object.assign({}, remoto[k] || {});
+    });
+
+    // Recorrer checkboxes del DOM y aplicar su estado sobre resultado
+    var cbs = p.querySelectorAll('input[type="checkbox"][id^="rec_"]');
+    cbs.forEach(function(cb){
+      var m = cb.id.match(/^rec_([a-z]+)_(.+)$/);
+      if(!m) return;
+      var tipo = m[1];
+      var safe = m[2];
+      var nombre = safeToNombre[safe];
+      if(!nombre) return;
+      if(!resultado[nombre]) resultado[nombre] = {};
+
+      // cache de la fila para subtotal/deudaTotalMia
+      var row = cache.rows.find(function(r){ return r.cliente === nombre; });
+      var subtotalRow = row ? (Number(row.subtotal)||0) : 0;
+
+      if(tipo === 'rec'){
+        resultado[nombre].recibido = !!cb.checked;
+      } else if(tipo === 'domi'){
+        if(cb.checked){
+          // Si el remoto ya tenía recaudoDomi > 0, conservarlo (subtotal puede haber cambiado)
+          // si no, ponerlo al subtotal de la fila
+          if(!(Number(resultado[nombre].recaudoDomi) > 0)){
+            resultado[nombre].recaudoDomi = subtotalRow;
+          }
+        } else {
+          resultado[nombre].recaudoDomi = 0;
+        }
+      } else if(tipo === 'domideuda'){
+        resultado[nombre].domiIncluirDeuda = !!cb.checked;
+      } else if(tipo === 'domideudamia' || tipo === 'azuldomi'){
+        resultado[nombre].domiIncluirDeudaMia = !!cb.checked;
+      }
+    });
+
+    // Inputs (Nequi/Banco/Faltantes/Salidas) — preservar valores del DOM
+    var inputs = p.querySelectorAll('input[id^="rec_nequi_"],input[id^="rec_banco_"],input[id^="rec_falt_"],input[id^="rec_sal_"]');
+    inputs.forEach(function(inp){
+      var m = inp.id.match(/^rec_([a-z]+)_(.+)$/);
+      if(!m) return;
+      var tipo = m[1];
+      var safe = m[2];
+      var nombre = safeToNombre[safe];
+      if(!nombre) return;
+      if(!resultado[nombre]) resultado[nombre] = {};
+      var raw = String(inp.value||'').replace(/[^\d-]/g,'');
+      var val = raw ? Number(raw) : 0;
+      // Si el usuario tiene foco en este input, el valor del DOM gana siempre.
+      // Si no, solo gana si difiere del remoto (es decir, el usuario lo cambió).
+      var esFocus = document.activeElement === inp;
+      if(tipo === 'nequi'){
+        if(esFocus || val !== (Number(resultado[nombre].nequi)||0)) resultado[nombre].nequi = val;
+      } else if(tipo === 'banco'){
+        if(esFocus || val !== (Number(resultado[nombre].bancolombia)||0)) resultado[nombre].bancolombia = val;
+      } else if(tipo === 'falt'){
+        if(esFocus || val !== (Number(resultado[nombre].faltantes)||0)) resultado[nombre].faltantes = val;
+      } else if(tipo === 'sal'){
+        if(esFocus || val !== (Number(resultado[nombre].salidas)||0)) resultado[nombre].salidas = val;
+      }
+    });
+
+    return resultado;
+  }
+
+  // ─── EL INTERCEPTOR ──────────────────────────────────────────────
+  Storage.prototype.setItem = function(k, v){
+    if(this === localStorage && typeof k === 'string' && k.indexOf('recaudo_') === 0){
+      // Marcar interacción (esto cubre tanto cuando el usuario guarda
+      // un toggle como cuando el eco realtime nos llega).
+      // Si viene del usuario → marca actual = ahora. Bien.
+      // Si viene del eco → si el usuario interactuó recientemente,
+      // mergear con DOM.
+      if(enInteraccionRecaudo()){
+        try {
+          var remoto = JSON.parse(v);
+          var mergeado = mergearRemotoConDOM(remoto);
+          v = JSON.stringify(mergeado);
+        } catch(e){ /* si falla parse, escribir tal cual */ }
+      }
+    }
+    return _origSetItem.call(this, k, v);
+  };
+  Storage.prototype.setItem.__recaudoGuard = true;
+
+  // Marcar para diagnóstico
+  console.log('🛡️ Interceptor de setItem para recaudo_* instalado (protección de eco realtime).');
+})();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
