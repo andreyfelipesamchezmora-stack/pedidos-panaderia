@@ -163,6 +163,12 @@
   };
   Storage.prototype.setItem.__recaudoGuard = true;
 
+  // 🛡️ Exponer funciones globalmente para que el parche V5 pueda
+  // wrappear también la versión "propia" de localStorage.setItem que
+  // el IIFE de sync instala posteriormente.
+  window._mergearRemotoConDOM = mergearRemotoConDOM;
+  window._enInteraccionRecaudo = enInteraccionRecaudo;
+
   // Marcar para diagnóstico
   console.log('🛡️ Interceptor de setItem para recaudo_* instalado (protección de eco realtime).');
 })();
@@ -15959,8 +15965,24 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
     if(!localStorage.setItem.__recaudoMarkV5){
       var _origLSset = localStorage.setItem.bind(localStorage);
       localStorage.setItem = function(k, v){
+        // 🛡️ FIX CRÍTICO: cuando se guarda recaudo_*, MERGEAR con DOM
+        // ANTES de llamar al setItem original (que pasará el valor también
+        // a subF para subir a Supabase). Sin este merge, lo que se sube
+        // a Supabase puede estar desactualizado respecto al DOM.
         if(typeof k === 'string' && k.indexOf('recaudo_') === 0){
           marcar();
+          // Si el usuario interactuó recientemente, mergear con DOM
+          // para que tanto LS como la subida a Supabase reflejen el
+          // estado real de los checkboxes/inputs.
+          if(typeof window._enInteraccionRecaudo === 'function' &&
+             window._enInteraccionRecaudo() &&
+             typeof window._mergearRemotoConDOM === 'function'){
+            try {
+              var remoto = JSON.parse(v);
+              var mergeado = window._mergearRemotoConDOM(remoto);
+              v = JSON.stringify(mergeado);
+            } catch(eM){}
+          }
         }
         return _origLSset(k, v);
       };
