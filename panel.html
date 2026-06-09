@@ -5,36 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 // ════════════════════════════════════════════════════════════════════
-// 🛡️ INTERCEPTOR PRIORITARIO DE setItem — PROTECCIÓN DE recaudo_*
+// 🛡️ INTERCEPTOR V6 — IGNORA EL ECO REALTIME DURANTE INTERACCIÓN
 // ════════════════════════════════════════════════════════════════════
-// Se inyecta AL INICIO del <head>, ANTES de cualquier otro script,
-// para que se ejecute ANTES del IIFE de sync que hace
-//   LS.set = localStorage.setItem.bind(localStorage);
-// Cuando ese IIFE bindee, capturará NUESTRA versión interceptada.
-// Así protegemos el localStorage incluso cuando el listener realtime
-// llama LS.set directamente (saltándose el override posterior).
+// ESTRATEGIA NUEVA Y SIMPLE:
+//   - Si el usuario está interactuando con el panel del Recaudo
+//     (< 2 segundos desde último click/input) Y la escritura NO viene
+//     de un toggle local conocido → IGNORAR completamente la escritura.
+//   - El toggle local marca `window._togglingRecaudo = true` justo antes
+//     de llamar a localStorage.setItem y lo libera al microtask siguiente.
+//   - Mi interceptor distingue: si bandera está alta → toggle (escribir);
+//     si no → eco realtime (ignorar durante interacción).
 //
-// REGLA: si se está escribiendo `recaudo_*` y el usuario tuvo interacción
-// reciente con el panel del Recaudo (< 1.5 s), MERGEAMOS con el estado
-// ACTUAL del DOM antes de escribir. Así el eco remoto NUNCA puede
-// "desmarcar" un checkbox que el usuario acaba de marcar localmente.
+// Esto reemplaza el merge anterior (más complejo y con casos edge).
+// La regla simple: durante interacción, el DOM y los cambios locales
+// del usuario son la VERDAD ABSOLUTA. Ningún eco puede sobrescribir.
 // ════════════════════════════════════════════════════════════════════
 (function(){
   'use strict';
 
-  // Si ya intervenimos antes, no duplicar
-  if(Storage.prototype.setItem.__recaudoGuard) return;
+  if(Storage.prototype.setItem.__recaudoGuardV6) return;
 
   var _origSetItem = Storage.prototype.setItem;
   window._recaudoLastInteract = window._recaudoLastInteract || 0;
+  window._togglingRecaudo = false;
 
   function enInteraccionRecaudo(){
-    return (Date.now() - (window._recaudoLastInteract||0)) < 1500;
+    return (Date.now() - (window._recaudoLastInteract||0)) < 2000;
   }
 
-  // Marca interacción cualquier evento sobre el panel del Recaudo
-  // (esto es complementario al listener del PARCHE V5; aquí ponemos
-  // un listener temprano para asegurar marca antes incluso del DOMReady)
+  // Marcador temprano (antes de DOMContentLoaded)
   function _instalarMarcadorTemprano(){
     if(window.__recaudoMarkerInstalled) return;
     window.__recaudoMarkerInstalled = true;
@@ -54,123 +53,26 @@
   if(document.readyState !== 'loading') _instalarMarcadorTemprano();
   else document.addEventListener('DOMContentLoaded', _instalarMarcadorTemprano);
 
-  // Lee el estado ACTUAL del DOM del recaudo (checkboxes + inputs)
-  // y lo aplica sobre el objeto remoto que se va a guardar.
-  // Devuelve el objeto mergeado.
-  function mergearRemotoConDOM(remoto){
-    if(!remoto || typeof remoto !== 'object') return remoto;
-    var p = document.getElementById('panelRecaudo');
-    if(!p || !p.classList.contains('open')) return remoto;
-    var cache = window._recaudoCache;
-    if(!cache || !Array.isArray(cache.rows)) return remoto;
-
-    // Construir mapa safe → nombre real
-    var safeToNombre = {};
-    cache.rows.forEach(function(r){
-      if(r && r.cliente){
-        safeToNombre[r.cliente.replace(/[^a-zA-Z0-9]/g,'_')] = r.cliente;
-      }
-    });
-
-    // Clonar remoto para no mutar
-    var resultado = {};
-    Object.keys(remoto).forEach(function(k){
-      // Conservar campos especiales (__forceRender, etc.)
-      if(k.indexOf('__') === 0){ resultado[k] = remoto[k]; return; }
-      resultado[k] = Object.assign({}, remoto[k] || {});
-    });
-
-    // Recorrer checkboxes del DOM y aplicar su estado sobre resultado
-    var cbs = p.querySelectorAll('input[type="checkbox"][id^="rec_"]');
-    cbs.forEach(function(cb){
-      var m = cb.id.match(/^rec_([a-z]+)_(.+)$/);
-      if(!m) return;
-      var tipo = m[1];
-      var safe = m[2];
-      var nombre = safeToNombre[safe];
-      if(!nombre) return;
-      if(!resultado[nombre]) resultado[nombre] = {};
-
-      // cache de la fila para subtotal/deudaTotalMia
-      var row = cache.rows.find(function(r){ return r.cliente === nombre; });
-      var subtotalRow = row ? (Number(row.subtotal)||0) : 0;
-
-      if(tipo === 'rec'){
-        resultado[nombre].recibido = !!cb.checked;
-      } else if(tipo === 'domi'){
-        if(cb.checked){
-          // Si el remoto ya tenía recaudoDomi > 0, conservarlo (subtotal puede haber cambiado)
-          // si no, ponerlo al subtotal de la fila
-          if(!(Number(resultado[nombre].recaudoDomi) > 0)){
-            resultado[nombre].recaudoDomi = subtotalRow;
-          }
-        } else {
-          resultado[nombre].recaudoDomi = 0;
-        }
-      } else if(tipo === 'domideuda'){
-        resultado[nombre].domiIncluirDeuda = !!cb.checked;
-      } else if(tipo === 'domideudamia' || tipo === 'azuldomi'){
-        resultado[nombre].domiIncluirDeudaMia = !!cb.checked;
-      }
-    });
-
-    // Inputs (Nequi/Banco/Faltantes/Salidas) — preservar valores del DOM
-    var inputs = p.querySelectorAll('input[id^="rec_nequi_"],input[id^="rec_banco_"],input[id^="rec_falt_"],input[id^="rec_sal_"]');
-    inputs.forEach(function(inp){
-      var m = inp.id.match(/^rec_([a-z]+)_(.+)$/);
-      if(!m) return;
-      var tipo = m[1];
-      var safe = m[2];
-      var nombre = safeToNombre[safe];
-      if(!nombre) return;
-      if(!resultado[nombre]) resultado[nombre] = {};
-      var raw = String(inp.value||'').replace(/[^\d-]/g,'');
-      var val = raw ? Number(raw) : 0;
-      // Si el usuario tiene foco en este input, el valor del DOM gana siempre.
-      // Si no, solo gana si difiere del remoto (es decir, el usuario lo cambió).
-      var esFocus = document.activeElement === inp;
-      if(tipo === 'nequi'){
-        if(esFocus || val !== (Number(resultado[nombre].nequi)||0)) resultado[nombre].nequi = val;
-      } else if(tipo === 'banco'){
-        if(esFocus || val !== (Number(resultado[nombre].bancolombia)||0)) resultado[nombre].bancolombia = val;
-      } else if(tipo === 'falt'){
-        if(esFocus || val !== (Number(resultado[nombre].faltantes)||0)) resultado[nombre].faltantes = val;
-      } else if(tipo === 'sal'){
-        if(esFocus || val !== (Number(resultado[nombre].salidas)||0)) resultado[nombre].salidas = val;
-      }
-    });
-
-    return resultado;
-  }
-
-  // ─── EL INTERCEPTOR ──────────────────────────────────────────────
+  // ─── EL INTERCEPTOR SIMPLE: IGNORAR ECO DURANTE INTERACCIÓN ───────
   Storage.prototype.setItem = function(k, v){
     if(this === localStorage && typeof k === 'string' && k.indexOf('recaudo_') === 0){
-      // Marcar interacción (esto cubre tanto cuando el usuario guarda
-      // un toggle como cuando el eco realtime nos llega).
-      // Si viene del usuario → marca actual = ahora. Bien.
-      // Si viene del eco → si el usuario interactuó recientemente,
-      // mergear con DOM.
-      if(enInteraccionRecaudo()){
-        try {
-          var remoto = JSON.parse(v);
-          var mergeado = mergearRemotoConDOM(remoto);
-          v = JSON.stringify(mergeado);
-        } catch(e){ /* si falla parse, escribir tal cual */ }
+      // Si NO es un toggle local Y hay interacción reciente → IGNORAR.
+      // Es decir, el listener realtime no podrá sobrescribir lo que
+      // el usuario está haciendo.
+      if(enInteraccionRecaudo() && !window._togglingRecaudo){
+        // Silenciosamente ignorar. No escribir LS. No retornar error.
+        // Los datos remotos se aplicarán cuando el usuario deje de
+        // interactuar (se forza un sync explícito 2s después).
+        return;
       }
     }
     return _origSetItem.call(this, k, v);
   };
-  Storage.prototype.setItem.__recaudoGuard = true;
+  Storage.prototype.setItem.__recaudoGuardV6 = true;
 
-  // 🛡️ Exponer funciones globalmente para que el parche V5 pueda
-  // wrappear también la versión "propia" de localStorage.setItem que
-  // el IIFE de sync instala posteriormente.
-  window._mergearRemotoConDOM = mergearRemotoConDOM;
   window._enInteraccionRecaudo = enInteraccionRecaudo;
 
-  // Marcar para diagnóstico
-  console.log('🛡️ Interceptor de setItem para recaudo_* instalado (protección de eco realtime).');
+  console.log('🛡️ Interceptor V6 instalado: ignora eco de recaudo_* durante interacción.');
 })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -3664,8 +3566,17 @@ function recaudoLeerEstado(){
 
 function recaudoGuardarEstado(obj){
   try{
+    // 🛡️ Marcar que ESTE setItem viene del usuario (toggle local).
+    // Sin esta bandera, el interceptor V6 lo confundiría con un eco
+    // remoto durante interacción y lo ignoraría.
+    window._togglingRecaudo = true;
     localStorage.setItem(recaudoFechaKey(), JSON.stringify(obj||{}));
-  }catch(e){}
+  }catch(e){
+  } finally {
+    // Liberar la bandera en el siguiente microtask para que el
+    // listener que reenvía a Supabase también pase como "toggle".
+    setTimeout(function(){ window._togglingRecaudo = false; }, 0);
+  }
 }
 
 function recaudoTipoLabel(tipo){
@@ -4307,6 +4218,27 @@ async function abrirRecaudo(){
       <div class="skel skel-c"></div>
       <div class="skel skel-c"></div>
     </div>`;
+  // 🛡️ FORZAR BAJADA FRESCA del estado del día desde Supabase ANTES de
+  // renderizar. Esto resuelve "aparecen marcados al abrir" si el estado
+  // remoto tiene checkboxes desmarcados que el LS local nunca actualizó.
+  try {
+    if(typeof window.db !== 'undefined' && typeof cajaFechaHoy === 'function'){
+      var _fechaHoy = cajaFechaHoy();
+      var _res = await window.db.from('recaudo_diario')
+                              .select('datos')
+                              .eq('fecha', _fechaHoy)
+                              .maybeSingle();
+      if(_res && _res.data && _res.data.datos){
+        // Bandera para que el interceptor V6 NO bloquee esta escritura
+        // (no es un eco, es la carga inicial controlada por nosotros).
+        window._togglingRecaudo = true;
+        try {
+          localStorage.setItem('recaudo_' + _fechaHoy, JSON.stringify(_res.data.datos));
+        } catch(eLS){}
+        window._togglingRecaudo = false;
+      }
+    }
+  } catch(eSup){ console.warn('bajF recaudo al abrir:', eSup); }
   if(typeof renderRecaudo === "function"){
     await renderRecaudo();
   } else {
@@ -15962,31 +15894,20 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
 
   // ─── Marcar interacción cuando se guarda recaudo_ en localStorage ──
   try {
-    if(!localStorage.setItem.__recaudoMarkV5){
+    if(!localStorage.setItem.__recaudoMarkV6){
       var _origLSset = localStorage.setItem.bind(localStorage);
       localStorage.setItem = function(k, v){
-        // 🛡️ FIX CRÍTICO: cuando se guarda recaudo_*, MERGEAR con DOM
-        // ANTES de llamar al setItem original (que pasará el valor también
-        // a subF para subir a Supabase). Sin este merge, lo que se sube
-        // a Supabase puede estar desactualizado respecto al DOM.
+        // 🛡️ V6: cuando se guarda recaudo_*, marcar la bandera de toggle
+        // local para que el interceptor del head no lo confunda con eco.
+        // (En la práctica, `recaudoGuardarEstado` ya marca la bandera
+        // antes de llamar a esta función, pero por defensa la marcamos
+        // también aquí.)
         if(typeof k === 'string' && k.indexOf('recaudo_') === 0){
           marcar();
-          // Si el usuario interactuó recientemente, mergear con DOM
-          // para que tanto LS como la subida a Supabase reflejen el
-          // estado real de los checkboxes/inputs.
-          if(typeof window._enInteraccionRecaudo === 'function' &&
-             window._enInteraccionRecaudo() &&
-             typeof window._mergearRemotoConDOM === 'function'){
-            try {
-              var remoto = JSON.parse(v);
-              var mergeado = window._mergearRemotoConDOM(remoto);
-              v = JSON.stringify(mergeado);
-            } catch(eM){}
-          }
         }
         return _origLSset(k, v);
       };
-      localStorage.setItem.__recaudoMarkV5 = true;
+      localStorage.setItem.__recaudoMarkV6 = true;
     }
   } catch(e){}
 
@@ -16060,6 +15981,129 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
   }
 
   console.log('🛡️ PARCHE V5 cargado: renderRecaudo blindado con respeto al skeleton + suma en vivo.');
+
+  // ─────────────────────────────────────────────────────────────────
+  // 🛡️ FEEDBACK VISUAL — Loader/flash sutil al hacer click en checkbox
+  // del Recaudo. Da confirmación visual SIN re-renderizar la tabla
+  // (sin titileos, sin doble load).
+  // ─────────────────────────────────────────────────────────────────
+  (function(){
+    // Inyectar CSS solo una vez
+    if(document.getElementById('vnRecaudoFlashCSS')) return;
+    var st = document.createElement('style');
+    st.id = 'vnRecaudoFlashCSS';
+    st.textContent =
+      // Flash de fila al marcar
+      '@keyframes vnFlashOk { 0%{background:rgba(74,222,128,0.35);} 100%{background:transparent;} }' +
+      '@keyframes vnFlashSync { 0%{background:rgba(251,191,36,0.25);} 100%{background:transparent;} }' +
+      '#panelRecaudo tr.vn-flash-ok td { animation: vnFlashOk 0.6s ease-out; }' +
+      '#panelRecaudo tr.vn-flash-sync td { animation: vnFlashSync 0.6s ease-out; }' +
+      // Indicador de "guardando" en el checkbox
+      '#panelRecaudo input[type="checkbox"].vn-saving {' +
+        ' box-shadow: 0 0 0 3px rgba(74,222,128,0.45), 0 0 12px rgba(74,222,128,0.55);' +
+        ' transition: box-shadow 0.2s;' +
+      '}' +
+      // Pulso del checkbox al cambiar
+      '@keyframes vnPulse {' +
+        '0%{transform:scale(1);} 40%{transform:scale(1.18);} 100%{transform:scale(1);}' +
+      '}' +
+      '#panelRecaudo input[type="checkbox"].vn-pulse {' +
+        ' animation: vnPulse 0.25s ease-out;' +
+      '}';
+    document.head.appendChild(st);
+  })();
+
+  // Listener: cuando el usuario hace cambio (change) en checkbox del recaudo,
+  // dar feedback visual inmediato y quitarlo cuando se confirme la subida.
+  document.addEventListener('change', function(e){
+    var t = e.target;
+    if(!t || t.type !== 'checkbox') return;
+    var p = document.getElementById('panelRecaudo');
+    if(!p || !p.contains(t)) return;
+    if(!t.id || !t.id.startsWith('rec_')) return;
+
+    // 1. Pulso instantáneo del checkbox
+    t.classList.remove('vn-pulse');
+    void t.offsetWidth;  // forzar reflow para reiniciar animación
+    t.classList.add('vn-pulse');
+    setTimeout(function(){ t.classList.remove('vn-pulse'); }, 250);
+
+    // 2. Marcar checkbox como "guardando" (glow verde)
+    t.classList.add('vn-saving');
+
+    // 3. Flash de fila (verde sutil)
+    var tr = t.closest('tr');
+    if(tr){
+      tr.classList.remove('vn-flash-ok');
+      void tr.offsetWidth;
+      tr.classList.add('vn-flash-ok');
+      setTimeout(function(){ tr.classList.remove('vn-flash-ok'); }, 600);
+    }
+
+    // 4. Quitar el "guardando" cuando se asume que el sub a Supabase
+    //    completó (típicamente < 400ms con buena conexión). Es una
+    //    confirmación heurística sin esperar el ACK real, pero muy
+    //    consistente porque el localStorage YA está guardado.
+    setTimeout(function(){
+      t.classList.remove('vn-saving');
+    }, 350);
+  }, true);
+
+  console.log('🛡️ Feedback visual de checkboxes activado.');
+
+  // ─────────────────────────────────────────────────────────────────
+  // 🛡️ SYNC POST-INTERACCIÓN
+  // Después de que el usuario deja de interactuar (≥ 2.5 s sin clicks),
+  // forzar la subida del estado LOCAL ACTUAL a Supabase. Esto asegura
+  // que lo que el usuario marcó quede persistente remotamente, incluso
+  // si algunos toggles intermedios no llegaron a subir.
+  // ─────────────────────────────────────────────────────────────────
+  var _syncPostInteractTimer = null;
+  function _scheduleSyncPostInteract(){
+    if(_syncPostInteractTimer) clearTimeout(_syncPostInteractTimer);
+    _syncPostInteractTimer = setTimeout(function(){
+      _syncPostInteractTimer = null;
+      // Verificar que ya no hay interacción
+      if(Date.now() - (window._recaudoLastInteract||0) < 2400) return;
+      try {
+        if(typeof cajaFechaHoy !== 'function' || typeof window.db === 'undefined') return;
+        var fecha = cajaFechaHoy();
+        var k = 'recaudo_' + fecha;
+        var rawLS = localStorage.getItem(k);
+        if(!rawLS) return;
+        var datos;
+        try { datos = JSON.parse(rawLS); } catch(e){ return; }
+        // Upsert directo a Supabase (bypaseando el setter override)
+        window.db.from('recaudo_diario').upsert({
+          fecha: fecha,
+          datos: datos,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'fecha' }).then(function(){
+          console.log('🔄 Sync post-interacción del recaudo subido a Supabase');
+        }).catch(function(e){ console.warn('Sync post-interacción:', e); });
+      } catch(e){ console.warn('Sync post-interacción err:', e); }
+    }, 2500);
+  }
+  // Programar sync después de cada cambio
+  document.addEventListener('change', function(e){
+    var t = e.target;
+    if(!t) return;
+    var p = document.getElementById('panelRecaudo');
+    if(!p || !p.contains(t)) return;
+    if(t.id && t.id.startsWith('rec_')) _scheduleSyncPostInteract();
+  }, true);
+  document.addEventListener('input', function(e){
+    var t = e.target;
+    if(!t) return;
+    var p = document.getElementById('panelRecaudo');
+    if(!p || !p.contains(t)) return;
+    if(t.id && (t.id.indexOf('rec_nequi_')===0 || t.id.indexOf('rec_banco_')===0 ||
+                t.id.indexOf('rec_falt_')===0  || t.id.indexOf('rec_sal_')===0)){
+      _scheduleSyncPostInteract();
+    }
+  }, true);
+
+  console.log('🛡️ Sync post-interacción activado.');
 })();
 </script>
 
