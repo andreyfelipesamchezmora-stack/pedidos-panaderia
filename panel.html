@@ -17107,5 +17107,321 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
 })();
 </script>
 
+<script>
+// ════════════════════════════════════════════════════════════════════
+// 🛡️ FIX V8 — CALENDARIO NÓMINA VISIBLE + REDISEÑO HISTORIAL GENERAL
+// ════════════════════════════════════════════════════════════════════
+// 1. El intento V7 de inyectar el botón "📅 Calendario" fallaba porque
+//    los nombres están dentro de <input id="ns_nom_X">, no en h3/h4.
+//    V8 busca esos inputs y añade el botón JUSTO ENCIMA de la tabla
+//    de checkboxes semanales, con un calendario completamente visible.
+//
+// 2. El historial general (vnHistorialGeneralDeudas) se rediseña con
+//    estilos modernos: cards de resumen grandes, filtros en barra,
+//    tabla más legible, separadores visuales claros.
+// ════════════════════════════════════════════════════════════════════
+(function(){
+  'use strict';
+
+  // ─────────────────────────────────────────────────────────────────
+  // 1. CALENDARIO NÓMINA — INYECCIÓN VISIBLE EN CADA EMPLEADO SEMANAL
+  // ─────────────────────────────────────────────────────────────────
+  function inyectarCalendariosEnNomina(){
+    var panel = document.getElementById('panelNomina');
+    if(!panel) return;
+    var body = document.getElementById('nominaBody');
+    if(!body) return;
+
+    // Leer datos de nómina actuales
+    var nd = null;
+    try { nd = JSON.parse(localStorage.getItem('nomina_data')||'null'); } catch(e){}
+    if(!nd || !Array.isArray(nd.empleados)) return;
+
+    // Recorrer todos los inputs ns_nom_* (semanales). El índice apunta al
+    // empleado dentro de nd.empleados.
+    var inputsSem = body.querySelectorAll('input[id^="ns_nom_"]');
+    inputsSem.forEach(function(inp){
+      var idx = Number(inp.id.replace('ns_nom_',''));
+      if(isNaN(idx)) return;
+      var emp = nd.empleados[idx];
+      if(!emp || emp.id === 'panadero') return; // Excluir panadero
+
+      // Encontrar el "card" del empleado (el div con background:#1e293b)
+      var card = inp.closest('div[style*="background:#1e293b"]');
+      if(!card) card = inp.parentElement;
+      while(card && card.tagName !== 'DIV') card = card.parentElement;
+      if(!card) return;
+
+      // ¿Ya se inyectó? Buscar marcador
+      if(card.querySelector('._calNomBtn')) return;
+
+      // Encontrar la tabla de checkboxes dentro de la card
+      var tabla = card.querySelector('table');
+      if(!tabla) return;
+      var tablaContainer = tabla.parentElement; // div con overflow-x:auto
+
+      // Crear botón GRANDE
+      var bar = document.createElement('div');
+      bar.className = '_calNomBtn';
+      bar.style.cssText = 'display:flex;gap:8px;margin-bottom:10px;';
+      bar.innerHTML =
+        '<button type="button" data-empid="'+emp.id+'" data-empidx="'+idx+'" class="_calNomOpen" '+
+        ' style="flex:1;padding:10px 14px;background:linear-gradient(135deg,#0ea5e9,#0284c7);color:white;border:none;border-radius:10px;font-weight:800;font-size:13px;cursor:pointer;box-shadow:0 3px 10px rgba(14,165,233,0.35);display:flex;align-items:center;justify-content:center;gap:8px;">'+
+        '📅 Abrir Calendario mensual de '+emp.nombre+
+        '</button>';
+      tablaContainer.parentNode.insertBefore(bar, tablaContainer);
+
+      // Hookear click
+      bar.querySelector('._calNomOpen').onclick = function(e){
+        e.stopPropagation();
+        e.preventDefault();
+        if(typeof window._abrirCalendarioEmpleado === 'function'){
+          window._abrirCalendarioEmpleado(emp.id, emp.nombre, emp.salarioDia);
+        } else {
+          alert('Función de calendario no disponible. Recarga la página.');
+        }
+      };
+    });
+  }
+
+  // Wrappear renderNomina para inyectar el calendario después de cada render
+  function aplicarPatchNomina(){
+    if(typeof window.renderNomina === 'function' && !window.renderNomina.__calPatchV8){
+      var _orig = window.renderNomina;
+      window.renderNomina = function(){
+        var r = _orig.apply(this, arguments);
+        // Inyectar después de que el DOM esté actualizado
+        setTimeout(inyectarCalendariosEnNomina, 50);
+        setTimeout(inyectarCalendariosEnNomina, 250);
+        return r;
+      };
+      window.renderNomina.__calPatchV8 = true;
+      // Si la nómina ya está abierta, inyectar ahora
+      var p = document.getElementById('panelNomina');
+      if(p && (p.classList.contains('open') || p.style.display === 'flex')){
+        inyectarCalendariosEnNomina();
+      }
+      return true;
+    }
+    return false;
+  }
+  if(!aplicarPatchNomina()){
+    var tries = 0;
+    var iv = setInterval(function(){
+      tries++;
+      if(aplicarPatchNomina() || tries > 40) clearInterval(iv);
+    }, 250);
+  }
+
+  // Observador: si el panel se abre después, inyectar
+  if(typeof MutationObserver !== 'undefined' && document.body){
+    var obs = new MutationObserver(function(){
+      var p = document.getElementById('panelNomina');
+      if(p && (p.classList.contains('open') || p.style.display === 'flex')){
+        inyectarCalendariosEnNomina();
+      }
+    });
+    obs.observe(document.body, { childList:true, subtree:true, attributes:true, attributeFilter:['class','style'] });
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // 2. REDISEÑO HISTORIAL GENERAL (vnHistorialGeneralDeudas)
+  // ─────────────────────────────────────────────────────────────────
+  // Sobrescribir la función para usar un layout moderno: cards de
+  // resumen grandes, filtros en barra, tabla con espaciado generoso,
+  // scroll independiente, mejor jerarquía visual.
+  setTimeout(function(){
+    if(typeof window.vnHistorialGeneralDeudas !== 'function') return;
+
+    // Necesitamos los mismos helpers internos. Si no existen, usar fallbacks.
+    function _leerStoreLocal(){
+      try { return JSON.parse(localStorage.getItem('vn_deudas_v20')||'{}'); } catch(e){ return {}; }
+    }
+
+    window.vnHistorialGeneralDeudas = function(){
+      var store = _leerStoreLocal();
+      var todas = [];
+      Object.keys(store).forEach(function(nombre){
+        var c = store[nombre]||{};
+        if(!Array.isArray(c.h)) return;
+        c.h.forEach(function(x){
+          if(!x) return;
+          todas.push({
+            cliente: nombre,
+            fecha: x.fecha || '',
+            hora: x.hora || '',
+            tipo: x.tipo || '',
+            sub:  x.sub  || '',
+            monto: Number(x.monto)||0,
+            metodo: x.metodo || '',
+            banco: x.banco || '',
+            saldo: Number(x.saldo)||0,
+            nota: x.nota || '',
+            _reconstruido: x._reconstruido === true,
+            id: x.id || ''
+          });
+        });
+      });
+      // Orden descendente
+      todas.sort(function(a,b){
+        var fa = (a.fecha||'') + ' ' + (a.hora||'');
+        var fb = (b.fecha||'') + ' ' + (b.hora||'');
+        return fb.localeCompare(fa);
+      });
+
+      // Filtros
+      var f = window._vnHGFiltro || { tipo:'todos', cliente:'' };
+      var filtradas = todas.filter(function(x){
+        if(f.tipo && f.tipo !== 'todos'){
+          if(f.tipo === 'me_deben' && !(x.tipo==='deuda' && x.sub==='cliente')) return false;
+          if(f.tipo === 'le_debo'  && !(x.tipo==='deuda' && x.sub==='mia')) return false;
+          if(f.tipo === 'pagos'    && x.tipo !== 'pago') return false;
+        }
+        if(f.cliente && f.cliente.trim()){
+          if((x.cliente||'').toLowerCase().indexOf(f.cliente.trim().toLowerCase()) === -1) return false;
+        }
+        return true;
+      });
+
+      var nMoney = function(n){ return '$'+(Number(n)||0).toLocaleString('es-CO'); };
+      var totalMeDeben = 0, totalLeDebo = 0, totalPagos = 0;
+      filtradas.forEach(function(x){
+        if(x.tipo==='deuda' && x.sub==='cliente') totalMeDeben += x.monto;
+        else if(x.tipo==='deuda' && x.sub==='mia') totalLeDebo += x.monto;
+        else if(x.tipo==='pago') totalPagos += x.monto;
+      });
+      var saldoNeto = totalMeDeben - totalLeDebo;
+
+      // Crear overlay propio (no usamos mostrarMC para tener tamaño grande)
+      var ov = document.getElementById('_vnHGOv');
+      if(ov) ov.remove();
+      ov = document.createElement('div');
+      ov.id = '_vnHGOv';
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.78);backdrop-filter:blur(5px);z-index:100000;display:flex;align-items:center;justify-content:center;padding:24px;';
+      ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+
+      var box = document.createElement('div');
+      box.style.cssText = 'background:linear-gradient(180deg,#0f172a 0%,#1e293b 100%);border:1px solid rgba(255,255,255,0.1);border-radius:18px;width:min(1180px,98vw);max-height:92vh;display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,0.6);overflow:hidden;';
+
+      // HEADER
+      box.innerHTML +=
+        '<div style="padding:20px 26px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;">'+
+        '  <div>'+
+        '    <div style="font-size:20px;font-weight:800;color:#a78bfa;display:flex;align-items:center;gap:10px;">📚 Historial General de Deudas</div>'+
+        '    <div style="font-size:12px;color:#94a3b8;margin-top:4px;">Todas las deudas y pagos · '+filtradas.length+' movimientos</div>'+
+        '  </div>'+
+        '  <button id="_vnHGX" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.15);color:#cbd5e1;padding:8px 16px;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;">✕ Cerrar</button>'+
+        '</div>';
+
+      // KPI GRID
+      box.innerHTML +=
+        '<div style="padding:20px 26px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;background:rgba(255,255,255,0.02);border-bottom:1px solid rgba(255,255,255,0.05);">'+
+        '  <div style="background:linear-gradient(135deg,rgba(248,113,113,0.15),rgba(248,113,113,0.05));border:1px solid rgba(248,113,113,0.3);border-radius:12px;padding:14px 18px;">'+
+        '    <div style="font-size:11px;color:#fca5a5;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">💸 Me deben</div>'+
+        '    <div style="font-size:22px;font-weight:800;color:#f87171;margin-top:6px;font-variant-numeric:tabular-nums;">'+nMoney(totalMeDeben)+'</div>'+
+        '  </div>'+
+        '  <div style="background:linear-gradient(135deg,rgba(96,165,250,0.15),rgba(96,165,250,0.05));border:1px solid rgba(96,165,250,0.3);border-radius:12px;padding:14px 18px;">'+
+        '    <div style="font-size:11px;color:#93c5fd;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">💳 Le debo</div>'+
+        '    <div style="font-size:22px;font-weight:800;color:#60a5fa;margin-top:6px;font-variant-numeric:tabular-nums;">'+nMoney(totalLeDebo)+'</div>'+
+        '  </div>'+
+        '  <div style="background:linear-gradient(135deg,rgba(74,222,128,0.15),rgba(74,222,128,0.05));border:1px solid rgba(74,222,128,0.3);border-radius:12px;padding:14px 18px;">'+
+        '    <div style="font-size:11px;color:#86efac;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">✅ Pagos</div>'+
+        '    <div style="font-size:22px;font-weight:800;color:#4ade80;margin-top:6px;font-variant-numeric:tabular-nums;">'+nMoney(totalPagos)+'</div>'+
+        '  </div>'+
+        '  <div style="background:linear-gradient(135deg,rgba(167,139,250,0.15),rgba(167,139,250,0.05));border:1px solid rgba(167,139,250,0.3);border-radius:12px;padding:14px 18px;">'+
+        '    <div style="font-size:11px;color:#c4b5fd;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">🧮 Saldo neto</div>'+
+        '    <div style="font-size:22px;font-weight:800;color:'+(saldoNeto>=0?'#a78bfa':'#fcd34d')+';margin-top:6px;font-variant-numeric:tabular-nums;">'+nMoney(saldoNeto)+'</div>'+
+        '  </div>'+
+        '</div>';
+
+      // FILTROS
+      var tipoOpt = function(v,l){ return '<option value="'+v+'"'+(f.tipo===v?' selected':'')+'>'+l+'</option>'; };
+      box.innerHTML +=
+        '<div style="padding:14px 26px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;border-bottom:1px solid rgba(255,255,255,0.05);">'+
+        '  <div>'+
+        '    <label style="display:block;font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;">Tipo</label>'+
+        '    <select id="_vnHGTipo" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;outline:none;">'+
+              tipoOpt('todos','📋 Todos')+
+              tipoOpt('me_deben','💸 Me deben')+
+              tipoOpt('le_debo','💳 Le debo')+
+              tipoOpt('pagos','✅ Pagos')+
+        '    </select>'+
+        '  </div>'+
+        '  <div style="flex:1;min-width:220px;">'+
+        '    <label style="display:block;font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;">Buscar cliente</label>'+
+        '    <input id="_vnHGCli" type="text" value="'+(f.cliente||'').replace(/"/g,'&quot;')+'" placeholder="🔍 Nombre del cliente..." style="width:100%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#e2e8f0;padding:9px 14px;font-size:13px;font-weight:600;outline:none;">'+
+        '  </div>'+
+        '</div>';
+
+      // TABLA
+      var rowsHtml = filtradas.length===0
+        ? '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:40px;font-size:14px;">📭 Sin movimientos para este filtro.</td></tr>'
+        : filtradas.map(function(x){
+            var tipoLab='', tipoColor='#94a3b8', tipoIcon='';
+            if(x.tipo==='deuda' && x.sub==='cliente'){ tipoLab='Me debe'; tipoColor='#f87171'; tipoIcon='💸'; }
+            else if(x.tipo==='deuda' && x.sub==='mia'){ tipoLab='Le debo'; tipoColor='#60a5fa'; tipoIcon='💳'; }
+            else if(x.tipo==='pago'){ tipoLab='Pago'+(x.sub==='cliente'?' (cliente)':' (mío)'); tipoColor='#4ade80'; tipoIcon='✅'; }
+            else if(x.tipo==='saldo_ini'){ tipoLab='Saldo ini.'; tipoColor='#a78bfa'; tipoIcon='🏁'; }
+            else tipoLab = x.tipo;
+            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);transition:background .12s;" onmouseover="this.style.background=\'rgba(99,102,241,0.06)\'" onmouseout="this.style.background=\'transparent\'">'+
+              '<td style="padding:11px 14px;font-size:12px;color:#cbd5e1;white-space:nowrap;font-variant-numeric:tabular-nums;">'+(x.fecha||'—')+(x.hora?'<span style="opacity:0.6;font-size:10px;display:block;">'+x.hora+'</span>':'')+'</td>'+
+              '<td style="padding:11px 14px;font-size:13px;font-weight:700;color:#e2e8f0;">'+x.cliente+'</td>'+
+              '<td style="padding:11px 14px;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:'+tipoColor+';background:'+tipoColor+'22;padding:4px 10px;border-radius:20px;border:1px solid '+tipoColor+'40;">'+tipoIcon+' '+tipoLab+(x._reconstruido?' ⟲':'')+'</span></td>'+
+              '<td style="padding:11px 14px;font-size:14px;font-weight:800;color:'+tipoColor+';text-align:right;font-variant-numeric:tabular-nums;">'+nMoney(x.monto)+'</td>'+
+              '<td style="padding:11px 14px;font-size:11px;color:#94a3b8;">'+(x.metodo||'-')+(x.banco?'<br><span style="opacity:0.65;font-size:10px;">'+x.banco+'</span>':'')+'</td>'+
+              '<td style="padding:11px 14px;font-size:11px;color:#94a3b8;max-width:260px;overflow:hidden;text-overflow:ellipsis;">'+(x.nota||'-')+'</td>'+
+            '</tr>';
+          }).join('');
+
+      box.innerHTML +=
+        '<div style="flex:1;overflow:auto;padding:0 26px 22px;">'+
+        '  <div style="border:1px solid rgba(255,255,255,0.08);border-radius:14px;overflow:hidden;background:rgba(0,0,0,0.18);">'+
+        '    <table style="width:100%;border-collapse:collapse;">'+
+        '      <thead style="position:sticky;top:0;background:#0f172a;z-index:5;">'+
+        '        <tr>'+
+        '          <th style="padding:14px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:left;font-weight:800;letter-spacing:0.06em;border-bottom:1px solid rgba(255,255,255,0.08);">Fecha</th>'+
+        '          <th style="padding:14px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:left;font-weight:800;letter-spacing:0.06em;border-bottom:1px solid rgba(255,255,255,0.08);">Cliente</th>'+
+        '          <th style="padding:14px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:left;font-weight:800;letter-spacing:0.06em;border-bottom:1px solid rgba(255,255,255,0.08);">Tipo</th>'+
+        '          <th style="padding:14px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:right;font-weight:800;letter-spacing:0.06em;border-bottom:1px solid rgba(255,255,255,0.08);">Monto</th>'+
+        '          <th style="padding:14px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:left;font-weight:800;letter-spacing:0.06em;border-bottom:1px solid rgba(255,255,255,0.08);">Método</th>'+
+        '          <th style="padding:14px;font-size:10px;color:#94a3b8;text-transform:uppercase;text-align:left;font-weight:800;letter-spacing:0.06em;border-bottom:1px solid rgba(255,255,255,0.08);">Nota</th>'+
+        '        </tr>'+
+        '      </thead>'+
+        '      <tbody>'+rowsHtml+'</tbody>'+
+        '    </table>'+
+        '  </div>'+
+        '</div>';
+
+      ov.appendChild(box);
+      document.body.appendChild(ov);
+
+      // Event handlers
+      document.getElementById('_vnHGX').onclick = function(){ ov.remove(); };
+      var elTipo = document.getElementById('_vnHGTipo');
+      var elCli = document.getElementById('_vnHGCli');
+      if(elTipo) elTipo.onchange = function(){
+        window._vnHGFiltro = { tipo: elTipo.value, cliente: elCli.value || '' };
+        ov.remove();
+        window.vnHistorialGeneralDeudas();
+      };
+      if(elCli){
+        var _t;
+        elCli.oninput = function(){
+          clearTimeout(_t);
+          _t = setTimeout(function(){
+            window._vnHGFiltro = { tipo: elTipo.value, cliente: elCli.value };
+            ov.remove();
+            window.vnHistorialGeneralDeudas();
+          }, 300);
+        };
+      }
+    };
+    console.log('✅ FIX V8 — vnHistorialGeneralDeudas rediseñado');
+  }, 1500);
+
+  console.log('✅ FIX V8 cargado: calendario nómina visible + historial general rediseñado.');
+})();
+</script>
+
 </body>
 </html>
