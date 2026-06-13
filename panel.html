@@ -368,7 +368,7 @@ body { font-family: var(--font-body); background: var(--clr-bg); color: var(--cl
   background: white; padding: 10px; border-radius: 10px;
   position: relative; cursor: pointer;
 }
-.card.nuevo { background: #d4ffd4; border-left: 6px solid green; }
+.card.nuevo { background: #d4ffd4; }
 .printMini {
   position: absolute; bottom: 5px; right: 8px; font-size: 14px;
   cursor: pointer; background: #111; color: white;
@@ -1577,7 +1577,7 @@ async function cargar(){
     let p = data.find(x => x.cliente === c.nombre) || null;
     let _safeNombre = String(c.nombre).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     let _idArg = p && p.id != null ? JSON.stringify(p.id) : 'null';
-    let _estadoCls = p ? (p.editado ? 'editado' : '') : '';
+    let _estadoCls = p ? (p.editado ? 'editado' : 'nuevo') : '';
     let _total = p ? (Number(p.total)||0) : 0;
     let _totalHtml = p ? `<p style="margin:4px 0 0;font-weight:700;color:#166534;">$${_total.toLocaleString('es-CO')}</p>` : '';
     let _xHtml = p && p.id != null
@@ -8549,7 +8549,8 @@ window.mostrarRangoStats = function(){
   #grid .card.lejano { border-left: 4px solid #7C3AED !important; }
   #grid .card.nuevo {
     background: linear-gradient(145deg, #ECFDF5 0%, #D1FAE5 100%) !important;
-    border-left: 4px solid #16A34A !important;
+    /* 🛡️ NO sobrescribir border-left — la franja izquierda indica el TIPO
+       de cliente (moto/auto/recoge/lejano) y debe conservarse siempre. */
   }
   #grid .card.editado {
     background: linear-gradient(145deg, #FFFBEB 0%, #FEF3C7 100%) !important;
@@ -13875,10 +13876,12 @@ window.vnDiagVentas = function(){
           if (card && p.new.fecha === hoy()) {
             var pEl = card.querySelector('p');
             if (pEl) pEl.textContent = '$' + total.toLocaleString('es-CO');
-            // Actualizar clases (solo 'editado' si aplica; NO 'nuevo' para
-            // mantener el color original del cliente según su tipo)
+            // Actualizar clases. Mantener 'nuevo' (fondo verde claro) para
+            // pedidos nuevos, 'editado' (fondo amarillo) para editados.
+            // 🛡️ El CSS de .card.nuevo ya NO toca el border-left, así que
+            // la franja izquierda del tipo (moto/auto/recoge/lejano) se mantiene.
             var tipo = p.new.tipo || '';
-            card.className = ['card', tipo, p.new.editado ? 'editado' : '']
+            card.className = ['card', tipo, p.new.editado ? 'editado' : 'nuevo']
               .filter(Boolean).join(' ');
             // Actualizar el onclick con el id real
             if (p.new.id) {
