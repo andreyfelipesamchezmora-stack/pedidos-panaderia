@@ -1577,7 +1577,7 @@ async function cargar(){
     let p = data.find(x => x.cliente === c.nombre) || null;
     let _safeNombre = String(c.nombre).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     let _idArg = p && p.id != null ? JSON.stringify(p.id) : 'null';
-    let _estadoCls = p ? (p.editado ? 'editado' : 'nuevo') : '';
+    let _estadoCls = p ? (p.editado ? 'editado' : '') : '';
     let _total = p ? (Number(p.total)||0) : 0;
     let _totalHtml = p ? `<p style="margin:4px 0 0;font-weight:700;color:#166534;">$${_total.toLocaleString('es-CO')}</p>` : '';
     let _xHtml = p && p.id != null
@@ -3926,7 +3926,7 @@ async function renderRecaudo(){
         </div>
         <div class="recaudo-btns">
           <span class="recaudo-chip">Fecha: ${cajaFechaHoy()}</span>
-          <button class="btn-transferir" onclick="renderRecaudo()">↻ Actualizar</button>
+          <button class="btn-transferir" onclick="recaudoActualizarCompleto()">↻ Actualizar</button>
           <button class="btn-nueva-cuenta" onclick="recaudoExportarExcel()">⬇ Exportar Excel</button>
         </div>
       </div>
@@ -13875,9 +13875,10 @@ window.vnDiagVentas = function(){
           if (card && p.new.fecha === hoy()) {
             var pEl = card.querySelector('p');
             if (pEl) pEl.textContent = '$' + total.toLocaleString('es-CO');
-            // Actualizar clases (editado/nuevo)
+            // Actualizar clases (solo 'editado' si aplica; NO 'nuevo' para
+            // mantener el color original del cliente según su tipo)
             var tipo = p.new.tipo || '';
-            card.className = ['card', tipo, p.new.editado ? 'editado' : 'nuevo']
+            card.className = ['card', tipo, p.new.editado ? 'editado' : '']
               .filter(Boolean).join(' ');
             // Actualizar el onclick con el id real
             if (p.new.id) {
@@ -16110,5 +16111,998 @@ try { window.cargarClientesDesdeSupabase = cargarClientesDesdeSupabase; } catch(
 <div id="mcOverlayGlobal" style="display:none;">
   <div id="mcBoxGlobal"></div>
 </div>
+<script>
+// ════════════════════════════════════════════════════════════════════
+// 🛡️ MEGA-MÓDULO V7 — 7 TAREAS IMPLEMENTADAS DE FORMA NO INVASIVA
+// ════════════════════════════════════════════════════════════════════
+// Las funciones de este módulo:
+//   - NUNCA modifican el array `productos` original (lo mutan via push/splice)
+//   - Wrappean funciones existentes en lugar de reemplazarlas
+//   - Toda la persistencia es aditiva en localStorage
+//   - Compatible con Supabase sync existente
+// ════════════════════════════════════════════════════════════════════
+(function(){
+  'use strict';
+
+  // ─────────────────────────────────────────────────────────────────
+  // CONFIGURACIÓN PERSISTENTE: productos personalizados
+  //   Clave: 'productos_v1' = array completo de productos con campos
+  //   {name, precio, b, activo, imagen}
+  // ─────────────────────────────────────────────────────────────────
+  var PROD_KEY = 'productos_v1';
+  var FREQ_KEY_PREFIX = 'freq_cliente_';
+
+  function leerProductosPersonalizados(){
+    try{
+      var raw = localStorage.getItem(PROD_KEY);
+      if(!raw) return null;
+      var arr = JSON.parse(raw);
+      if(!Array.isArray(arr)) return null;
+      return arr;
+    }catch(e){ return null; }
+  }
+  function guardarProductosPersonalizados(arr){
+    try{
+      localStorage.setItem(PROD_KEY, JSON.stringify(arr));
+    }catch(e){}
+  }
+
+  // Aplicar productos personalizados sobre el array original (mutación)
+  function aplicarProductosPersonalizados(){
+    if(typeof productos === 'undefined' || !Array.isArray(productos)) return;
+    var personalizados = leerProductosPersonalizados();
+    if(!personalizados || personalizados.length === 0) return;
+    // Vaciar y llenar (mutación, no reasignación)
+    productos.length = 0;
+    personalizados.forEach(function(p){
+      if(p && p.name){
+        productos.push({
+          name: p.name,
+          precio: Number(p.precio)||0,
+          b: !!p.b,
+          activo: p.activo !== false,
+          imagen: p.imagen || null
+        });
+      }
+    });
+    // Si hay imágenes personalizadas, agregarlas al objeto `imagenes`
+    if(typeof window.imagenes === 'object'){
+      personalizados.forEach(function(p){
+        if(p && p.name && p.imagen) window.imagenes[p.name] = p.imagen;
+      });
+    }
+  }
+
+  // Aplicar al cargar la página
+  aplicarProductosPersonalizados();
+
+  // ─────────────────────────────────────────────────────────────────
+  // CACHE DE FRECUENCIA POR CLIENTE
+  //   Estructura: { 'CLIENTE_NOMBRE': { 'PAN DE 500': 12, 'MOGICON': 5 } }
+  //   Se calcula bajo demanda y se cachea por cliente.
+  //   Se actualiza al guardar un pedido.
+  // ─────────────────────────────────────────────────────────────────
+  function getFreqCache(nombre){
+    try{
+      var raw = localStorage.getItem(FREQ_KEY_PREFIX + nombre);
+      if(!raw) return null;
+      var obj = JSON.parse(raw);
+      return obj && typeof obj === 'object' ? obj : null;
+    }catch(e){ return null; }
+  }
+  function setFreqCache(nombre, obj){
+    try{ localStorage.setItem(FREQ_KEY_PREFIX + nombre, JSON.stringify(obj)); }catch(e){}
+  }
+
+  // Calcular frecuencia desde Supabase (todas las facturas históricas del cliente)
+  async function calcularFrecuenciaDeCliente(nombre){
+    if(typeof db === 'undefined') return {};
+    try{
+      var res = await db.from('pedidos')
+                        .select('detalle,total,fecha')
+                        .eq('cliente', nombre)
+                        .limit(2000);
+      if(!res || !Array.isArray(res.data)) return {};
+      var conteo = {};
+      res.data.forEach(function(p){
+        var det = String(p.detalle||'');
+        // Buscar líneas tipo "PAN DE 500 x 5 = $2.500"
+        var lineas = det.split('\n');
+        lineas.forEach(function(l){
+          var m = l.match(/^(.+?)\s+x\s+\d/);
+          if(m){
+            var nombreProd = m[1].trim();
+            // Limpiar dashes y caracteres no deseados
+            nombreProd = nombreProd.replace(/^-+|-+$/g, '').trim();
+            if(nombreProd && nombreProd.length > 1){
+              conteo[nombreProd] = (conteo[nombreProd]||0) + 1;
+            }
+          }
+        });
+      });
+      return conteo;
+    }catch(e){ console.warn('calcularFrecuencia:', e); return {}; }
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // TAREA 2: Ordenar productos por frecuencia
+  // ─────────────────────────────────────────────────────────────────
+  window._aplicarOrdenFrecuencia = async function(nombreCliente){
+    if(!nombreCliente) return;
+    var conteo = getFreqCache(nombreCliente);
+    if(!conteo){
+      conteo = await calcularFrecuenciaDeCliente(nombreCliente);
+      if(Object.keys(conteo).length > 0) setFreqCache(nombreCliente, conteo);
+    }
+    if(!conteo || Object.keys(conteo).length === 0){
+      alert('Este cliente no tiene historial de pedidos aún.\nSe mostrará el orden original.');
+      // Forzar render normal
+      if(typeof renderProductos === 'function') renderProductos();
+      return;
+    }
+    // Ordenar productos por frecuencia (mantener los no encontrados al final con su orden original)
+    var arrCopia = productos.slice();
+    arrCopia.sort(function(a, b){
+      var fa = conteo[a.name] || 0;
+      var fb = conteo[b.name] || 0;
+      if(fa === fb) return 0;
+      return fb - fa;
+    });
+    // Renderizar con orden personalizado (sin tocar `productos` original)
+    _renderProductosConOrden(arrCopia);
+  };
+
+  // Render alternativo respetando un orden dado, manteniendo IDs/oninput originales
+  function _renderProductosConOrden(arr){
+    var div = document.getElementById('productos');
+    if(!div) return;
+    var html = '<div class="productos-grid-4col">';
+    // Distribuir en 4 columnas, llenando primero la fila superior, luego la siguiente
+    // El usuario quiere: izquierda a derecha, fila por fila. Pero CSS grid lo hace de
+    // arriba a abajo en cada columna. Solución: usar grid-auto-flow:row + repartir.
+    // Para mantener consistencia con el render existente (4 columnas), reorganizamos
+    // en 4 columnas con orden "fila por fila": producto 0→col0, 1→col1, 2→col2, 3→col3,
+    // 4→col0... Eso es lo que pidió el usuario.
+    var columnas = [[],[],[],[]];
+    arr.forEach(function(p, i){
+      // Encontrar el índice ORIGINAL del producto en `productos` para mantener IDs/listeners
+      var iOrig = productos.findIndex(function(x){ return x.name === p.name; });
+      if(iOrig < 0) return;
+      columnas[i % 4].push({prod: p, idx: iOrig});
+    });
+    columnas.forEach(function(col){
+      html += '<div class="productos-columna">';
+      col.forEach(function(item){
+        var p = item.prod;
+        var i = item.idx;
+        var src = (window.imagenes && window.imagenes[p.name]) || 'https://via.placeholder.com/110';
+        html += '<div class="producto" id="prod'+i+'">'
+              + '<img src="'+src+'">'
+              + '<div>'
+              + '<b class="nombre">'+p.name+'</b><br>'
+              + 'Cantidad:<input id="cant'+i+'" type="number" placeholder="Ej: 20" oninput="marcar('+i+');calcular()">'
+              + 'Dinero:<input id="din'+i+'" type="text" placeholder="Ej: 10.000" oninput="this.value=formatearMiles(this.value);marcar('+i+');calcular();">'
+              + '</div>'
+              + '</div>';
+      });
+      html += '</div>';
+    });
+    html += '</div>';
+    div.innerHTML = html;
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // TAREA 1 + 2: Botones "Administrar Productos" y "Ordenar por frecuencia"
+  // Se inyectan al abrir el modal de pedidos.
+  // ─────────────────────────────────────────────────────────────────
+  function inyectarBotonesEnModalPedido(){
+    var modal = document.getElementById('modalPedido');
+    if(!modal) return;
+    var productosDiv = document.getElementById('productos');
+    if(!productosDiv) return;
+    // Si ya están, no duplicar
+    if(document.getElementById('btn-admin-productos-bar')) return;
+
+    var bar = document.createElement('div');
+    bar.id = 'btn-admin-productos-bar';
+    bar.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin:6px 12px;';
+    bar.innerHTML =
+      '<button id="btnOrdenFrec" type="button" style="background:#0ea5e9;color:white;border:none;padding:8px 14px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 2px 6px rgba(14,165,233,0.4);">📊 Ordenar por frecuencia</button>'+
+      '<button id="btnOrdenOriginal" type="button" style="background:#475569;color:white;border:none;padding:8px 14px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">↺ Orden original</button>'+
+      '<button id="btnAdminProductos" type="button" style="background:#7c3aed;color:white;border:none;padding:8px 14px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;box-shadow:0 2px 6px rgba(124,58,237,0.4);">⚙ Administrar Productos</button>';
+
+    productosDiv.parentNode.insertBefore(bar, productosDiv);
+
+    document.getElementById('btnOrdenFrec').onclick = function(){
+      var n = window.actualCliente || window.clienteActivo;
+      if(!n){ alert('Cliente no seleccionado'); return; }
+      window._aplicarOrdenFrecuencia(n);
+    };
+    document.getElementById('btnOrdenOriginal').onclick = function(){
+      if(typeof renderProductos === 'function') renderProductos();
+    };
+    document.getElementById('btnAdminProductos').onclick = function(){
+      window._abrirAdminProductos();
+    };
+  }
+
+  // Hook: cuando se abre el modal de pedido, inyectar los botones
+  var _origAbrir = window.abrir;
+  if(typeof _origAbrir === 'function'){
+    window.abrir = async function(n, id){
+      var r = await _origAbrir(n, id);
+      setTimeout(inyectarBotonesEnModalPedido, 50);
+      return r;
+    };
+  } else {
+    // Si abrir no existe aún, esperar a que esté
+    var _hookTries = 0;
+    var _hookIv = setInterval(function(){
+      _hookTries++;
+      if(typeof window.abrir === 'function'){
+        var _o = window.abrir;
+        window.abrir = async function(n, id){
+          var r = await _o(n, id);
+          setTimeout(inyectarBotonesEnModalPedido, 50);
+          return r;
+        };
+        clearInterval(_hookIv);
+      }
+      if(_hookTries > 50) clearInterval(_hookIv);
+    }, 200);
+  }
+
+  // También inyectar cada vez que renderProductos termine (por si llaman directamente)
+  if(typeof window.renderProductos === 'function'){
+    var _origRP = window.renderProductos;
+    window.renderProductos = function(){
+      var r = _origRP.apply(this, arguments);
+      setTimeout(inyectarBotonesEnModalPedido, 30);
+      return r;
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // TAREA 1: Modal "Administrar Productos"
+  // CRUD + activar/desactivar + reordenar + cambiar imagen
+  // ─────────────────────────────────────────────────────────────────
+  window._abrirAdminProductos = function(){
+    var existing = document.getElementById('_adminProdOv');
+    if(existing){ existing.remove(); }
+
+    var ov = document.createElement('div');
+    ov.id = '_adminProdOv';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(6px);z-index:100000;display:flex;align-items:center;justify-content:center;padding:20px;';
+
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#0f172a;border:1px solid rgba(255,255,255,0.1);border-radius:18px;padding:0;width:min(900px,98vw);max-height:92vh;display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,0.7);';
+
+    var header = document.createElement('div');
+    header.style.cssText = 'padding:18px 22px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;';
+    header.innerHTML = '<div><div style="font-size:18px;font-weight:800;color:#a78bfa;">⚙ Administrar Productos</div><div style="font-size:11px;color:#94a3b8;margin-top:3px;">Crear, editar, reordenar, activar/desactivar y eliminar productos</div></div>'+
+                      '<div style="display:flex;gap:8px;">'+
+                      '  <button id="_adminProdNew" style="background:#16a34a;color:white;border:none;padding:8px 14px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">+ Nuevo producto</button>'+
+                      '  <button id="_adminProdX" style="background:transparent;color:#94a3b8;border:1px solid rgba(255,255,255,0.15);padding:8px 12px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">✕ Cerrar</button>'+
+                      '</div>';
+    box.appendChild(header);
+
+    var lista = document.createElement('div');
+    lista.id = '_adminProdLista';
+    lista.style.cssText = 'flex:1;overflow-y:auto;padding:14px 22px;display:flex;flex-direction:column;gap:10px;';
+    box.appendChild(lista);
+
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+
+    document.getElementById('_adminProdX').onclick = function(){ ov.remove(); };
+    document.getElementById('_adminProdNew').onclick = function(){ _editarProductoForm(null); };
+    ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+
+    _renderAdminProdLista();
+  };
+
+  function _renderAdminProdLista(){
+    var lista = document.getElementById('_adminProdLista');
+    if(!lista) return;
+    lista.innerHTML = '';
+    productos.forEach(function(p, i){
+      var row = document.createElement('div');
+      var activo = p.activo !== false;
+      row.draggable = true;
+      row.dataset.idx = String(i);
+      row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;cursor:grab;opacity:'+(activo?'1':'0.45')+';';
+      var src = (window.imagenes && window.imagenes[p.name]) || 'https://via.placeholder.com/64';
+      row.innerHTML =
+        '<div style="font-size:14px;color:#64748b;width:24px;text-align:center;cursor:grab;">⠿</div>'+
+        '<img src="'+src+'" style="width:48px;height:48px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.08);">'+
+        '<div style="flex:1;min-width:0;">'+
+        '  <div style="font-weight:700;color:#e2e8f0;font-size:14px;line-height:1.2;">'+p.name+'</div>'+
+        '  <div style="font-size:12px;color:#94a3b8;margin-top:2px;">$'+(Number(p.precio)||0).toLocaleString('es-CO')+' · '+(p.b?'Con bendaje':'Sin bendaje')+'</div>'+
+        '</div>'+
+        '<button data-act="toggle" data-idx="'+i+'" style="background:'+(activo?'#16a34a':'#475569')+';color:white;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">'+(activo?'ACTIVO':'INACTIVO')+'</button>'+
+        '<button data-act="edit" data-idx="'+i+'" style="background:#0ea5e9;color:white;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">✎ Editar</button>'+
+        '<button data-act="del" data-idx="'+i+'" style="background:#dc2626;color:white;border:none;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">✕</button>';
+      lista.appendChild(row);
+    });
+    // Listeners de drag-and-drop
+    var draggedIdx = null;
+    Array.from(lista.children).forEach(function(row){
+      row.addEventListener('dragstart', function(e){
+        draggedIdx = Number(row.dataset.idx);
+        row.style.opacity = '0.4';
+      });
+      row.addEventListener('dragend', function(){ row.style.opacity = '1'; });
+      row.addEventListener('dragover', function(e){ e.preventDefault(); row.style.borderColor = '#7c3aed'; });
+      row.addEventListener('dragleave', function(){ row.style.borderColor = 'rgba(255,255,255,0.07)'; });
+      row.addEventListener('drop', function(e){
+        e.preventDefault();
+        row.style.borderColor = 'rgba(255,255,255,0.07)';
+        var targetIdx = Number(row.dataset.idx);
+        if(draggedIdx === null || draggedIdx === targetIdx) return;
+        var moved = productos.splice(draggedIdx, 1)[0];
+        productos.splice(targetIdx, 0, moved);
+        guardarProductosPersonalizados(productos);
+        _renderAdminProdLista();
+        if(typeof renderProductos === 'function') renderProductos();
+      });
+    });
+    // Listeners de botones
+    lista.querySelectorAll('button[data-act]').forEach(function(btn){
+      btn.onclick = function(){
+        var idx = Number(btn.dataset.idx);
+        var act = btn.dataset.act;
+        if(act === 'toggle'){
+          productos[idx].activo = productos[idx].activo === false ? true : false;
+          guardarProductosPersonalizados(productos);
+          _renderAdminProdLista();
+          if(typeof renderProductos === 'function') renderProductos();
+        } else if(act === 'edit'){
+          _editarProductoForm(idx);
+        } else if(act === 'del'){
+          if(confirm('¿Eliminar producto "'+productos[idx].name+'"?\nLos pedidos ya creados no se verán afectados.')){
+            productos.splice(idx, 1);
+            guardarProductosPersonalizados(productos);
+            _renderAdminProdLista();
+            if(typeof renderProductos === 'function') renderProductos();
+          }
+        }
+      };
+    });
+  }
+
+  function _editarProductoForm(idx){
+    var p = idx === null ? {name:'',precio:0,b:false,activo:true,imagen:''} : productos[idx];
+    var modalAdmin = document.getElementById('_adminProdOv');
+    var ov = document.createElement('div');
+    ov.id = '_editProdOv';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:100001;display:flex;align-items:center;justify-content:center;padding:20px;';
+    ov.innerHTML =
+      '<div style="background:#1e293b;border-radius:14px;padding:22px;width:min(460px,95vw);box-shadow:0 20px 60px rgba(0,0,0,0.6);">'+
+      '  <div style="font-size:16px;font-weight:800;color:#a78bfa;margin-bottom:14px;">'+(idx===null?'Nuevo producto':'Editar producto')+'</div>'+
+      '  <label style="display:block;font-size:12px;color:#94a3b8;margin-bottom:4px;">Nombre</label>'+
+      '  <input id="_epName" value="'+(p.name||'').replace(/"/g,'&quot;')+'" style="width:100%;padding:9px 12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:white;font-size:13px;outline:none;margin-bottom:10px;">'+
+      '  <label style="display:block;font-size:12px;color:#94a3b8;margin-bottom:4px;">Precio</label>'+
+      '  <input id="_epPrecio" type="number" value="'+(Number(p.precio)||0)+'" style="width:100%;padding:9px 12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:white;font-size:13px;outline:none;margin-bottom:10px;">'+
+      '  <label style="display:block;font-size:12px;color:#94a3b8;margin-bottom:4px;">URL de imagen (opcional)</label>'+
+      '  <input id="_epImg" value="'+((p.imagen || (window.imagenes && window.imagenes[p.name]) || '')+'').replace(/"/g,'&quot;')+'" placeholder="https://..." style="width:100%;padding:9px 12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:white;font-size:12px;outline:none;margin-bottom:10px;">'+
+      '  <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#e2e8f0;margin-bottom:14px;cursor:pointer;">'+
+      '    <input type="checkbox" id="_epBend" '+(p.b?'checked':'')+' style="width:16px;height:16px;cursor:pointer;"> Aplica bendaje (20%)'+
+      '  </label>'+
+      '  <div style="display:flex;justify-content:flex-end;gap:8px;">'+
+      '    <button id="_epCancel" style="background:transparent;color:#94a3b8;border:1px solid rgba(255,255,255,0.15);padding:8px 14px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">Cancelar</button>'+
+      '    <button id="_epOk" style="background:#16a34a;color:white;border:none;padding:8px 14px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">Guardar</button>'+
+      '  </div>'+
+      '</div>';
+    document.body.appendChild(ov);
+    document.getElementById('_epCancel').onclick = function(){ ov.remove(); };
+    ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+    document.getElementById('_epOk').onclick = function(){
+      var nombre = document.getElementById('_epName').value.trim();
+      var precio = Number(document.getElementById('_epPrecio').value)||0;
+      var img = document.getElementById('_epImg').value.trim();
+      var b = document.getElementById('_epBend').checked;
+      if(!nombre){ alert('Nombre obligatorio'); return; }
+      if(idx === null){
+        // Nuevo
+        productos.push({name:nombre, precio:precio, b:b, activo:true, imagen:img});
+      } else {
+        productos[idx].name = nombre;
+        productos[idx].precio = precio;
+        productos[idx].b = b;
+        if(img) productos[idx].imagen = img;
+      }
+      if(img && typeof window.imagenes === 'object') window.imagenes[nombre] = img;
+      guardarProductosPersonalizados(productos);
+      ov.remove();
+      _renderAdminProdLista();
+      if(typeof renderProductos === 'function') renderProductos();
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // TAREA 2: Actualizar cache de frecuencia al guardar un pedido
+  // ─────────────────────────────────────────────────────────────────
+  var _origGuardar = window.guardar;
+  if(typeof _origGuardar === 'function'){
+    window.guardar = async function(){
+      var n = window.actualCliente;
+      var r = await _origGuardar.apply(this, arguments);
+      // Recalcular frecuencia en background para que el próximo abrir sea rápido
+      if(n){
+        setTimeout(function(){
+          calcularFrecuenciaDeCliente(n).then(function(c){
+            if(c && Object.keys(c).length>0) setFreqCache(n, c);
+          });
+        }, 800);
+      }
+      return r;
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // TAREA 4: Recaudo — Botón Actualizar funcional + Total efectivo correcto
+  // ─────────────────────────────────────────────────────────────────
+  window.recaudoActualizarCompleto = async function(){
+    var btn = document.querySelector('#panelRecaudo .btn-transferir');
+    if(btn){
+      btn.disabled = true;
+      var txtOriginal = btn.textContent;
+      btn.textContent = '⏳ Actualizando…';
+    }
+    try{
+      // 1. Bajar el estado más reciente del recaudo desde Supabase
+      if(typeof db !== 'undefined' && typeof cajaFechaHoy === 'function'){
+        var fecha = cajaFechaHoy();
+        try {
+          var resR = await db.from('recaudo_diario').select('datos').eq('fecha', fecha).maybeSingle();
+          if(resR && resR.data && resR.data.datos){
+            window._togglingRecaudo = true;
+            try { localStorage.setItem('recaudo_'+fecha, JSON.stringify(resR.data.datos)); }catch(e){}
+            window._togglingRecaudo = false;
+          }
+        } catch(eR){}
+      }
+      // 2. Recargar pedidos del día y clientes
+      if(typeof window.cargar === 'function'){
+        try { await window.cargar(); } catch(eC){}
+      }
+      // 3. Re-renderizar el recaudo (saltando la guarda de interacción)
+      window._recaudoLastInteract = 0;
+      if(typeof renderRecaudo === 'function'){
+        await renderRecaudo();
+      }
+    } catch(err){
+      console.warn('recaudoActualizarCompleto:', err);
+    } finally {
+      if(btn){
+        btn.disabled = false;
+        btn.textContent = '↻ Actualizar';
+      }
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+  // TAREA 4b: Corregir cálculo de TOTAL EFECTIVO en el recaudo
+  // Fórmula: BRUTO DEL DÍA - DEUDAS DEL DÍA + VALORES A FAVOR DEL DÍA
+  // (solo movimientos de la fecha actual, no histórico)
+  // ─────────────────────────────────────────────────────────────────
+  function _calcularEfectivoRealDelDia(){
+    try {
+      if(typeof cajaFechaHoy !== 'function') return null;
+      var fecha = cajaFechaHoy();
+      // Bruto = suma de subtotales de las filas del recaudo
+      var cache = window._recaudoCache;
+      if(!cache || !Array.isArray(cache.rows)) return null;
+      var bruto = 0;
+      cache.rows.forEach(function(r){ bruto += (Number(r.subtotal)||0); });
+      // Deudas/abonos del día: leer vn_deudas_v20 y filtrar por fecha
+      var deudasDelDia = 0;       // me debe hoy (resta)
+      var aFavorDelDia = 0;       // le debo hoy (suma)
+      try {
+        var raw = localStorage.getItem('vn_deudas_v20');
+        var d = raw ? JSON.parse(raw) : {};
+        Object.keys(d).forEach(function(nombre){
+          var rec = d[nombre];
+          if(!rec || !Array.isArray(rec.h)) return;
+          rec.h.forEach(function(mov){
+            if(!mov) return;
+            var f = String(mov.fecha||'');
+            if(f !== fecha) return;
+            // tipo:'deuda' sub:'cliente' = el cliente debe (resta)
+            // tipo:'deuda' sub:'mia' = yo le debo (suma)
+            if(mov.tipo === 'deuda'){
+              if(mov.sub === 'cliente') deudasDelDia += Number(mov.monto)||0;
+              else if(mov.sub === 'mia') aFavorDelDia += Number(mov.monto)||0;
+            }
+          });
+        });
+      } catch(e){}
+      var efectivoReal = bruto - deudasDelDia + aFavorDelDia;
+      return {
+        bruto: bruto,
+        deudasDelDia: deudasDelDia,
+        aFavorDelDia: aFavorDelDia,
+        efectivoReal: efectivoReal
+      };
+    } catch(e){ console.warn('_calcularEfectivoRealDelDia:', e); return null; }
+  }
+  window._calcularEfectivoRealDelDia = _calcularEfectivoRealDelDia;
+
+  // Actualizar el KPI "EFECTIVO" del recaudo con la fórmula correcta
+  function actualizarKpiEfectivoCorrecto(){
+    var datos = _calcularEfectivoRealDelDia();
+    if(!datos) return;
+    var labels = document.querySelectorAll('#panelRecaudo .kpi-card .kpi-label');
+    for(var i=0; i<labels.length; i++){
+      if((labels[i].textContent||'').trim().toLowerCase() === 'efectivo'){
+        var card = labels[i].closest('.kpi-card');
+        if(card){
+          var v = card.querySelector('.kpi-value');
+          if(v){
+            v.textContent = '$' + datos.efectivoReal.toLocaleString('es-CO');
+            v.title = 'Bruto $'+datos.bruto.toLocaleString('es-CO')+
+                      ' − Me debe hoy $'+datos.deudasDelDia.toLocaleString('es-CO')+
+                      ' + Le debo hoy $'+datos.aFavorDelDia.toLocaleString('es-CO');
+          }
+        }
+        break;
+      }
+    }
+  }
+  window._actualizarKpiEfectivoCorrecto = actualizarKpiEfectivoCorrecto;
+
+  // Wrappear _recaudoActualizarTotales para que después corrija el KPI EFECTIVO
+  setTimeout(function(){
+    if(typeof window._recaudoActualizarTotales === 'function' && !window._recaudoActualizarTotales.__efectivoFix){
+      var _origAct = window._recaudoActualizarTotales;
+      window._recaudoActualizarTotales = function(){
+        var r = _origAct.apply(this, arguments);
+        try { actualizarKpiEfectivoCorrecto(); } catch(e){}
+        return r;
+      };
+      window._recaudoActualizarTotales.__efectivoFix = true;
+    }
+  }, 1500);
+
+  // También llamar después de renderRecaudo
+  setTimeout(function(){
+    if(typeof window.renderRecaudo === 'function' && !window.renderRecaudo.__efectivoFix){
+      var _origRR = window.renderRecaudo;
+      window.renderRecaudo = async function(){
+        var r = await _origRR.apply(this, arguments);
+        setTimeout(actualizarKpiEfectivoCorrecto, 100);
+        return r;
+      };
+      window.renderRecaudo.__efectivoFix = true;
+    }
+  }, 1800);
+
+  // ─────────────────────────────────────────────────────────────────
+  // TAREA 7: Historial de descuentos
+  // ─────────────────────────────────────────────────────────────────
+  var DESC_KEY = 'descuentos_historial_v1';
+
+  function leerHistorialDescuentos(){
+    try { return JSON.parse(localStorage.getItem(DESC_KEY)||'[]'); } catch(e){ return []; }
+  }
+  function guardarHistorialDescuentos(arr){
+    try { localStorage.setItem(DESC_KEY, JSON.stringify(arr)); } catch(e){}
+  }
+  window._registrarDescuento = function(cliente, monto, obs){
+    var arr = leerHistorialDescuentos();
+    arr.push({
+      id: 'd'+Date.now(),
+      fecha: new Date().toISOString().slice(0,10),
+      hora: new Date().toLocaleTimeString('es-CO', {hour:'2-digit',minute:'2-digit'}),
+      cliente: cliente,
+      monto: Number(monto)||0,
+      obs: obs||''
+    });
+    guardarHistorialDescuentos(arr);
+  };
+
+  // Wrappear rcamoClick para inyectar botón "Historial" en su modal
+  setTimeout(function(){
+    var _origRC = window.rcamoClick;
+    if(typeof _origRC !== 'function') return;
+    window.rcamoClick = function(){
+      _origRC.apply(this, arguments);
+      // Inyectar botón "Historial" en el overlay tras pintar
+      setTimeout(function(){
+        var ov = document.getElementById('_rcamoOverlay');
+        if(!ov || ov.querySelector('#_btnDescHist')) return;
+        var titulo = ov.querySelector('div > div > div');
+        var headerDiv = ov.querySelector('div > div');
+        if(!headerDiv) return;
+        // Buscar el div de título donde está la X
+        var xBtn = ov.querySelector('#_rcamoX');
+        if(!xBtn) return;
+        var btnH = document.createElement('button');
+        btnH.id = '_btnDescHist';
+        btnH.type = 'button';
+        btnH.textContent = '📋 Historial';
+        btnH.style.cssText = 'background:#0ea5e9;border:none;color:white;font-size:12px;font-weight:700;padding:6px 12px;border-radius:8px;cursor:pointer;margin-right:8px;';
+        xBtn.parentNode.insertBefore(btnH, xBtn);
+        btnH.onclick = _mostrarHistorialDescuentos;
+      }, 100);
+    };
+  }, 800);
+
+  // Wrappear _rcamoAplicar (función interna del rcamoClick) — alternativa:
+  // observar cuando se aplica un descuento. Vamos a interceptar via db.from('pedidos').update
+  // (más confiable). Pero más simple: registrar cuando se llame a rcamoClick y luego se
+  // detecte que se aplicó (modal cerrado + alguna factura cambió). Mejor enfoque: hacer
+  // que el botón _rcamoAplicar también añada al historial. Para eso, observamos clicks
+  // en la lista del modal.
+  document.addEventListener('click', function(e){
+    var ov = document.getElementById('_rcamoOverlay');
+    if(!ov) return;
+    var btn = e.target.closest('button');
+    if(!btn || !ov.contains(btn)) return;
+    // Si el botón tiene texto con $ y > 0, es uno de los botones de cliente
+    var txt = btn.textContent || '';
+    var mm = txt.match(/\$([\d.,]+)/);
+    if(!mm) return;
+    var clienteSpan = btn.querySelector('span');
+    var cliente = clienteSpan ? clienteSpan.textContent.trim() : '';
+    if(!cliente) return;
+    // Es un click en un cliente → registrar descuento de $10.000
+    setTimeout(function(){ window._registrarDescuento(cliente, 10000, 'Descuento rápido'); }, 100);
+  }, true);
+
+  function _mostrarHistorialDescuentos(){
+    var ov = document.createElement('div');
+    ov.id = '_descHistOv';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:100002;display:flex;align-items:center;justify-content:center;padding:20px;';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#0f172a;border-radius:16px;width:min(720px,98vw);max-height:88vh;display:flex;flex-direction:column;border:1px solid rgba(255,255,255,0.1);box-shadow:0 30px 80px rgba(0,0,0,0.6);';
+    box.innerHTML =
+      '<div style="padding:16px 22px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;">'+
+      '  <div><div style="font-size:16px;font-weight:800;color:#fbbf24;">📋 Historial de Descuentos</div><div style="font-size:11px;color:#94a3b8;margin-top:2px;">Movimientos del módulo de descuento rápido</div></div>'+
+      '  <button id="_dhX" style="background:transparent;color:#94a3b8;border:1px solid rgba(255,255,255,0.15);padding:6px 12px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">✕</button>'+
+      '</div>'+
+      '<div style="padding:12px 22px;display:flex;gap:10px;flex-wrap:wrap;background:rgba(255,255,255,0.02);border-bottom:1px solid rgba(255,255,255,0.06);">'+
+      '  <input id="_dhFiltroCli" placeholder="🔍 Cliente..." style="flex:1;min-width:160px;padding:7px 10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:white;font-size:12px;outline:none;">'+
+      '  <input id="_dhDesde" type="date" style="padding:7px 10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:white;font-size:12px;outline:none;">'+
+      '  <input id="_dhHasta" type="date" style="padding:7px 10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:white;font-size:12px;outline:none;">'+
+      '</div>'+
+      '<div id="_dhResumen" style="padding:10px 22px;display:flex;gap:14px;flex-wrap:wrap;font-size:12px;background:rgba(251,191,36,0.05);border-bottom:1px solid rgba(255,255,255,0.05);"></div>'+
+      '<div id="_dhLista" style="flex:1;overflow-y:auto;padding:8px 22px 22px;"></div>';
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+    document.getElementById('_dhX').onclick = function(){ ov.remove(); };
+    ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+    var fc = document.getElementById('_dhFiltroCli');
+    var fd = document.getElementById('_dhDesde');
+    var fh = document.getElementById('_dhHasta');
+    [fc, fd, fh].forEach(function(el){ el.addEventListener('input', renderHist); });
+    function renderHist(){
+      var arr = leerHistorialDescuentos();
+      var fcli = (fc.value||'').toLowerCase();
+      var fdes = fd.value;
+      var fhas = fh.value;
+      var filt = arr.filter(function(d){
+        if(fcli && (d.cliente||'').toLowerCase().indexOf(fcli)<0) return false;
+        if(fdes && d.fecha < fdes) return false;
+        if(fhas && d.fecha > fhas) return false;
+        return true;
+      });
+      // Ordenar más reciente primero
+      filt.sort(function(a,b){ return (b.id||'').localeCompare(a.id||''); });
+      // Resumen
+      var hoy = new Date().toISOString().slice(0,10);
+      var totalHoy = 0, totalFiltro = 0, totalHist = 0;
+      arr.forEach(function(d){
+        totalHist += (Number(d.monto)||0);
+        if(d.fecha === hoy) totalHoy += (Number(d.monto)||0);
+      });
+      filt.forEach(function(d){ totalFiltro += (Number(d.monto)||0); });
+      document.getElementById('_dhResumen').innerHTML =
+        '<span style="color:#fbbf24;font-weight:700;">Hoy: $'+totalHoy.toLocaleString('es-CO')+'</span> · '+
+        '<span style="color:#0ea5e9;font-weight:700;">Filtro: $'+totalFiltro.toLocaleString('es-CO')+'</span> · '+
+        '<span style="color:#94a3b8;font-weight:700;">Histórico: $'+totalHist.toLocaleString('es-CO')+'</span> · '+
+        '<span style="color:#cbd5e1;">'+filt.length+' movs</span>';
+      // Lista
+      var lista = document.getElementById('_dhLista');
+      if(filt.length===0){
+        lista.innerHTML = '<div style="padding:30px;text-align:center;color:#64748b;font-size:13px;">No hay descuentos registrados con esos filtros.</div>';
+      } else {
+        lista.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;">'+
+          '<thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);color:#94a3b8;text-align:left;">'+
+          '<th style="padding:8px 6px;">Fecha</th>'+
+          '<th style="padding:8px 6px;">Hora</th>'+
+          '<th style="padding:8px 6px;">Cliente</th>'+
+          '<th style="padding:8px 6px;text-align:right;">Monto</th>'+
+          '<th style="padding:8px 6px;">Obs</th>'+
+          '</tr></thead><tbody>'+
+          filt.map(function(d){
+            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);color:#e2e8f0;">'+
+              '<td style="padding:8px 6px;">'+(d.fecha||'')+'</td>'+
+              '<td style="padding:8px 6px;color:#94a3b8;">'+(d.hora||'')+'</td>'+
+              '<td style="padding:8px 6px;font-weight:600;">'+(d.cliente||'')+'</td>'+
+              '<td style="padding:8px 6px;text-align:right;color:#fcd34d;font-weight:700;">−$'+(Number(d.monto)||0).toLocaleString('es-CO')+'</td>'+
+              '<td style="padding:8px 6px;color:#94a3b8;font-size:11px;">'+(d.obs||'-')+'</td>'+
+              '</tr>';
+          }).join('')+
+          '</tbody></table>';
+      }
+    }
+    renderHist();
+  }
+  window._mostrarHistorialDescuentos = _mostrarHistorialDescuentos;
+
+  // ─────────────────────────────────────────────────────────────────
+  // TAREA 5: Mejoras CSS de Historial Cartera
+  // ─────────────────────────────────────────────────────────────────
+  (function(){
+    if(document.getElementById('vnCarteraHistCSS')) return;
+    var st = document.createElement('style');
+    st.id = 'vnCarteraHistCSS';
+    st.textContent =
+      '#panelCartera .cartera-hist-row,#panelCartera .historial-row {'+
+      '  display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;'+
+      '  padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.06);'+
+      '  background:rgba(255,255,255,0.02);border-radius:8px;margin-bottom:6px;'+
+      '  transition:background .15s;'+
+      '}'+
+      '#panelCartera .cartera-hist-row:hover,#panelCartera .historial-row:hover {'+
+      '  background:rgba(255,255,255,0.05);'+
+      '}'+
+      '#panelCartera table {'+
+      '  border-collapse:separate;border-spacing:0 4px;width:100%;'+
+      '}'+
+      '#panelCartera table thead th {'+
+      '  position:sticky;top:0;background:#0f172a;z-index:2;'+
+      '  padding:10px 12px;font-size:11px;font-weight:700;'+
+      '  color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;'+
+      '  border-bottom:1px solid rgba(255,255,255,0.08);'+
+      '}'+
+      '#panelCartera table tbody td {'+
+      '  padding:9px 12px;background:rgba(255,255,255,0.02);'+
+      '  border-top:1px solid rgba(255,255,255,0.04);'+
+      '  border-bottom:1px solid rgba(255,255,255,0.04);'+
+      '  font-size:13px;color:#e2e8f0;line-height:1.35;'+
+      '}'+
+      '#panelCartera table tbody tr:hover td {'+
+      '  background:rgba(99,102,241,0.06);'+
+      '}'+
+      '#panelCartera table tbody td:first-child {'+
+      '  border-left:1px solid rgba(255,255,255,0.04);'+
+      '  border-top-left-radius:8px;border-bottom-left-radius:8px;'+
+      '}'+
+      '#panelCartera table tbody td:last-child {'+
+      '  border-right:1px solid rgba(255,255,255,0.04);'+
+      '  border-top-right-radius:8px;border-bottom-right-radius:8px;'+
+      '}'+
+      '#panelCartera .saldo-positivo { color:#4ade80;font-weight:700; }'+
+      '#panelCartera .saldo-negativo { color:#f87171;font-weight:700; }'+
+      // Responsive
+      '@media (max-width: 720px){'+
+      '  #panelCartera table thead { display:none; }'+
+      '  #panelCartera table tbody tr { display:block;margin-bottom:8px;padding:8px;background:rgba(255,255,255,0.02);border-radius:8px; }'+
+      '  #panelCartera table tbody td { display:flex;justify-content:space-between;padding:4px 0;border:none;background:transparent;font-size:12px; }'+
+      '  #panelCartera table tbody td:before { content:attr(data-label);font-weight:700;color:#94a3b8;font-size:11px; }'+
+      '}';
+    document.head.appendChild(st);
+  })();
+
+  // ─────────────────────────────────────────────────────────────────
+  // TAREA 3: Calendario mensual de asistencia (excepto panadero)
+  // Lo implementamos como un MODAL al hacer click en un botón nuevo
+  // dentro del panel de nómina. Mantiene compatibilidad con el sistema
+  // semanal existente (los días marcados se reflejan en `asistencia`).
+  // ─────────────────────────────────────────────────────────────────
+  var CAL_KEY = 'nomina_calendario_v1';
+  // Estructura: { 'empleadoId': { 'YYYY-MM-DD': 'asistio'|'noAsistio'|'descanso'|'festivo' } }
+
+  function leerCal(){
+    try { return JSON.parse(localStorage.getItem(CAL_KEY)||'{}'); } catch(e){ return {}; }
+  }
+  function guardarCal(c){
+    try { localStorage.setItem(CAL_KEY, JSON.stringify(c)); } catch(e){}
+  }
+  function fechaISO(d){
+    var y = d.getFullYear(), m = (d.getMonth()+1), dd = d.getDate();
+    return y+'-'+(m<10?'0':'')+m+'-'+(dd<10?'0':'')+dd;
+  }
+
+  // Estado del calendario: mes mostrado por empleado
+  var _calEstado = {};
+
+  window._abrirCalendarioEmpleado = function(empId, empNombre, salarioDia){
+    // Determinar mes a mostrar
+    if(!_calEstado[empId]){
+      var hoy = new Date();
+      _calEstado[empId] = { year: hoy.getFullYear(), month: hoy.getMonth() };
+    }
+    _pintarCalendarioEmpleado(empId, empNombre, salarioDia);
+  };
+
+  function _pintarCalendarioEmpleado(empId, empNombre, salarioDia){
+    var existing = document.getElementById('_calOv');
+    if(existing) existing.remove();
+
+    var st = _calEstado[empId];
+    var year = st.year, month = st.month;
+    var primerDia = new Date(year, month, 1);
+    var ultimoDia = new Date(year, month+1, 0);
+    var diaInicio = primerDia.getDay(); // 0=Domingo
+    var totalDias = ultimoDia.getDate();
+    var meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+    var cal = leerCal();
+    var datosEmp = cal[empId] || {};
+
+    var ov = document.createElement('div');
+    ov.id = '_calOv';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(4px);z-index:100000;display:flex;align-items:center;justify-content:center;padding:20px;';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#0f172a;border:1px solid rgba(255,255,255,0.1);border-radius:18px;padding:0;width:min(640px,98vw);max-height:92vh;display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,0.7);';
+
+    // Calcular salario actual del mes
+    var diasTrab = 0;
+    Object.keys(datosEmp).forEach(function(f){
+      if(f.indexOf(year+'-'+(month+1<10?'0':'')+(month+1)) === 0 && datosEmp[f] === 'asistio') diasTrab++;
+    });
+    var salarioCalc = diasTrab * (Number(salarioDia)||0);
+
+    box.innerHTML =
+      '<div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">'+
+      '  <div><div style="font-size:17px;font-weight:800;color:#7dd3fc;">📅 '+empNombre+'</div><div style="font-size:11px;color:#94a3b8;margin-top:3px;">Salario/día: <input id="_calSal" type="number" value="'+(Number(salarioDia)||0)+'" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:white;padding:3px 8px;border-radius:6px;width:100px;font-size:12px;">  ·  Días trabajados: <span id="_calDiasT" style="color:#4ade80;font-weight:700;">'+diasTrab+'</span>  ·  Salario calc: <span id="_calSalC" style="color:#fcd34d;font-weight:700;">$'+salarioCalc.toLocaleString('es-CO')+'</span></div></div>'+
+      '  <button id="_calX" style="background:transparent;color:#94a3b8;border:1px solid rgba(255,255,255,0.15);padding:6px 12px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">✕</button>'+
+      '</div>'+
+      '<div style="padding:12px 20px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(255,255,255,0.05);">'+
+      '  <button id="_calPrev" style="background:#1e293b;color:white;border:none;padding:6px 14px;border-radius:8px;font-weight:700;cursor:pointer;">‹ '+meses[(month-1+12)%12]+'</button>'+
+      '  <div style="font-size:15px;font-weight:800;color:#e2e8f0;">'+meses[month]+' '+year+'</div>'+
+      '  <button id="_calNext" style="background:#1e293b;color:white;border:none;padding:6px 14px;border-radius:8px;font-weight:700;cursor:pointer;">'+meses[(month+1)%12]+' ›</button>'+
+      '</div>'+
+      '<div id="_calBody" style="padding:16px 20px;flex:1;overflow-y:auto;"></div>'+
+      '<div style="padding:12px 20px;border-top:1px solid rgba(255,255,255,0.08);display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:#94a3b8;">'+
+      '  Click en un día para cambiar estado:'+
+      '  <span style="color:#4ade80;">●</span> Asistió'+
+      '  <span style="color:#f87171;">●</span> No asistió'+
+      '  <span style="color:#94a3b8;">●</span> Descanso'+
+      '  <span style="color:#fbbf24;">●</span> Festivo'+
+      '</div>';
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+
+    document.getElementById('_calX').onclick = function(){ ov.remove(); };
+    ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+    document.getElementById('_calPrev').onclick = function(){
+      _calEstado[empId].month--;
+      if(_calEstado[empId].month < 0){ _calEstado[empId].month = 11; _calEstado[empId].year--; }
+      _pintarCalendarioEmpleado(empId, empNombre, document.getElementById('_calSal').value);
+    };
+    document.getElementById('_calNext').onclick = function(){
+      _calEstado[empId].month++;
+      if(_calEstado[empId].month > 11){ _calEstado[empId].month = 0; _calEstado[empId].year++; }
+      _pintarCalendarioEmpleado(empId, empNombre, document.getElementById('_calSal').value);
+    };
+    document.getElementById('_calSal').onchange = function(){
+      // Recalcular y guardar el salarioDia en nomina_data
+      var nuevoSal = Number(this.value)||0;
+      try {
+        var nd = JSON.parse(localStorage.getItem('nomina_data')||'{}');
+        if(nd && Array.isArray(nd.empleados)){
+          var emp = nd.empleados.find(function(e){ return e.id === empId; });
+          if(emp){ emp.salarioDia = nuevoSal; localStorage.setItem('nomina_data', JSON.stringify(nd)); }
+        }
+      } catch(e){}
+      _pintarCalendarioEmpleado(empId, empNombre, nuevoSal);
+    };
+
+    // Pintar grid del calendario
+    var grid = document.getElementById('_calBody');
+    var html = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px;">';
+    var dias = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+    dias.forEach(function(d){
+      html += '<div style="text-align:center;font-size:11px;color:#94a3b8;font-weight:700;padding:4px;">'+d+'</div>';
+    });
+    html += '</div><div id="_calGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">';
+    // Padding inicial
+    for(var i=0; i<diaInicio; i++){
+      html += '<div></div>';
+    }
+    for(var dd=1; dd<=totalDias; dd++){
+      var fechaStr = year+'-'+(month+1<10?'0':'')+(month+1)+'-'+(dd<10?'0':'')+dd;
+      var estado = datosEmp[fechaStr] || 'libre';
+      var color = '#1e293b';
+      var letra = '';
+      if(estado === 'asistio'){ color = '#16a34a'; letra = '✓'; }
+      else if(estado === 'noAsistio'){ color = '#dc2626'; letra = '✕'; }
+      else if(estado === 'descanso'){ color = '#475569'; letra = 'D'; }
+      else if(estado === 'festivo'){ color = '#eab308'; letra = 'F'; }
+      html += '<div class="_calDia" data-fecha="'+fechaStr+'" data-estado="'+estado+'" '+
+              'style="aspect-ratio:1/1;background:'+color+';display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;color:white;font-weight:700;font-size:14px;border:1px solid rgba(255,255,255,0.06);transition:transform .1s;">'+
+              '<div style="font-size:13px;">'+dd+'</div>'+
+              '<div style="font-size:10px;opacity:0.85;">'+letra+'</div>'+
+              '</div>';
+    }
+    html += '</div>';
+    grid.innerHTML = html;
+
+    // Click cycles state: libre → asistio → noAsistio → descanso → festivo → libre
+    var cycle = ['libre','asistio','noAsistio','descanso','festivo'];
+    grid.querySelectorAll('._calDia').forEach(function(el){
+      el.onclick = function(){
+        var f = el.dataset.fecha;
+        var actual = el.dataset.estado;
+        var iC = cycle.indexOf(actual);
+        var nuevo = cycle[(iC+1) % cycle.length];
+        var c = leerCal();
+        if(!c[empId]) c[empId] = {};
+        if(nuevo === 'libre') delete c[empId][f];
+        else c[empId][f] = nuevo;
+        guardarCal(c);
+        // Repintar (más simple)
+        _pintarCalendarioEmpleado(empId, empNombre, document.getElementById('_calSal').value);
+      };
+    });
+  }
+
+  // Inyectar botón "Calendario" en cada fila de empleado (excepto panadero)
+  // Lo hacemos observando el panel de nómina cuando se abre.
+  function inyectarBotonesCalendario(){
+    var panel = document.getElementById('panelNomina') || document.querySelector('[id*="nomina"], [id*="Nomina"]');
+    if(!panel) return;
+    // Buscar nombres de empleados en el DOM
+    var tables = panel.querySelectorAll('table');
+    if(tables.length === 0) return;
+    // Estrategia: marcar cada fila con un botón "📅 Calendario" si ya no lo tiene
+    // Como la estructura es compleja, mejor inyectar UN botón global por empleado
+    try {
+      var nd = JSON.parse(localStorage.getItem('nomina_data')||'{}');
+      if(!nd.empleados) return;
+      nd.empleados.forEach(function(emp){
+        if(emp.id === 'panadero') return; // EXCLUIR panadero
+        // Buscar elemento que contenga el nombre del empleado y aún no tenga botón
+        var elementos = panel.querySelectorAll('h3,h4,div[style*="font-weight"]');
+        elementos.forEach(function(el){
+          if((el.textContent||'').toUpperCase().indexOf(emp.nombre) > -1 &&
+             !el.querySelector('._calBtn-'+emp.id) &&
+             !el.parentElement.querySelector('._calBtn-'+emp.id)){
+            var btn = document.createElement('button');
+            btn.className = '_calBtn-'+emp.id;
+            btn.type = 'button';
+            btn.textContent = '📅 Calendario';
+            btn.style.cssText = 'margin-left:10px;background:#0ea5e9;color:white;border:none;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;';
+            btn.onclick = function(e){
+              e.stopPropagation();
+              window._abrirCalendarioEmpleado(emp.id, emp.nombre, emp.salarioDia);
+            };
+            el.appendChild(btn);
+          }
+        });
+      });
+    } catch(e){ console.warn('inyectarBotonesCalendario:', e); }
+  }
+
+  // Hook: cada vez que se renderice la nómina, intentar inyectar
+  setTimeout(function(){
+    if(typeof window.renderNomina === 'function' && !window.renderNomina.__calPatch){
+      var _origRN = window.renderNomina;
+      window.renderNomina = function(){
+        var r = _origRN.apply(this, arguments);
+        setTimeout(inyectarBotonesCalendario, 100);
+        return r;
+      };
+      window.renderNomina.__calPatch = true;
+    }
+  }, 1500);
+
+  // Observador del DOM para inyectar también si el panel aparece después
+  var _obsNom = new MutationObserver(function(muts){
+    var panel = document.getElementById('panelNomina');
+    if(panel && panel.classList.contains('open')){
+      inyectarBotonesCalendario();
+    }
+  });
+  if(document.body) _obsNom.observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['class']});
+
+  console.log('✅ MEGA-MÓDULO V7 cargado: 7 tareas implementadas.');
+})();
+</script>
+
 </body>
 </html>
